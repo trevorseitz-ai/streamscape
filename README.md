@@ -58,11 +58,22 @@ The backend must implement a relational PostgreSQL database (via Supabase) using
 
 ## Getting Started
 
+### 1. Environment Variables
+
+Copy `.env.example` to `.env` (or create `.env`) and fill in:
+
+- `EXPO_PUBLIC_SUPABASE_URL` – From Supabase Dashboard
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` – From Supabase Dashboard
+- `SUPABASE_SERVICE_ROLE_KEY` – **Required for scrape API.** From Supabase Dashboard > Project Settings > API > `service_role` (secret)
+- `TMDB_API_KEY` – From [TMDB API Settings](https://www.themoviedb.org/settings/api) (server-side only, never exposed to frontend)
+
+### 2. Run the App
+
 ```bash
-# Install dependencies (already done)
+# Install dependencies
 npm install
 
-# Run on web
+# Run on web (API routes require web output: server)
 npm run web
 
 # Run on iOS
@@ -71,3 +82,7 @@ npm run ios
 # Run on Android
 npm run android
 ```
+
+### 3. Test the Search
+
+Type a movie title (e.g. **"Inception"**) in the search bar and press Enter. The app will call the search API, fetch data via TMDB (with JustWatch streaming info), save it to Supabase, and display the result.

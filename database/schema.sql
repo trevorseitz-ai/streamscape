@@ -132,10 +132,11 @@ CREATE POLICY "Platforms is viewable by everyone" ON platforms FOR SELECT USING 
 CREATE POLICY "Media availability is viewable by everyone" ON media_availability FOR SELECT USING (true);
 CREATE POLICY "Media cast crew is viewable by everyone" ON media_cast_crew FOR SELECT USING (true);
 
--- User profiles: Users can read/update own profile
+-- User profiles: Users can read/update/delete own profile
 CREATE POLICY "Users can view own profile" ON user_profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON user_profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Users can insert own profile" ON user_profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can delete own profile" ON user_profiles FOR DELETE USING (auth.uid() = id);
 
 -- Watchlist: Users can only access their own watchlist
 CREATE POLICY "Users can view own watchlist" ON watchlist FOR SELECT USING (auth.uid() = user_id);
