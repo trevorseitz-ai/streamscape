@@ -7,12 +7,14 @@ import {
   Switch,
   ActivityIndicator,
   Image,
-  Platform,
 } from 'react-native';
 import {
   getSavedProviderIds,
   saveProviderIds,
 } from '../../lib/provider-preferences';
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
 
 interface ProviderEntry {
   id: number;
@@ -32,21 +34,39 @@ export default function SettingsScreen() {
         const savedIds = await getSavedProviderIds();
         setSelectedIds(new Set(savedIds));
 
-        const baseUrl =
-          Platform.OS === 'web'
-            ? typeof window !== 'undefined'
-              ? window.location.origin
-              : ''
-            : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
-
-        const res = await fetch(`${baseUrl}/api/providers`);
-        const data = await res.json();
-
-        if (res.ok && data.providers) {
-          setProviders(data.providers);
-        } else {
-          setFetchError(data.error ?? 'Failed to load providers');
+        const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+        if (!apiKey) {
+          setFetchError('TMDB API key not configured');
+          return;
         }
+
+        const res = await fetch(
+          `${TMDB_BASE}/watch/providers/movie?watch_region=US&language=en-US`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+
+        if (!res.ok) {
+          setFetchError(`Failed to load providers (${res.status})`);
+          return;
+        }
+
+        const data = await res.json();
+        const results: Array<{
+          provider_id: number;
+          provider_name: string;
+          logo_path: string | null;
+          display_priority: number;
+        }> = data.results ?? [];
+
+        const mapped = results
+          .sort((a, b) => a.display_priority - b.display_priority)
+          .map((p) => ({
+            id: p.provider_id,
+            name: p.provider_name,
+            logo_url: p.logo_path ? `${TMDB_LOGO_BASE}${p.logo_path}` : null,
+          }));
+
+        setProviders(mapped);
       } catch (err) {
         setFetchError(
           err instanceof Error ? err.message : 'Failed to load providers'
