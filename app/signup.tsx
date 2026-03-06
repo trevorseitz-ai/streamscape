@@ -33,7 +33,7 @@ export default function SignupScreen() {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      router.replace('/');
+      router.replace('/(tabs)/discover');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed');
     } finally {
@@ -70,7 +70,7 @@ export default function SignupScreen() {
           autoComplete="new-password"
         />
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable
           style={[styles.button, loading && styles.buttonDisabled]}

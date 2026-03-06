@@ -1,19 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
+  Image,
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { MovieCard, type Movie } from '../../components/MovieCard';
+
+interface WatchlistMovie {
+  watchlistId: string;
+  sortOrder: number;
+  id: string;
+  title: string;
+  poster_url: string | null;
+  release_year: number | null;
+}
 
 export default function WatchlistScreen() {
   const router = useRouter();
-  const [movies, setMovies] = useState<Movie[]>([]);
+  const [movies, setMovies] = useState<WatchlistMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
 
@@ -45,29 +56,76 @@ export default function WatchlistScreen() {
     setLoading(true);
     const { data, error } = await supabase
       .from('watchlist')
-      .select(`
-        media_id,
-        media (id, title, poster_url, release_year)
-      `)
-      .eq('user_id', userId);
+      .select('id, sort_order, media_id, media (id, title, poster_url, release_year)')
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('added_at', { ascending: true });
 
     if (error) {
       console.error('Watchlist fetch error:', error);
       setMovies([]);
     } else {
-      const list = (data ?? [])
-        .map((row: { media: unknown }) => row.media)
-        .filter(Boolean)
-        .map((m: { id: string; title: string; poster_url: string | null; release_year: number | null }) => ({
-          id: m.id,
-          title: m.title,
-          poster_url: m.poster_url,
-          release_year: m.release_year,
-        }));
+      const list: WatchlistMovie[] = (data ?? [])
+        .map((row: Record<string, unknown>, index: number) => {
+          const m = row.media as Record<string, unknown> | null;
+          if (!m) return null;
+          return {
+            watchlistId: row.id as string,
+            sortOrder: (row.sort_order as number) ?? index,
+            id: m.id as string,
+            title: m.title as string,
+            poster_url: (m.poster_url as string | null) ?? null,
+            release_year: (m.release_year as number | null) ?? null,
+          };
+        })
+        .filter((m): m is WatchlistMovie => m !== null);
       setMovies(list);
     }
     setLoading(false);
   }
+
+  const syncOrder = useCallback(
+    (items: WatchlistMovie[]) => {
+      if (!session) return;
+
+      const baseUrl =
+        Platform.OS === 'web'
+          ? typeof window !== 'undefined'
+            ? window.location.origin
+            : ''
+          : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
+
+      fetch(`${baseUrl}/api/watchlist-reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: session.user.id,
+          items: items.map((m) => ({
+            id: m.watchlistId,
+            sort_order: m.sortOrder,
+          })),
+        }),
+      }).catch((err) => console.error('Reorder sync error:', err));
+    },
+    [session]
+  );
+
+  const moveItem = useCallback(
+    (index: number, direction: 'up' | 'down') => {
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= movies.length) return;
+
+      const updated = [...movies];
+      [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+      updated.forEach((m, i) => {
+        m.sortOrder = i;
+      });
+
+      setMovies(updated);
+      syncOrder(updated);
+    },
+    [movies, syncOrder]
+  );
 
   if (loading) {
     return (
@@ -80,14 +138,11 @@ export default function WatchlistScreen() {
   if (!session) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>My Watchlist</Text>
-        <Text style={styles.subtitle}>Sign in to save movies and shows</Text>
-        <Pressable
-          style={styles.button}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.buttonText}>Sign In</Text>
-        </Pressable>
+        <Ionicons name="list" size={48} color="#2d2d2d" />
+        <Text style={styles.emptyText}>Your watchlist awaits</Text>
+        <Text style={styles.emptySubtext}>
+          Tap "Sign In" in the top-right to get started
+        </Text>
       </View>
     );
   }
@@ -99,16 +154,9 @@ export default function WatchlistScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <Text style={styles.title}>My Watchlist</Text>
         <Text style={styles.subtitle}>
           {movies.length} {movies.length === 1 ? 'movie' : 'movies'} saved
         </Text>
-        <Pressable
-          style={styles.signOutButton}
-          onPress={() => supabase.auth.signOut()}
-        >
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </Pressable>
       </View>
 
       {movies.length === 0 ? (
@@ -119,14 +167,67 @@ export default function WatchlistScreen() {
           </Text>
         </View>
       ) : (
-        <View style={styles.grid}>
-          {movies.map((movie) => (
-            <View key={movie.id} style={styles.cardWrapper}>
-              <MovieCard
-                movie={movie}
-                onPress={() => router.push(`/movie/${movie.id}`)}
-              />
-            </View>
+        <View style={styles.list}>
+          {movies.map((movie, index) => (
+            <Pressable
+              key={movie.watchlistId}
+              style={styles.row}
+              onPress={() => router.push(`/movie/${movie.id}`)}
+            >
+              <Text style={styles.rank}>{index + 1}</Text>
+
+              {movie.poster_url ? (
+                <Image
+                  source={{ uri: movie.poster_url }}
+                  style={styles.thumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.thumbnailPlaceholder}>
+                  <Text style={styles.thumbnailPlaceholderText}>?</Text>
+                </View>
+              )}
+
+              <View style={styles.movieInfo}>
+                <Text style={styles.movieTitle} numberOfLines={2}>
+                  {movie.title}
+                </Text>
+                {movie.release_year != null ? (
+                  <Text style={styles.movieYear}>{movie.release_year}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.arrows}>
+                {index > 0 ? (
+                  <Pressable
+                    style={styles.arrowButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      moveItem(index, 'up');
+                    }}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="chevron-up" size={22} color="#a5b4fc" />
+                  </Pressable>
+                ) : (
+                  <View style={styles.arrowSpacer} />
+                )}
+                {index < movies.length - 1 ? (
+                  <Pressable
+                    style={styles.arrowButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      moveItem(index, 'down');
+                    }}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="chevron-down" size={22} color="#a5b4fc" />
+                  </Pressable>
+                ) : (
+                  <View style={styles.arrowSpacer} />
+                )}
+              </View>
+            </Pressable>
           ))}
         </View>
       )}
@@ -140,7 +241,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f0f0f',
   },
   content: {
-    paddingTop: 60,
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
@@ -152,40 +253,11 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   header: {
-    marginBottom: 24,
-  },
-  signOutButton: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  signOutText: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: -0.5,
+    marginBottom: 16,
   },
   subtitle: {
     fontSize: 16,
     color: '#9ca3af',
-    marginTop: 4,
-  },
-  button: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 24,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   empty: {
     alignItems: 'center',
@@ -200,12 +272,71 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 8,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+  list: {
+    gap: 2,
   },
-  cardWrapper: {
-    marginBottom: 8,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  rank: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#6366f1',
+    width: 28,
+    textAlign: 'center',
+  },
+  thumbnail: {
+    width: 44,
+    height: 66,
+    borderRadius: 6,
+    backgroundColor: '#2d2d2d',
+  },
+  thumbnailPlaceholder: {
+    width: 44,
+    height: 66,
+    borderRadius: 6,
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailPlaceholderText: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  movieInfo: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  movieTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  movieYear: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  arrows: {
+    gap: 4,
+  },
+  arrowButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#1e1b4b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowSpacer: {
+    width: 36,
+    height: 36,
   },
 });

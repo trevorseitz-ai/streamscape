@@ -5,6 +5,7 @@ export interface Movie {
   title: string;
   poster_url: string | null;
   release_year?: number | null;
+  vote_average?: number | null;
 }
 
 interface MovieCardProps {
@@ -13,6 +14,11 @@ interface MovieCardProps {
 }
 
 export function MovieCard({ movie, onPress }: MovieCardProps) {
+  const rating =
+    movie.vote_average != null
+      ? Math.round(movie.vote_average * 10) / 10
+      : null;
+
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
@@ -30,27 +36,33 @@ export function MovieCard({ movie, onPress }: MovieCardProps) {
             <Text style={styles.placeholderText}>?</Text>
           </View>
         )}
+        {rating !== null && (
+          <View style={styles.ratingBadge}>
+            <Text style={styles.ratingStar}>★</Text>
+            <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+          </View>
+        )}
       </View>
       <Text style={styles.title} numberOfLines={2}>
         {movie.title}
       </Text>
-      {movie.release_year && (
+      {movie.release_year != null ? (
         <Text style={styles.year}>{movie.release_year}</Text>
-      )}
+      ) : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    width: 120,
-    marginRight: 16,
+    width: '100%',
+    maxWidth: 180,
   },
   cardPressed: {
     opacity: 0.85,
   },
   posterContainer: {
-    width: 120,
+    width: '100%',
     aspectRatio: 2 / 3,
     borderRadius: 8,
     overflow: 'hidden',
@@ -70,6 +82,27 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 32,
     color: '#6b7280',
+  },
+  ratingBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    gap: 2,
+  },
+  ratingStar: {
+    fontSize: 10,
+    color: '#facc15',
+  },
+  ratingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   title: {
     fontSize: 14,

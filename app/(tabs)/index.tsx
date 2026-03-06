@@ -135,11 +135,13 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {error && !loading && (
-        <View style={styles.resultBox}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
+      {error ? (
+        !loading ? (
+          <View style={styles.resultBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null
+      ) : null}
 
       {searchResult && !loading && (
         <View style={styles.section}>
@@ -172,7 +174,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f0f0f',
   },
   content: {
-    paddingTop: 60,
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
@@ -232,6 +234,7 @@ const styles = StyleSheet.create({
   },
   resultRow: {
     flexDirection: 'row',
+    width: 120,
   },
   placeholderGrid: {
     flexDirection: 'row',

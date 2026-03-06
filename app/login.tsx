@@ -29,7 +29,7 @@ export default function LoginScreen() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      router.replace('/');
+      router.replace('/(tabs)/discover');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -66,7 +66,7 @@ export default function LoginScreen() {
           autoComplete="password"
         />
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable
           style={[styles.button, loading && styles.buttonDisabled]}

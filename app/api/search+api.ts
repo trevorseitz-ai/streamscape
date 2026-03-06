@@ -18,8 +18,9 @@ interface MediaData {
   }>;
   cast: Array<{
     name: string;
-    role_type: 'actor' | 'director';
+    role_type: 'actor' | 'director' | 'writer' | 'cinematographer' | 'assistant_director';
     character: string | null;
+    job: string | null;
   }>;
 }
 
@@ -126,20 +127,36 @@ async function fetchMovieData(query: string): Promise<MediaData | null> {
   }
 
   const cast: MediaData['cast'] = [];
-  const topCast = (creditsRes.cast ?? []).slice(0, 5);
+  const topCast = (creditsRes.cast ?? []).slice(0, 10);
   for (const c of topCast) {
     cast.push({
       name: c.name,
       role_type: 'actor',
       character: c.character ?? null,
+      job: null,
     });
   }
-  const director = (creditsRes.crew ?? []).find((c) => c.job === 'Director');
-  if (director) {
+
+  const crewRoleMap: Record<string, MediaData['cast'][number]['role_type']> = {
+    Director: 'director',
+    Writer: 'writer',
+    Screenplay: 'writer',
+    'Director of Photography': 'cinematographer',
+    'First Assistant Director': 'assistant_director',
+  };
+
+  const addedCrew = new Set<string>();
+  for (const c of creditsRes.crew ?? []) {
+    const mappedRole = crewRoleMap[c.job];
+    if (!mappedRole) continue;
+    const key = `${c.name}::${mappedRole}`;
+    if (addedCrew.has(key)) continue;
+    addedCrew.add(key);
     cast.push({
-      name: director.name,
-      role_type: 'director',
+      name: c.name,
+      role_type: mappedRole,
       character: null,
+      job: c.job,
     });
   }
 
@@ -251,6 +268,7 @@ async function upsertToSupabase(data: MediaData) {
         person_id: personId,
         role_type: c.role_type,
         character: c.character ?? null,
+        job: c.job ?? null,
       });
     }
   }

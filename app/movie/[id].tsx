@@ -7,9 +7,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { TrailerPlayer } from '../../components/TrailerPlayer';
 
 interface Person {
   id: string;
@@ -17,6 +19,7 @@ interface Person {
   headshot_url: string | null;
   role_type: string;
   character: string | null;
+  job: string | null;
 }
 
 interface PlatformAvailability {
@@ -63,6 +66,7 @@ export default function MovieDetailsScreen() {
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -103,10 +107,16 @@ export default function MovieDetailsScreen() {
           .eq('media_id', id);
         setInWatchlist(false);
       } else {
+        const { count } = await supabase
+          .from('watchlist')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', session.user.id);
+
         await supabase.from('watchlist').insert({
           user_id: session.user.id,
           media_id: id,
           watched: false,
+          sort_order: count ?? 0,
         });
         setInWatchlist(true);
       }
@@ -114,6 +124,98 @@ export default function MovieDetailsScreen() {
       console.error('Watchlist error:', err);
     } finally {
       setWatchlistLoading(false);
+    }
+  }
+
+  async function fetchFromSupabase() {
+    const { data: mediaData, error: mediaError } = await supabase
+      .from('media')
+      .select('id, title, synopsis, release_year, poster_url, backdrop_url, type')
+      .eq('id', id)
+      .single();
+
+    if (mediaError || !mediaData) {
+      throw new Error(mediaError?.message ?? 'Movie not found');
+    }
+
+    const { data: castData, error: castError } = await supabase
+      .from('media_cast_crew')
+      .select(`
+        role_type,
+        character,
+        job,
+        people (id, name, headshot_url)
+      `)
+      .eq('media_id', id);
+
+    if (castError) {
+      console.warn('[MovieDetails] Cast fetch error:', castError);
+    }
+
+    const { data: availData, error: availError } = await supabase
+      .from('media_availability')
+      .select(`
+        id,
+        access_type,
+        price,
+        direct_url,
+        platforms (id, name)
+      `)
+      .eq('media_id', id);
+
+    if (availError) {
+      console.warn('[MovieDetails] Availability fetch error:', availError);
+    }
+
+    const cast: Person[] = (castData ?? []).map((c: Record<string, unknown>) => {
+      const p = (c.people ?? c.person) as Record<string, unknown> | null;
+      return {
+        id: (p?.id as string) ?? '',
+        name: (p?.name as string) ?? 'Unknown',
+        headshot_url: (p?.headshot_url as string | null) ?? null,
+        role_type: (c.role_type as string) ?? 'actor',
+        character: (c.character as string | null) ?? null,
+        job: (c.job as string | null) ?? null,
+      };
+    });
+
+    const availability: PlatformAvailability[] = (availData ?? []).map(
+      (a: Record<string, unknown>) => {
+        const plat = (a.platforms ?? a.platform) as Record<string, unknown> | null;
+        const platformName = plat && typeof plat.name === 'string'
+          ? plat.name
+          : 'Unknown';
+        return {
+          id: (a.id as string) ?? '',
+          platform_name: platformName,
+          access_type: (a.access_type as string) ?? 'subscription',
+          price: (a.price as number | null) ?? null,
+          direct_url: (a.direct_url as string | null) ?? null,
+        };
+      }
+    );
+
+    return { ...mediaData, cast, availability };
+  }
+
+  async function enrichFromTMDB(): Promise<string | null> {
+    const baseUrl =
+      Platform.OS === 'web'
+        ? typeof window !== 'undefined'
+          ? window.location.origin
+          : ''
+        : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
+
+    try {
+      const res = await fetch(`${baseUrl}/api/movie?id=${id}`);
+      if (!res.ok) {
+        console.warn('[MovieDetails] Enrich API failed:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      return data.trailerKey ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -126,77 +228,16 @@ export default function MovieDetailsScreen() {
 
     async function fetchMovie() {
       try {
-        const { data: mediaData, error: mediaError } = await supabase
-          .from('media')
-          .select('id, title, synopsis, release_year, poster_url, backdrop_url, type')
-          .eq('id', id)
-          .single();
+        const initial = await fetchFromSupabase();
+        setMovie(initial);
 
-        if (mediaError || !mediaData) {
-          setError(mediaError?.message ?? 'Movie not found');
-          return;
+        const key = await enrichFromTMDB();
+        if (key) setTrailerKey(key);
+
+        if (initial.cast.length === 0) {
+          const enriched = await fetchFromSupabase();
+          setMovie(enriched);
         }
-
-        const { data: castData, error: castError } = await supabase
-          .from('media_cast_crew')
-          .select(`
-            role_type,
-            character,
-            people (id, name, headshot_url)
-          `)
-          .eq('media_id', id);
-
-        if (castError) {
-          console.warn('[MovieDetails] Cast fetch error:', castError);
-        }
-
-        const { data: availData, error: availError } = await supabase
-          .from('media_availability')
-          .select(`
-            id,
-            access_type,
-            price,
-            direct_url,
-            platforms (id, name)
-          `)
-          .eq('media_id', id);
-
-        if (availError) {
-          console.warn('[MovieDetails] Availability fetch error:', availError);
-        }
-
-        const cast: Person[] = (castData ?? []).map((c: Record<string, unknown>) => {
-          const p = (c.people ?? c.person) as Record<string, unknown> | null;
-          return {
-            id: (p?.id as string) ?? '',
-            name: (p?.name as string) ?? 'Unknown',
-            headshot_url: (p?.headshot_url as string | null) ?? null,
-            role_type: (c.role_type as string) ?? 'actor',
-            character: (c.character as string | null) ?? null,
-          };
-        });
-
-        const availability: PlatformAvailability[] = (availData ?? []).map(
-          (a: Record<string, unknown>) => {
-            const plat = (a.platforms ?? a.platform) as Record<string, unknown> | null;
-            const platformName = plat && typeof plat.name === 'string'
-              ? plat.name
-              : 'Unknown';
-            return {
-              id: (a.id as string) ?? '',
-              platform_name: platformName,
-              access_type: (a.access_type as string) ?? 'subscription',
-              price: (a.price as number | null) ?? null,
-              direct_url: (a.direct_url as string | null) ?? null,
-            };
-          }
-        );
-
-        setMovie({
-          ...mediaData,
-          cast,
-          availability,
-        });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
       } finally {
@@ -240,6 +281,13 @@ export default function MovieDetailsScreen() {
         <Text style={styles.backButtonText}>← Back</Text>
       </Pressable>
 
+      {/* Trailer */}
+      {trailerKey ? (
+        <View style={styles.trailerSection}>
+          <TrailerPlayer videoId={trailerKey} />
+        </View>
+      ) : null}
+
       {/* Backdrop */}
       <View style={styles.backdropContainer}>
         {movie.backdrop_url ? (
@@ -274,9 +322,9 @@ export default function MovieDetailsScreen() {
       {/* Title & Meta */}
       <View style={styles.metaSection}>
         <Text style={styles.title}>{movie.title}</Text>
-        {movie.release_year && (
+        {movie.release_year != null ? (
           <Text style={styles.year}>{movie.release_year}</Text>
-        )}
+        ) : null}
       </View>
 
       {/* Watchlist Button */}
@@ -313,15 +361,15 @@ export default function MovieDetailsScreen() {
       </View>
 
       {/* Synopsis */}
-      {movie.synopsis && (
+      {movie.synopsis ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Synopsis</Text>
           <Text style={styles.synopsis}>{movie.synopsis}</Text>
         </View>
-      )}
+      ) : null}
 
-      {/* Cast */}
-      {movie.cast.length > 0 && (
+      {/* Cast (Actors) */}
+      {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cast</Text>
           <ScrollView
@@ -329,35 +377,55 @@ export default function MovieDetailsScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.castScroll}
           >
-            {movie.cast.map((person) => (
-              <View key={person.id} style={styles.castCard}>
-                {person.headshot_url ? (
-                  <Image
-                    source={{ uri: person.headshot_url }}
-                    style={styles.castPhoto}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.castPhotoPlaceholder}>
-                    <Text style={styles.castInitial}>
-                      {person.name.charAt(0)}
-                    </Text>
-                  </View>
-                )}
-                <Text style={styles.castName} numberOfLines={1}>
-                  {person.name}
-                </Text>
-                {person.character && (
-                  <Text style={styles.castCharacter} numberOfLines={1}>
-                    {person.character}
+            {movie.cast
+              .filter((p) => p.role_type === 'actor')
+              .map((person, idx) => (
+                <View key={`${person.id}-${idx}`} style={styles.castCard}>
+                  {person.headshot_url ? (
+                    <Image
+                      source={{ uri: person.headshot_url }}
+                      style={styles.castPhoto}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.castPhotoPlaceholder}>
+                      <Text style={styles.castInitial}>
+                        {person.name.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.castName} numberOfLines={1}>
+                    {person.name}
                   </Text>
-                )}
-                <Text style={styles.castRole}>{person.role_type}</Text>
-              </View>
-            ))}
+                  {person.character ? (
+                    <Text style={styles.castCharacter} numberOfLines={1}>
+                      {person.character}
+                    </Text>
+                  ) : null}
+                </View>
+              ))}
           </ScrollView>
         </View>
-      )}
+      ) : null}
+
+      {/* Crew */}
+      {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Crew</Text>
+          <View style={styles.crewGrid}>
+            {movie.cast
+              .filter((p) => p.role_type !== 'actor')
+              .map((person, idx) => (
+                <View key={`${person.id}-crew-${idx}`} style={styles.crewItem}>
+                  <Text style={styles.crewRole}>
+                    {person.job ?? person.role_type}
+                  </Text>
+                  <Text style={styles.crewName}>{person.name}</Text>
+                </View>
+              ))}
+          </View>
+        </View>
+      ) : null}
 
       {/* Where to Stream */}
       <View style={styles.streamSection}>
@@ -434,6 +502,11 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  trailerSection: {
+    paddingTop: 90,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
   backdropContainer: {
     height: BACKDROP_HEIGHT,
@@ -577,11 +650,31 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 2,
   },
-  castRole: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 2,
-    textTransform: 'capitalize',
+  crewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  crewItem: {
+    width: '47%',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  crewRole: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6366f1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  crewName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#e5e7eb',
   },
   streamSection: {
     marginHorizontal: 20,

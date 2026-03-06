@@ -63,8 +63,9 @@ CREATE TABLE media_cast_crew (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     person_id UUID NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-    role_type VARCHAR(20) NOT NULL CHECK (role_type IN ('actor', 'director')),
+    role_type VARCHAR(30) NOT NULL CHECK (role_type IN ('actor', 'director', 'writer', 'cinematographer', 'assistant_director')),
     character VARCHAR(255),
+    job VARCHAR(100),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -88,6 +89,7 @@ CREATE TABLE watchlist (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     watched BOOLEAN DEFAULT FALSE,
+    sort_order INTEGER,
     added_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, media_id)
