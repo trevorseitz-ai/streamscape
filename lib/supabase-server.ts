@@ -5,8 +5,14 @@ import { createClient } from '@supabase/supabase-js';
  * Bypasses RLS - use only in API routes for inserting media data.
  */
 export function createSupabaseAdmin() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error(
+      'EXPO_PUBLIC_SUPABASE_URL is required. Set it in your environment variables.'
+    );
+  }
 
   if (!serviceRoleKey) {
     throw new Error(
