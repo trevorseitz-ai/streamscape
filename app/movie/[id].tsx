@@ -13,6 +13,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+
 interface Person {
   id: string;
   name: string;
@@ -42,9 +45,148 @@ interface MovieDetails {
   availability: PlatformAvailability[];
 }
 
+interface TMDBMovieResponse {
+  id: number;
+  title: string;
+  overview: string | null;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  release_date: string;
+  credits?: {
+    cast?: Array<{
+      id: number;
+      name: string;
+      character: string | null;
+      profile_path: string | null;
+    }>;
+    crew?: Array<{
+      id: number;
+      name: string;
+      job: string;
+      profile_path: string | null;
+    }>;
+  };
+  'watch/providers'?: {
+    results?: {
+      US?: {
+        flatrate?: Array<{ provider_name: string }>;
+        rent?: Array<{ provider_name: string }>;
+        buy?: Array<{ provider_name: string }>;
+      };
+    };
+  };
+  videos?: {
+    results?: Array<{ key: string; site: string; type: string }>;
+  };
+}
+
 const BACKDROP_HEIGHT = 220;
 const POSTER_WIDTH = 100;
 const POSTER_OVERLAP = 24;
+
+const CREW_JOBS = new Set([
+  'Director', 'Writer', 'Screenplay',
+  'Director of Photography', 'First Assistant Director',
+]);
+
+const CREW_ROLE_MAP: Record<string, string> = {
+  Director: 'director',
+  Writer: 'writer',
+  Screenplay: 'writer',
+  'Director of Photography': 'cinematographer',
+  'First Assistant Director': 'assistant_director',
+};
+
+function toFullImageUrl(path: string | null | undefined): string | null {
+  if (!path || !path.startsWith('/')) return null;
+  return `${TMDB_IMAGE_BASE}${path}`;
+}
+
+async function fetchMovieFromTMDB(tmdbId: number): Promise<{
+  movie: MovieDetails;
+  trailerKey: string | null;
+}> {
+  const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+  if (!apiKey) throw new Error('TMDB API key not configured');
+
+  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos&language=en-US`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) throw new Error(`Movie not found (TMDB error ${res.status})`);
+
+  const data: TMDBMovieResponse = await res.json();
+
+  const releaseYear = data.release_date
+    ? parseInt(data.release_date.slice(0, 4), 10)
+    : null;
+
+  const actors: Person[] = (data.credits?.cast ?? []).slice(0, 10).map((c) => ({
+    id: String(c.id),
+    name: c.name,
+    headshot_url: toFullImageUrl(c.profile_path),
+    role_type: 'actor',
+    character: c.character ?? null,
+    job: null,
+  }));
+
+  const addedCrew = new Set<string>();
+  const crew: Person[] = [];
+  for (const c of data.credits?.crew ?? []) {
+    if (!CREW_JOBS.has(c.job)) continue;
+    const key = `${c.name}::${c.job}`;
+    if (addedCrew.has(key)) continue;
+    addedCrew.add(key);
+    crew.push({
+      id: String(c.id),
+      name: c.name,
+      headshot_url: toFullImageUrl(c.profile_path),
+      role_type: CREW_ROLE_MAP[c.job] ?? c.job,
+      character: null,
+      job: c.job,
+    });
+  }
+
+  const us = data['watch/providers']?.results?.US;
+  const availability: PlatformAvailability[] = [];
+  const addProviders = (
+    list: Array<{ provider_name: string }> | undefined,
+    accessType: string
+  ) => {
+    for (const p of list ?? []) {
+      availability.push({
+        id: `${accessType}-${p.provider_name}`,
+        platform_name: p.provider_name,
+        access_type: accessType,
+        price: null,
+        direct_url: null,
+      });
+    }
+  };
+  addProviders(us?.flatrate, 'subscription');
+  addProviders(us?.rent, 'rent');
+  addProviders(us?.buy, 'buy');
+
+  const trailer = (data.videos?.results ?? []).find(
+    (v) => v.site === 'YouTube' && v.type === 'Trailer'
+  );
+
+  return {
+    movie: {
+      id: String(data.id),
+      title: data.title,
+      synopsis: data.overview ?? null,
+      release_year: releaseYear,
+      poster_url: toFullImageUrl(data.poster_path),
+      backdrop_url: toFullImageUrl(data.backdrop_path),
+      type: 'movie',
+      cast: [...actors, ...crew],
+      availability,
+    },
+    trailerKey: trailer?.key ?? null,
+  };
+}
 
 function formatAccessType(access: PlatformAvailability): string {
   const type = access.access_type.charAt(0).toUpperCase() + access.access_type.slice(1);
@@ -67,29 +209,52 @@ export default function MovieDetailsScreen() {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
+
+  const isTmdbId = /^\d+$/.test(id ?? '');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session && id) checkWatchlist(session.user.id);
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        if (session && id) checkWatchlist(session.user.id);
+      (_event, s) => {
+        setSession(s);
       }
     );
     return () => subscription.unsubscribe();
-  }, [id]);
+  }, []);
 
-  async function checkWatchlist(userId: string) {
+  useEffect(() => {
+    if (session && supabaseMediaId) {
+      checkWatchlist(session.user.id, supabaseMediaId);
+    }
+  }, [session, supabaseMediaId]);
+
+  async function checkWatchlist(userId: string, mediaId: string) {
     const { data } = await supabase
       .from('watchlist')
       .select('id')
       .eq('user_id', userId)
-      .eq('media_id', id)
+      .eq('media_id', mediaId)
       .maybeSingle();
     setInWatchlist(!!data);
+  }
+
+  async function findSupabaseMediaId(title: string, releaseYear: number | null) {
+    let query = supabase
+      .from('media')
+      .select('id')
+      .ilike('title', title);
+
+    if (releaseYear != null) {
+      query = query.eq('release_year', releaseYear);
+    }
+
+    const { data } = await query.limit(1).maybeSingle();
+    if (data) {
+      setSupabaseMediaId(data.id);
+    }
   }
 
   async function toggleWatchlist() {
@@ -97,6 +262,10 @@ export default function MovieDetailsScreen() {
       router.push('/login');
       return;
     }
+
+    const mediaId = supabaseMediaId;
+    if (!mediaId) return;
+
     setWatchlistLoading(true);
     try {
       if (inWatchlist) {
@@ -104,7 +273,7 @@ export default function MovieDetailsScreen() {
           .from('watchlist')
           .delete()
           .eq('user_id', session.user.id)
-          .eq('media_id', id);
+          .eq('media_id', mediaId);
         setInWatchlist(false);
       } else {
         const { count } = await supabase
@@ -114,7 +283,7 @@ export default function MovieDetailsScreen() {
 
         await supabase.from('watchlist').insert({
           user_id: session.user.id,
-          media_id: id,
+          media_id: mediaId,
           watched: false,
           sort_order: count ?? 0,
         });
@@ -127,11 +296,11 @@ export default function MovieDetailsScreen() {
     }
   }
 
-  async function fetchFromSupabase() {
+  async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
       .from('media')
       .select('id, title, synopsis, release_year, poster_url, backdrop_url, type')
-      .eq('id', id)
+      .eq('id', mediaId)
       .single();
 
     if (mediaError || !mediaData) {
@@ -146,7 +315,7 @@ export default function MovieDetailsScreen() {
         job,
         people (id, name, headshot_url)
       `)
-      .eq('media_id', id);
+      .eq('media_id', mediaId);
 
     if (castError) {
       console.warn('[MovieDetails] Cast fetch error:', castError);
@@ -161,7 +330,7 @@ export default function MovieDetailsScreen() {
         direct_url,
         platforms (id, name)
       `)
-      .eq('media_id', id);
+      .eq('media_id', mediaId);
 
     if (availError) {
       console.warn('[MovieDetails] Availability fetch error:', availError);
@@ -198,7 +367,7 @@ export default function MovieDetailsScreen() {
     return { ...mediaData, cast, availability };
   }
 
-  async function enrichFromTMDB(): Promise<string | null> {
+  async function enrichFromTMDB(mediaId: string): Promise<string | null> {
     const baseUrl =
       Platform.OS === 'web'
         ? typeof window !== 'undefined'
@@ -207,7 +376,7 @@ export default function MovieDetailsScreen() {
         : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
 
     try {
-      const res = await fetch(`${baseUrl}/api/movie?id=${id}`);
+      const res = await fetch(`${baseUrl}/api/movie?id=${mediaId}`);
       if (!res.ok) {
         console.warn('[MovieDetails] Enrich API failed:', res.status);
         return null;
@@ -228,15 +397,25 @@ export default function MovieDetailsScreen() {
 
     async function fetchMovie() {
       try {
-        const initial = await fetchFromSupabase();
-        setMovie(initial);
+        if (isTmdbId) {
+          const tmdbId = Number(id);
+          const { movie: tmdbMovie, trailerKey: key } =
+            await fetchMovieFromTMDB(tmdbId);
+          setMovie(tmdbMovie);
+          if (key) setTrailerKey(key);
+          await findSupabaseMediaId(tmdbMovie.title, tmdbMovie.release_year);
+        } else {
+          setSupabaseMediaId(id);
+          const initial = await fetchFromSupabase(id);
+          setMovie(initial);
 
-        const key = await enrichFromTMDB();
-        if (key) setTrailerKey(key);
+          const key = await enrichFromTMDB(id);
+          if (key) setTrailerKey(key);
 
-        if (initial.cast.length === 0) {
-          const enriched = await fetchFromSupabase();
-          setMovie(enriched);
+          if (initial.cast.length === 0) {
+            const enriched = await fetchFromSupabase(id);
+            setMovie(enriched);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
