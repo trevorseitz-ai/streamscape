@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
-  Platform,
   FlatList,
   Switch,
   useWindowDimensions,
@@ -13,6 +12,9 @@ import {
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useRouter } from 'expo-router';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const START_YEAR = 1980;
@@ -49,6 +51,76 @@ interface DiscoverResult {
   release_year: number | null;
   vote_average: number | null;
   platforms: Array<{ name: string; access_type: string }>;
+}
+
+interface TMDBDiscoverResponse {
+  results?: Array<{
+    id: number;
+    title: string;
+    poster_path: string | null;
+    release_date: string;
+    vote_average: number;
+  }>;
+  total_pages?: number;
+}
+
+function toFullImageUrl(path: string | null | undefined): string | null {
+  if (!path || !path.startsWith('/')) return null;
+  return `${TMDB_IMAGE_BASE}${path}`;
+}
+
+async function fetchDiscoverFromTMDB(
+  year: number,
+  streaming: boolean,
+  page: number,
+  providers: number[],
+  genres: number[],
+  phase: number
+): Promise<{ movies: DiscoverResult[]; total_pages: number }> {
+  const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+  if (!apiKey) throw new Error('TMDB API key not configured');
+
+  let url = `${TMDB_BASE}/discover/movie?primary_release_year=${year}&region=US&page=${page}&language=en-US`;
+
+  if (phase === 2) {
+    url += '&sort_by=popularity.desc';
+  } else {
+    url += '&sort_by=vote_average.desc&vote_count.gte=10';
+  }
+
+  if (providers.length > 0) {
+    url += `&with_watch_providers=${providers.join('|')}&watch_region=US`;
+  } else if (streaming) {
+    url += '&with_watch_monetization_types=flatrate&watch_region=US';
+  }
+
+  if (genres.length > 0) {
+    url += `&with_genres=${genres.join('|')}`;
+  }
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) throw new Error(`TMDB API error: ${res.status}`);
+
+  const data: TMDBDiscoverResponse = await res.json();
+
+  const movies: DiscoverResult[] = (data.results ?? []).map((m) => ({
+    id: String(m.id),
+    title: m.title,
+    poster_url: toFullImageUrl(m.poster_path),
+    release_year: m.release_date
+      ? parseInt(m.release_date.slice(0, 4), 10)
+      : null,
+    vote_average: m.vote_average ?? null,
+    platforms: [],
+  }));
+
+  return {
+    movies,
+    total_pages: Math.min(data.total_pages ?? 1, 500),
+  };
 }
 
 type ListItem =
@@ -104,27 +176,6 @@ export default function DiscoverScreen() {
     return (available - GRID_GAP * (numColumns - 1)) / numColumns;
   }, [screenWidth, numColumns]);
 
-  const buildUrl = useCallback(
-    (year: number, streaming: boolean, pg: number, providers: number[], genres: number[], phase: number) => {
-      const baseUrl =
-        Platform.OS === 'web'
-          ? typeof window !== 'undefined'
-            ? window.location.origin
-            : ''
-          : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
-
-      let url = `${baseUrl}/api/discover?year=${year}&streamingOnly=${streaming}&page=${pg}&phase=${phase}`;
-      if (providers.length > 0) {
-        url += `&providers=${providers.join('|')}`;
-      }
-      if (genres.length > 0) {
-        url += `&genre=${genres.join('|')}`;
-      }
-      return url;
-    },
-    []
-  );
-
   const fetchMovies = useCallback(
     async (year: number, streaming: boolean, genres: number[]) => {
       setLoading(true);
@@ -139,28 +190,18 @@ export default function DiscoverScreen() {
         const freshProviders = await getSavedProviderIds();
         setProviderIds(freshProviders);
 
-        const res = await fetch(buildUrl(year, streaming, 1, freshProviders, genres, 1));
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error ?? `Request failed (${res.status})`);
-          return;
-        }
-
-        const phase1Results: DiscoverResult[] = data.movies ?? [];
+        const data = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 1);
+        const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
-          const res2 = await fetch(buildUrl(year, streaming, 1, freshProviders, genres, 2));
-          const data2 = await res2.json();
-          if (res2.ok && data2.movies) {
-            setPhase2Movies(data2.movies);
-            setTotalPages(data2.total_pages ?? 1);
-          }
+          const data2 = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 2);
+          setPhase2Movies(data2.movies);
+          setTotalPages(data2.total_pages);
           setPage(1);
         } else {
-          setTotalPages(data.total_pages ?? 1);
+          setTotalPages(data.total_pages);
           setPage(1);
         }
       } catch (err) {
@@ -170,7 +211,7 @@ export default function DiscoverScreen() {
         setLoading(false);
       }
     },
-    [buildUrl]
+    []
   );
 
   const loadMore = useCallback(async () => {
@@ -183,19 +224,15 @@ export default function DiscoverScreen() {
         setFetchPhase(2);
 
         try {
-          const res = await fetch(
-            buildUrl(selectedYear, streamingOnly, 1, providerIds, selectedGenres, 2)
+          const data = await fetchDiscoverFromTMDB(
+            selectedYear, streamingOnly, 1, providerIds, selectedGenres, 2
           );
-          const data = await res.json();
-
-          if (res.ok && data.movies) {
-            const deduped = (data.movies as DiscoverResult[]).filter(
-              (m) => !phase1IdsRef.current.has(m.id)
-            );
-            setPhase2Movies(deduped);
-            setPage(1);
-            setTotalPages(data.total_pages ?? 1);
-          }
+          const deduped = data.movies.filter(
+            (m) => !phase1IdsRef.current.has(m.id)
+          );
+          setPhase2Movies(deduped);
+          setPage(1);
+          setTotalPages(data.total_pages);
         } catch (err) {
           console.error('Phase 2 fetch error:', err);
         } finally {
@@ -212,30 +249,27 @@ export default function DiscoverScreen() {
     const nextPage = page + 1;
 
     try {
-      const res = await fetch(
-        buildUrl(selectedYear, streamingOnly, nextPage, providerIds, selectedGenres, fetchPhase)
+      const data = await fetchDiscoverFromTMDB(
+        selectedYear, streamingOnly, nextPage, providerIds, selectedGenres, fetchPhase
       );
-      const data = await res.json();
 
-      if (res.ok && data.movies) {
-        if (fetchPhase === 1) {
-          setPhase1Movies((prev) => [...prev, ...data.movies]);
-        } else {
-          const deduped = (data.movies as DiscoverResult[]).filter(
-            (m) => !phase1IdsRef.current.has(m.id)
-          );
-          setPhase2Movies((prev) => [...prev, ...deduped]);
-        }
-        setPage(nextPage);
-        setTotalPages(data.total_pages ?? totalPages);
+      if (fetchPhase === 1) {
+        setPhase1Movies((prev) => [...prev, ...data.movies]);
+      } else {
+        const deduped = data.movies.filter(
+          (m) => !phase1IdsRef.current.has(m.id)
+        );
+        setPhase2Movies((prev) => [...prev, ...deduped]);
       }
+      setPage(nextPage);
+      setTotalPages(data.total_pages);
     } catch (err) {
       console.error('Load more error:', err);
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loading, selectedYear, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedGenres, buildUrl]);
+  }, [loading, selectedYear, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedGenres]);
 
   const triggerFetch = useCallback(
     (year: number | null, streaming: boolean, genres: number[]) => {
