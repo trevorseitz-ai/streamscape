@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Pressable,
   Platform,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -31,6 +32,7 @@ interface PlatformAvailability {
   access_type: string;
   price: number | null;
   direct_url: string | null;
+  logo_url: string | null;
 }
 
 interface MovieDetails {
@@ -43,6 +45,7 @@ interface MovieDetails {
   type: string;
   cast: Person[];
   availability: PlatformAvailability[];
+  watch_link: string | null;
 }
 
 interface TMDBMovieResponse {
@@ -69,9 +72,10 @@ interface TMDBMovieResponse {
   'watch/providers'?: {
     results?: {
       US?: {
-        flatrate?: Array<{ provider_name: string }>;
-        rent?: Array<{ provider_name: string }>;
-        buy?: Array<{ provider_name: string }>;
+        link?: string;
+        flatrate?: Array<{ provider_name: string; logo_path: string | null }>;
+        rent?: Array<{ provider_name: string; logo_path: string | null }>;
+        buy?: Array<{ provider_name: string; logo_path: string | null }>;
       };
     };
   };
@@ -149,9 +153,10 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   }
 
   const us = data['watch/providers']?.results?.US;
+  const watchLink = us?.link ?? null;
   const availability: PlatformAvailability[] = [];
   const addProviders = (
-    list: Array<{ provider_name: string }> | undefined,
+    list: Array<{ provider_name: string; logo_path: string | null }> | undefined,
     accessType: string
   ) => {
     for (const p of list ?? []) {
@@ -160,7 +165,8 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
         platform_name: p.provider_name,
         access_type: accessType,
         price: null,
-        direct_url: null,
+        direct_url: watchLink,
+        logo_url: toFullImageUrl(p.logo_path),
       });
     }
   };
@@ -183,20 +189,10 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       type: 'movie',
       cast: [...actors, ...crew],
       availability,
+      watch_link: watchLink,
     },
     trailerKey: trailer?.key ?? null,
   };
-}
-
-function formatAccessType(access: PlatformAvailability): string {
-  const type = access.access_type.charAt(0).toUpperCase() + access.access_type.slice(1);
-  if (access.access_type === 'subscription') {
-    return `${type} on ${access.platform_name}`;
-  }
-  if (access.price != null) {
-    return `${type} on ${access.platform_name} for $${access.price}`;
-  }
-  return `${type} on ${access.platform_name}`;
 }
 
 export default function MovieDetailsScreen() {
@@ -328,7 +324,7 @@ export default function MovieDetailsScreen() {
         access_type,
         price,
         direct_url,
-        platforms (id, name)
+        platforms (id, name, logo_url)
       `)
       .eq('media_id', mediaId);
 
@@ -360,11 +356,12 @@ export default function MovieDetailsScreen() {
           access_type: (a.access_type as string) ?? 'subscription',
           price: (a.price as number | null) ?? null,
           direct_url: (a.direct_url as string | null) ?? null,
+          logo_url: (plat?.logo_url as string | null) ?? null,
         };
       }
     );
 
-    return { ...mediaData, cast, availability };
+    return { ...mediaData, cast, availability, watch_link: null };
   }
 
   async function enrichFromTMDB(mediaId: string): Promise<string | null> {
@@ -606,33 +603,148 @@ export default function MovieDetailsScreen() {
         </View>
       ) : null}
 
-      {/* Where to Stream */}
+      {/* Where to Watch */}
       <View style={styles.streamSection}>
-        <Text style={styles.streamSectionTitle}>Where to Stream</Text>
-        <View style={styles.streamList}>
-          {movie.availability.length === 0 ? (
-            <Text style={styles.noStreaming}>No streaming options found</Text>
-          ) : (
-            movie.availability.map((avail) => (
-              <View key={avail.id} style={styles.streamItem}>
-                <View
-                  style={[
-                    styles.streamBadge,
-                    avail.access_type === 'subscription' && styles.badgeSubscription,
-                    avail.access_type === 'rent' && styles.badgeRent,
-                    avail.access_type === 'buy' && styles.badgeBuy,
-                  ]}
-                >
-                  <Text style={styles.streamBadgeText}>
-                    {avail.access_type.toUpperCase()}
-                  </Text>
+        <Text style={styles.streamSectionTitle}>Where to Watch</Text>
+        {movie.availability.length === 0 ? (
+          <Text style={styles.noStreaming}>No streaming options found</Text>
+        ) : (
+          <>
+            {movie.availability.filter((a) => a.access_type === 'subscription').length > 0 ? (
+              <View style={styles.providerGroup}>
+                <Text style={styles.providerGroupLabel}>Stream</Text>
+                <View style={styles.providerIconRow}>
+                  {movie.availability
+                    .filter((a) => a.access_type === 'subscription')
+                    .map((avail) => (
+                      <Pressable
+                        key={avail.id}
+                        style={({ pressed }) => [
+                          styles.providerIcon,
+                          pressed && styles.providerIconPressed,
+                        ]}
+                        onPress={() => {
+                          if (avail.direct_url) Linking.openURL(avail.direct_url);
+                        }}
+                      >
+                        {avail.logo_url ? (
+                          <Image
+                            source={{ uri: avail.logo_url }}
+                            style={styles.providerLogo}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.providerLogoPlaceholder}>
+                            <Text style={styles.providerLogoInitial}>
+                              {avail.platform_name.charAt(0)}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={styles.providerName} numberOfLines={1}>
+                          {avail.platform_name}
+                        </Text>
+                      </Pressable>
+                    ))}
                 </View>
-                <Text style={styles.streamText}>
-                  {formatAccessType(avail)}
-                </Text>
               </View>
-            ))
-          )}
+            ) : null}
+
+            {movie.availability.filter((a) => a.access_type === 'rent').length > 0 ? (
+              <View style={styles.providerGroup}>
+                <Text style={styles.providerGroupLabel}>Rent</Text>
+                <View style={styles.providerIconRow}>
+                  {movie.availability
+                    .filter((a) => a.access_type === 'rent')
+                    .map((avail) => (
+                      <Pressable
+                        key={avail.id}
+                        style={({ pressed }) => [
+                          styles.providerIcon,
+                          pressed && styles.providerIconPressed,
+                        ]}
+                        onPress={() => {
+                          if (avail.direct_url) Linking.openURL(avail.direct_url);
+                        }}
+                      >
+                        {avail.logo_url ? (
+                          <Image
+                            source={{ uri: avail.logo_url }}
+                            style={styles.providerLogo}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.providerLogoPlaceholder}>
+                            <Text style={styles.providerLogoInitial}>
+                              {avail.platform_name.charAt(0)}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={styles.providerName} numberOfLines={1}>
+                          {avail.platform_name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                </View>
+              </View>
+            ) : null}
+
+            {movie.availability.filter((a) => a.access_type === 'buy').length > 0 ? (
+              <View style={styles.providerGroup}>
+                <Text style={styles.providerGroupLabel}>Buy</Text>
+                <View style={styles.providerIconRow}>
+                  {movie.availability
+                    .filter((a) => a.access_type === 'buy')
+                    .map((avail) => (
+                      <Pressable
+                        key={avail.id}
+                        style={({ pressed }) => [
+                          styles.providerIcon,
+                          pressed && styles.providerIconPressed,
+                        ]}
+                        onPress={() => {
+                          if (avail.direct_url) Linking.openURL(avail.direct_url);
+                        }}
+                      >
+                        {avail.logo_url ? (
+                          <Image
+                            source={{ uri: avail.logo_url }}
+                            style={styles.providerLogo}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.providerLogoPlaceholder}>
+                            <Text style={styles.providerLogoInitial}>
+                              {avail.platform_name.charAt(0)}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={styles.providerName} numberOfLines={1}>
+                          {avail.platform_name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                </View>
+              </View>
+            ) : null}
+          </>
+        )}
+
+        {movie.watch_link ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.moreInfoButton,
+              pressed && styles.moreInfoButtonPressed,
+            ]}
+            onPress={() => Linking.openURL(movie.watch_link!)}
+          >
+            <Text style={styles.moreInfoText}>More Info on TMDB →</Text>
+          </Pressable>
+        ) : null}
+
+        <View style={styles.justWatchAttribution}>
+          <Text style={styles.justWatchText}>
+            Streaming data powered by JustWatch
+          </Text>
         </View>
       </View>
 
@@ -870,43 +982,86 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     letterSpacing: -0.3,
   },
-  streamList: {
+  providerGroup: {
+    marginBottom: 20,
   },
-  streamItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  providerGroupLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     marginBottom: 12,
   },
-  streamBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    minWidth: 90,
+  providerIconRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+  },
+  providerIcon: {
     alignItems: 'center',
+    width: 68,
   },
-  badgeSubscription: {
-    backgroundColor: '#10b981',
+  providerIconPressed: {
+    transform: [{ scale: 0.92 }],
+    opacity: 0.8,
   },
-  badgeRent: {
-    backgroundColor: '#f59e0b',
+  providerLogo: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#1f1f1f',
   },
-  badgeBuy: {
-    backgroundColor: '#6366f1',
+  providerLogoPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  streamBadgeText: {
-    fontSize: 11,
+  providerLogoInitial: {
+    fontSize: 20,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#6b7280',
   },
-  streamText: {
-    fontSize: 15,
-    color: '#e5e7eb',
-    flex: 1,
-    marginLeft: 12,
+  providerName: {
+    fontSize: 11,
+    color: '#d1d5db',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  moreInfoButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+    marginBottom: 4,
+  },
+  moreInfoButtonPressed: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  moreInfoText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366f1',
   },
   noStreaming: {
     fontSize: 15,
     color: '#9ca3af',
+    marginBottom: 8,
+  },
+  justWatchAttribution: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2d2d2d',
+    alignItems: 'center',
+  },
+  justWatchText: {
+    fontSize: 11,
+    color: '#6b7280',
   },
   bottomSpacer: {
     height: 40,
