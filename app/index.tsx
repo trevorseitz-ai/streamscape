@@ -17,7 +17,7 @@ export default function LandingScreen() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        router.replace('/(tabs)/discover');
+        router.replace('/(tabs)');
       } else {
         setChecking(false);
       }

@@ -33,7 +33,7 @@ export default function SignupScreen() {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      router.replace('/(tabs)/discover');
+      router.replace('/(tabs)');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed');
     } finally {
