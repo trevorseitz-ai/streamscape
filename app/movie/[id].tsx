@@ -317,6 +317,10 @@ export default function MovieDetailsScreen() {
       return;
     }
 
+    const nextInWatchlist = !inWatchlist;
+    setInWatchlist(nextInWatchlist);
+    setWatchlistLoading(true);
+
     const tmdbId = isTmdbId ? Number(id) : null;
 
     const resolveMediaId = async (): Promise<string | null> => {
@@ -332,96 +336,128 @@ export default function MovieDetailsScreen() {
       return null;
     };
 
-    if (inWatchlist) {
-      setInWatchlist(false);
+    const syncCheck = async (mediaId: string) => {
+      const { data } = await supabase
+        .from('watchlist')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('media_id', mediaId)
+        .maybeSingle();
+      setInWatchlist(!!data);
+    };
+
+    try {
       const mediaId = await resolveMediaId();
-      if (!mediaId) return;
-      setWatchlistLoading(true);
-      try {
+
+      if (nextInWatchlist) {
+        if (!mediaId && movie && tmdbId != null) {
+          const numericTmdbId = Number(id);
+          const mediaPayload = {
+            tmdb_id: numericTmdbId,
+            type: 'movie' as const,
+            title: movie.title,
+            poster_url: movie.poster_url ?? null,
+            backdrop_url: movie.backdrop_url ?? null,
+            release_year: movie.release_year ?? null,
+          };
+
+          const { data: inserted, error } = await supabase
+            .from('media')
+            .insert(mediaPayload)
+            .select('id')
+            .single();
+
+          if (error) {
+            if (error.code === '23505') {
+              const { data: existing } = await supabase
+                .from('media')
+                .select('id')
+                .eq('tmdb_id', numericTmdbId)
+                .maybeSingle();
+              const resolvedId = existing?.id ?? null;
+              if (resolvedId) {
+                setSupabaseMediaId(resolvedId);
+                const { count } = await supabase
+                  .from('watchlist')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('user_id', session.user.id);
+                const { error: insertErr } = await supabase
+                  .from('watchlist')
+                  .insert({
+                    user_id: session.user.id,
+                    media_id: resolvedId,
+                    watched: false,
+                    sort_order: count ?? 0,
+                  });
+                if (insertErr) throw insertErr;
+                await syncCheck(resolvedId);
+              } else {
+                throw error;
+              }
+            } else {
+              throw error;
+            }
+          } else {
+            const newMediaId = inserted?.id ?? null;
+            if (newMediaId) {
+              setSupabaseMediaId(newMediaId);
+              const { count } = await supabase
+                .from('watchlist')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', session.user.id);
+              const { error: insertErr } = await supabase
+                .from('watchlist')
+                .insert({
+                  user_id: session.user.id,
+                  media_id: newMediaId,
+                  watched: false,
+                  sort_order: count ?? 0,
+                });
+              if (insertErr) throw insertErr;
+              await syncCheck(newMediaId);
+            } else {
+              setInWatchlist(false);
+            }
+          }
+        } else if (mediaId) {
+          const { count } = await supabase
+            .from('watchlist')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', session.user.id);
+          const { error } = await supabase
+            .from('watchlist')
+            .insert({
+              user_id: session.user.id,
+              media_id: mediaId,
+              watched: false,
+              sort_order: count ?? 0,
+            });
+          if (error) throw error;
+          await syncCheck(mediaId);
+        } else {
+          setInWatchlist(false);
+        }
+      } else {
+        if (!mediaId) {
+          setInWatchlist(false);
+          return;
+        }
         const { error } = await supabase
           .from('watchlist')
           .delete()
           .eq('user_id', session.user.id)
           .eq('media_id', mediaId);
         if (error) throw error;
-      } catch (err) {
-        console.error('Watchlist error:', err);
-        setInWatchlist(true);
-        Alert.alert(
-          'Could not remove',
-          'Failed to remove from watchlist. Please try again.'
-        );
-      } finally {
-        setWatchlistLoading(false);
+        await syncCheck(mediaId);
       }
-      return;
-    }
-
-    setInWatchlist(true);
-    setWatchlistLoading(true);
-
-    try {
-      let mediaId = await resolveMediaId();
-
-      if (!mediaId && movie && tmdbId != null) {
-        const numericTmdbId = Number(id);
-
-        const mediaPayload = {
-          tmdb_id: numericTmdbId,
-          type: 'movie' as const,
-          title: movie.title,
-          poster_url: movie.poster_url ?? null,
-          backdrop_url: movie.backdrop_url ?? null,
-          release_year: movie.release_year ?? null,
-        };
-
-        const { data: inserted, error } = await supabase
-          .from('media')
-          .insert(mediaPayload)
-          .select('id')
-          .single();
-
-        if (error) {
-          if (error.code === '23505') {
-            const { data: existing } = await supabase
-              .from('media')
-              .select('id')
-              .eq('tmdb_id', numericTmdbId)
-              .maybeSingle();
-            mediaId = existing?.id ?? null;
-          } else {
-            throw error;
-          }
-        } else {
-          mediaId = inserted?.id ?? null;
-        }
-        if (mediaId) setSupabaseMediaId(mediaId);
-      }
-
-      if (!mediaId) {
-        setInWatchlist(false);
-        return;
-      }
-
-      const { count } = await supabase
-        .from('watchlist')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', session.user.id);
-
-      const { error } = await supabase.from('watchlist').insert({
-        user_id: session.user.id,
-        media_id: mediaId,
-        watched: false,
-        sort_order: count ?? 0,
-      });
-
-      if (error) throw error;
     } catch (err) {
       console.error('Watchlist error:', err);
-      setInWatchlist(false);
+      setInWatchlist(!nextInWatchlist);
       Alert.alert(
-        'Could not save',
-        'Failed to add to watchlist. Please try again.'
+        nextInWatchlist ? 'Could not save' : 'Could not remove',
+        nextInWatchlist
+          ? 'Failed to add to watchlist. Please try again.'
+          : 'Failed to remove from watchlist. Please try again.'
       );
     } finally {
       setWatchlistLoading(false);
@@ -714,13 +750,14 @@ export default function MovieDetailsScreen() {
           onPress={toggleWatchlist}
           disabled={watchlistLoading}
         >
-          {watchlistLoading ? (
-            <ActivityIndicator
-              size="small"
-              color={inWatchlist ? '#ef4444' : '#ffffff'}
-            />
-          ) : (
-            <View style={styles.watchlistButtonContent}>
+          <View style={styles.watchlistButtonContent}>
+            {watchlistLoading ? (
+              <ActivityIndicator
+                size="small"
+                color={inWatchlist ? '#22c55e' : '#ffffff'}
+                style={styles.watchlistSpinner}
+              />
+            ) : (
               <Ionicons
                 name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
                 size={22}
@@ -732,20 +769,20 @@ export default function MovieDetailsScreen() {
                       : '#a5b4fc'
                 }
               />
-              <Text
-                style={[
-                  styles.watchlistButtonText,
-                  inWatchlist && styles.watchlistButtonTextRemove,
-                ]}
-              >
-                {session
-                  ? inWatchlist
-                    ? 'On Watchlist'
-                    : 'Add to Watchlist'
-                  : 'Sign in to Add to Watchlist'}
-              </Text>
-            </View>
-          )}
+            )}
+            <Text
+              style={[
+                styles.watchlistButtonText,
+                inWatchlist && styles.watchlistButtonTextRemove,
+              ]}
+            >
+              {session
+                ? inWatchlist
+                  ? 'On Watchlist'
+                  : 'Add to Watchlist'
+                : 'Sign in to Add to Watchlist'}
+            </Text>
+          </View>
         </Pressable>
       </View>
 
@@ -985,6 +1022,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  watchlistSpinner: {
+    marginRight: 0,
   },
   watchlistButtonText: {
     color: '#ffffff',
