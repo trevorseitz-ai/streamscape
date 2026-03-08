@@ -9,9 +9,12 @@ import {
   Pressable,
   Platform,
   Linking,
+  Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -28,6 +31,7 @@ interface Person {
 
 interface PlatformAvailability {
   id: string;
+  provider_id: number;
   platform_name: string;
   access_type: string;
   price: number | null;
@@ -73,9 +77,9 @@ interface TMDBMovieResponse {
     results?: {
       US?: {
         link?: string;
-        flatrate?: Array<{ provider_name: string; logo_path: string | null }>;
-        rent?: Array<{ provider_name: string; logo_path: string | null }>;
-        buy?: Array<{ provider_name: string; logo_path: string | null }>;
+        flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+        rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+        buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
       };
     };
   };
@@ -156,12 +160,13 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   const watchLink = us?.link ?? null;
   const availability: PlatformAvailability[] = [];
   const addProviders = (
-    list: Array<{ provider_name: string; logo_path: string | null }> | undefined,
+    list: Array<{ provider_id: number; provider_name: string; logo_path: string | null }> | undefined,
     accessType: string
   ) => {
     for (const p of list ?? []) {
       availability.push({
         id: `${accessType}-${p.provider_name}`,
+        provider_id: p.provider_id,
         platform_name: p.provider_name,
         access_type: accessType,
         price: null,
@@ -206,6 +211,7 @@ export default function MovieDetailsScreen() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
+  const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -222,22 +228,74 @@ export default function MovieDetailsScreen() {
   }, []);
 
   useEffect(() => {
-    if (session && supabaseMediaId) {
-      checkWatchlist(session.user.id, supabaseMediaId);
+    async function loadEnabledServices() {
+      if (session) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('enabled_services')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.enabled_services) {
+          setEnabledServiceIds(new Set(profile.enabled_services as number[]));
+          return;
+        }
+      }
+      const localIds = await getSavedProviderIds();
+      setEnabledServiceIds(new Set(localIds));
     }
-  }, [session, supabaseMediaId]);
 
-  async function checkWatchlist(userId: string, mediaId: string) {
-    const { data } = await supabase
-      .from('watchlist')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('media_id', mediaId)
-      .maybeSingle();
-    setInWatchlist(!!data);
-  }
+    loadEnabledServices();
+  }, [session]);
 
-  async function findSupabaseMediaId(title: string, releaseYear: number | null) {
+  useEffect(() => {
+    if (!session) return;
+
+    async function checkIfInWatchlist() {
+      let mediaId: string | null = supabaseMediaId;
+
+      if (!mediaId && isTmdbId && id) {
+        const { data } = await supabase
+          .from('media')
+          .select('id')
+          .eq('tmdb_id', Number(id))
+          .maybeSingle();
+        mediaId = data?.id ?? null;
+      }
+
+      if (!mediaId) {
+        setInWatchlist(false);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('watchlist')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('media_id', mediaId)
+        .maybeSingle();
+      setInWatchlist(!!data);
+    }
+
+    checkIfInWatchlist();
+  }, [session, supabaseMediaId, isTmdbId, id]);
+
+  async function findSupabaseMediaId(
+    title: string,
+    releaseYear: number | null,
+    tmdbId?: number
+  ) {
+    if (tmdbId != null) {
+      const { data } = await supabase
+        .from('media')
+        .select('id')
+        .eq('tmdb_id', tmdbId)
+        .maybeSingle();
+      if (data) {
+        setSupabaseMediaId(data.id);
+        return;
+      }
+    }
     let query = supabase
       .from('media')
       .select('id')
@@ -259,34 +317,112 @@ export default function MovieDetailsScreen() {
       return;
     }
 
-    const mediaId = supabaseMediaId;
-    if (!mediaId) return;
+    const tmdbId = isTmdbId ? Number(id) : null;
 
-    setWatchlistLoading(true);
-    try {
-      if (inWatchlist) {
-        await supabase
+    const resolveMediaId = async (): Promise<string | null> => {
+      if (supabaseMediaId) return supabaseMediaId;
+      if (tmdbId != null) {
+        const { data } = await supabase
+          .from('media')
+          .select('id')
+          .eq('tmdb_id', tmdbId)
+          .maybeSingle();
+        return data?.id ?? null;
+      }
+      return null;
+    };
+
+    if (inWatchlist) {
+      setInWatchlist(false);
+      const mediaId = await resolveMediaId();
+      if (!mediaId) return;
+      setWatchlistLoading(true);
+      try {
+        const { error } = await supabase
           .from('watchlist')
           .delete()
           .eq('user_id', session.user.id)
           .eq('media_id', mediaId);
-        setInWatchlist(false);
-      } else {
-        const { count } = await supabase
-          .from('watchlist')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', session.user.id);
-
-        await supabase.from('watchlist').insert({
-          user_id: session.user.id,
-          media_id: mediaId,
-          watched: false,
-          sort_order: count ?? 0,
-        });
+        if (error) throw error;
+      } catch (err) {
+        console.error('Watchlist error:', err);
         setInWatchlist(true);
+        Alert.alert(
+          'Could not remove',
+          'Failed to remove from watchlist. Please try again.'
+        );
+      } finally {
+        setWatchlistLoading(false);
       }
+      return;
+    }
+
+    setInWatchlist(true);
+    setWatchlistLoading(true);
+
+    try {
+      let mediaId = await resolveMediaId();
+
+      if (!mediaId && movie && tmdbId != null) {
+        const numericTmdbId = Number(id);
+
+        const mediaPayload = {
+          tmdb_id: numericTmdbId,
+          type: 'movie' as const,
+          title: movie.title,
+          poster_url: movie.poster_url ?? null,
+          backdrop_url: movie.backdrop_url ?? null,
+          release_year: movie.release_year ?? null,
+        };
+
+        const { data: inserted, error } = await supabase
+          .from('media')
+          .insert(mediaPayload)
+          .select('id')
+          .single();
+
+        if (error) {
+          if (error.code === '23505') {
+            const { data: existing } = await supabase
+              .from('media')
+              .select('id')
+              .eq('tmdb_id', numericTmdbId)
+              .maybeSingle();
+            mediaId = existing?.id ?? null;
+          } else {
+            throw error;
+          }
+        } else {
+          mediaId = inserted?.id ?? null;
+        }
+        if (mediaId) setSupabaseMediaId(mediaId);
+      }
+
+      if (!mediaId) {
+        setInWatchlist(false);
+        return;
+      }
+
+      const { count } = await supabase
+        .from('watchlist')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id);
+
+      const { error } = await supabase.from('watchlist').insert({
+        user_id: session.user.id,
+        media_id: mediaId,
+        watched: false,
+        sort_order: count ?? 0,
+      });
+
+      if (error) throw error;
     } catch (err) {
       console.error('Watchlist error:', err);
+      setInWatchlist(false);
+      Alert.alert(
+        'Could not save',
+        'Failed to add to watchlist. Please try again.'
+      );
     } finally {
       setWatchlistLoading(false);
     }
@@ -352,6 +488,7 @@ export default function MovieDetailsScreen() {
           : 'Unknown';
         return {
           id: (a.id as string) ?? '',
+          provider_id: 0,
           platform_name: platformName,
           access_type: (a.access_type as string) ?? 'subscription',
           price: (a.price as number | null) ?? null,
@@ -400,7 +537,11 @@ export default function MovieDetailsScreen() {
             await fetchMovieFromTMDB(tmdbId);
           setMovie(tmdbMovie);
           if (key) setTrailerKey(key);
-          await findSupabaseMediaId(tmdbMovie.title, tmdbMovie.release_year);
+          await findSupabaseMediaId(
+            tmdbMovie.title,
+            tmdbMovie.release_year,
+            tmdbId
+          );
         } else {
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
@@ -439,6 +580,65 @@ export default function MovieDetailsScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
+    return [...providers].sort((a, b) => {
+      const scoreA = enabledServiceIds.has(a.provider_id) ? 0 : 1;
+      const scoreB = enabledServiceIds.has(b.provider_id) ? 0 : 1;
+      return scoreA - scoreB;
+    });
+  }
+
+  function renderProviderGroup(providers: PlatformAvailability[], label: string) {
+    if (providers.length === 0) return null;
+    const sorted = sortByEnabled(providers);
+    return (
+      <View style={styles.providerGroup}>
+        <Text style={styles.providerGroupLabel}>{label}</Text>
+        <View style={styles.providerIconRow}>
+          {sorted.map((avail) => {
+            const isMember = enabledServiceIds.has(avail.provider_id);
+            return (
+              <Pressable
+                key={avail.id}
+                style={({ pressed }) => [
+                  styles.providerIcon,
+                  pressed && styles.providerIconPressed,
+                ]}
+                onPress={() => {
+                  if (avail.direct_url) Linking.openURL(avail.direct_url);
+                }}
+              >
+                <View style={isMember ? styles.providerLogoMember : undefined}>
+                  {avail.logo_url ? (
+                    <Image
+                      source={{ uri: avail.logo_url }}
+                      style={styles.providerLogo}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.providerLogoPlaceholder}>
+                      <Text style={styles.providerLogoInitial}>
+                        {avail.platform_name.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {isMember ? (
+                  <View style={styles.memberBadge}>
+                    <Text style={styles.memberBadgeText}>Member</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.providerName} numberOfLines={1}>
+                  {avail.platform_name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     );
   }
@@ -520,18 +720,31 @@ export default function MovieDetailsScreen() {
               color={inWatchlist ? '#ef4444' : '#ffffff'}
             />
           ) : (
-            <Text
-              style={[
-                styles.watchlistButtonText,
-                inWatchlist && styles.watchlistButtonTextRemove,
-              ]}
-            >
-              {session
-                ? inWatchlist
-                  ? 'Remove from Watchlist'
-                  : 'Add to Watchlist'
-                : 'Sign in to Add to Watchlist'}
-            </Text>
+            <View style={styles.watchlistButtonContent}>
+              <Ionicons
+                name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
+                size={22}
+                color={
+                  inWatchlist
+                    ? '#22c55e'
+                    : session
+                      ? '#ffffff'
+                      : '#a5b4fc'
+                }
+              />
+              <Text
+                style={[
+                  styles.watchlistButtonText,
+                  inWatchlist && styles.watchlistButtonTextRemove,
+                ]}
+              >
+                {session
+                  ? inWatchlist
+                    ? 'On Watchlist'
+                    : 'Add to Watchlist'
+                  : 'Sign in to Add to Watchlist'}
+              </Text>
+            </View>
           )}
         </Pressable>
       </View>
@@ -610,122 +823,18 @@ export default function MovieDetailsScreen() {
           <Text style={styles.noStreaming}>No streaming options found</Text>
         ) : (
           <>
-            {movie.availability.filter((a) => a.access_type === 'subscription').length > 0 ? (
-              <View style={styles.providerGroup}>
-                <Text style={styles.providerGroupLabel}>Stream</Text>
-                <View style={styles.providerIconRow}>
-                  {movie.availability
-                    .filter((a) => a.access_type === 'subscription')
-                    .map((avail) => (
-                      <Pressable
-                        key={avail.id}
-                        style={({ pressed }) => [
-                          styles.providerIcon,
-                          pressed && styles.providerIconPressed,
-                        ]}
-                        onPress={() => {
-                          if (avail.direct_url) Linking.openURL(avail.direct_url);
-                        }}
-                      >
-                        {avail.logo_url ? (
-                          <Image
-                            source={{ uri: avail.logo_url }}
-                            style={styles.providerLogo}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.providerLogoPlaceholder}>
-                            <Text style={styles.providerLogoInitial}>
-                              {avail.platform_name.charAt(0)}
-                            </Text>
-                          </View>
-                        )}
-                        <Text style={styles.providerName} numberOfLines={1}>
-                          {avail.platform_name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                </View>
-              </View>
-            ) : null}
-
-            {movie.availability.filter((a) => a.access_type === 'rent').length > 0 ? (
-              <View style={styles.providerGroup}>
-                <Text style={styles.providerGroupLabel}>Rent</Text>
-                <View style={styles.providerIconRow}>
-                  {movie.availability
-                    .filter((a) => a.access_type === 'rent')
-                    .map((avail) => (
-                      <Pressable
-                        key={avail.id}
-                        style={({ pressed }) => [
-                          styles.providerIcon,
-                          pressed && styles.providerIconPressed,
-                        ]}
-                        onPress={() => {
-                          if (avail.direct_url) Linking.openURL(avail.direct_url);
-                        }}
-                      >
-                        {avail.logo_url ? (
-                          <Image
-                            source={{ uri: avail.logo_url }}
-                            style={styles.providerLogo}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.providerLogoPlaceholder}>
-                            <Text style={styles.providerLogoInitial}>
-                              {avail.platform_name.charAt(0)}
-                            </Text>
-                          </View>
-                        )}
-                        <Text style={styles.providerName} numberOfLines={1}>
-                          {avail.platform_name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                </View>
-              </View>
-            ) : null}
-
-            {movie.availability.filter((a) => a.access_type === 'buy').length > 0 ? (
-              <View style={styles.providerGroup}>
-                <Text style={styles.providerGroupLabel}>Buy</Text>
-                <View style={styles.providerIconRow}>
-                  {movie.availability
-                    .filter((a) => a.access_type === 'buy')
-                    .map((avail) => (
-                      <Pressable
-                        key={avail.id}
-                        style={({ pressed }) => [
-                          styles.providerIcon,
-                          pressed && styles.providerIconPressed,
-                        ]}
-                        onPress={() => {
-                          if (avail.direct_url) Linking.openURL(avail.direct_url);
-                        }}
-                      >
-                        {avail.logo_url ? (
-                          <Image
-                            source={{ uri: avail.logo_url }}
-                            style={styles.providerLogo}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.providerLogoPlaceholder}>
-                            <Text style={styles.providerLogoInitial}>
-                              {avail.platform_name.charAt(0)}
-                            </Text>
-                          </View>
-                        )}
-                        <Text style={styles.providerName} numberOfLines={1}>
-                          {avail.platform_name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                </View>
-              </View>
-            ) : null}
+            {renderProviderGroup(
+              movie.availability.filter((a) => a.access_type === 'subscription'),
+              'Stream'
+            )}
+            {renderProviderGroup(
+              movie.availability.filter((a) => a.access_type === 'rent'),
+              'Rent'
+            )}
+            {renderProviderGroup(
+              movie.availability.filter((a) => a.access_type === 'buy'),
+              'Buy'
+            )}
           </>
         )}
 
@@ -859,8 +968,10 @@ const styles = StyleSheet.create({
   watchlistButton: {
     backgroundColor: '#6366f1',
     paddingVertical: 14,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
   },
   watchlistButtonRemove: {
     backgroundColor: 'transparent',
@@ -869,6 +980,11 @@ const styles = StyleSheet.create({
   },
   watchlistButtonDisabled: {
     opacity: 0.7,
+  },
+  watchlistButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   watchlistButtonText: {
     color: '#ffffff',
@@ -997,6 +1113,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
+    overflow: 'visible',
   },
   providerIcon: {
     alignItems: 'center',
@@ -1011,6 +1128,30 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 12,
     backgroundColor: '#1f1f1f',
+  },
+  providerLogoMember: {
+    borderWidth: 2,
+    borderColor: '#6366f1',
+    borderRadius: 14,
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  memberBadge: {
+    backgroundColor: '#6366f1',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  memberBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ffffff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   providerLogoPlaceholder: {
     width: 52,

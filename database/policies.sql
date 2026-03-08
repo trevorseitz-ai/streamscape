@@ -20,6 +20,7 @@ ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
 
 -- Media
 DROP POLICY IF EXISTS "Media is viewable by everyone" ON media;
+DROP POLICY IF EXISTS "Authenticated users can insert media" ON media;
 
 -- People
 DROP POLICY IF EXISTS "People is viewable by everyone" ON people;
@@ -52,6 +53,9 @@ DROP POLICY IF EXISTS "Users can delete own watchlist" ON watchlist;
 
 CREATE POLICY "Media is viewable by everyone" ON media
     FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can insert media" ON media
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "People is viewable by everyone" ON people
     FOR SELECT USING (true);

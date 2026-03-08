@@ -17,6 +17,7 @@ interface WatchlistMovie {
   watchlistId: string;
   sortOrder: number;
   id: string;
+  tmdb_id: number | null;
   title: string;
   poster_url: string | null;
   release_year: number | null;
@@ -56,7 +57,7 @@ export default function WatchlistScreen() {
     setLoading(true);
     const { data, error } = await supabase
       .from('watchlist')
-      .select('id, sort_order, media_id, media (id, title, poster_url, release_year)')
+      .select('id, sort_order, media_id, media (id, tmdb_id, title, poster_url, release_year)')
       .eq('user_id', userId)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('added_at', { ascending: true });
@@ -73,6 +74,7 @@ export default function WatchlistScreen() {
             watchlistId: row.id as string,
             sortOrder: (row.sort_order as number) ?? index,
             id: m.id as string,
+            tmdb_id: (m.tmdb_id as number | null) ?? null,
             title: m.title as string,
             poster_url: (m.poster_url as string | null) ?? null,
             release_year: (m.release_year as number | null) ?? null,
@@ -172,7 +174,11 @@ export default function WatchlistScreen() {
             <Pressable
               key={movie.watchlistId}
               style={styles.row}
-              onPress={() => router.push(`/movie/${movie.id}`)}
+              onPress={() =>
+                router.push(
+                  `/movie/${movie.tmdb_id ?? movie.id}`
+                )
+              }
             >
               <Text style={styles.rank}>{index + 1}</Text>
 

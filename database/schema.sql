@@ -12,6 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Media: Movies and TV shows
 CREATE TABLE media (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tmdb_id INTEGER UNIQUE,
     type VARCHAR(10) NOT NULL CHECK (type IN ('movie', 'tv')),
     title VARCHAR(500) NOT NULL,
     synopsis TEXT,
@@ -79,6 +80,7 @@ CREATE TABLE user_profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     display_name VARCHAR(255),
     avatar_url TEXT,
+    enabled_services INTEGER[] DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

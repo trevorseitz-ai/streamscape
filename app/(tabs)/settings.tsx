@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { supabase } from '../../lib/supabase';
 import {
   getSavedProviderIds,
   saveProviderIds,
@@ -15,6 +16,25 @@ import {
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
+
+// Comprehensive list: Netflix, Amazon Prime, Disney+, Hulu, Max, Peacock, Paramount+,
+// Apple TV+, Showtime, Starz, Discovery+, Criterion, Mubi, AMC+
+const COMPREHENSIVE_PROVIDER_IDS = new Set([
+  8,    // Netflix
+  9,    // Amazon Prime Video
+  337,  // Disney+
+  15,   // Hulu
+  384,  // Max (HBO Max)
+  386,  // Paramount+
+  531,  // Peacock
+  350,  // Apple TV+
+  37,   // Showtime
+  43,   // Starz
+  540,  // Discovery+
+  258,  // Criterion Channel
+  11,   // Mubi
+  528,  // AMC+
+]);
 
 interface ProviderEntry {
   id: number;
@@ -27,12 +47,42 @@ export default function SettingsScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, s) => setSession(s)
+    );
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     async function load() {
       try {
-        const savedIds = await getSavedProviderIds();
-        setSelectedIds(new Set(savedIds));
+        let enabledIds: number[] = [];
+
+        if (session) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('enabled_services')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profile?.enabled_services) {
+            enabledIds = profile.enabled_services as number[];
+            setSelectedIds(new Set(enabledIds));
+            saveProviderIds(enabledIds);
+          } else {
+            enabledIds = await getSavedProviderIds();
+            setSelectedIds(new Set(enabledIds));
+          }
+        } else {
+          enabledIds = await getSavedProviderIds();
+          setSelectedIds(new Set(enabledIds));
+        }
 
         const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
         if (!apiKey) {
@@ -58,7 +108,14 @@ export default function SettingsScreen() {
           display_priority: number;
         }> = data.results ?? [];
 
+        const enabledSet = new Set(enabledIds);
+
         const mapped = results
+          .filter(
+            (p) =>
+              COMPREHENSIVE_PROVIDER_IDS.has(p.provider_id) ||
+              enabledSet.has(p.provider_id)
+          )
           .sort((a, b) => a.display_priority - b.display_priority)
           .map((p) => ({
             id: p.provider_id,
@@ -77,7 +134,7 @@ export default function SettingsScreen() {
     }
 
     load();
-  }, []);
+  }, [session]);
 
   const handleToggle = useCallback(
     (providerId: number, value: boolean) => {
@@ -88,11 +145,25 @@ export default function SettingsScreen() {
         } else {
           next.delete(providerId);
         }
-        saveProviderIds(Array.from(next));
+        const idsArray = Array.from(next);
+        saveProviderIds(idsArray);
+
+        if (session) {
+          supabase
+            .from('user_profiles')
+            .upsert(
+              { id: session.user.id, enabled_services: idsArray },
+              { onConflict: 'id' }
+            )
+            .then(({ error }) => {
+              if (error) console.warn('Failed to save to Supabase:', error.message);
+            });
+        }
+
         return next;
       });
     },
-    []
+    [session]
   );
 
   if (loading) {
@@ -175,7 +246,8 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 16,
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingBottom: 80,
+    flexGrow: 1,
   },
   center: {
     flex: 1,
