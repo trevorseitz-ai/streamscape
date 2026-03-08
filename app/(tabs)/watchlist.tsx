@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Pressable,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -57,8 +58,9 @@ export default function WatchlistScreen() {
     setLoading(true);
     const { data, error } = await supabase
       .from('watchlist')
-      .select('id, sort_order, media_id, media (id, tmdb_id, title, poster_url, release_year)')
+      .select('id, sort_order, watched, media_id, media (id, tmdb_id, title, poster_url, release_year)')
       .eq('user_id', userId)
+      .eq('watched', false)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('added_at', { ascending: true });
 
@@ -129,6 +131,71 @@ export default function WatchlistScreen() {
     [movies, syncOrder]
   );
 
+  const handleWatched = useCallback(
+    async (watchlistId: string, movie: WatchlistMovie) => {
+      if (!session) return;
+
+      setMovies((prev) => prev.filter((m) => m.watchlistId !== watchlistId));
+
+      try {
+        if (movie.tmdb_id == null) {
+          throw new Error('Movie has no TMDB ID');
+        }
+
+        const { error: insertError } = await supabase
+          .from('watched_history')
+          .insert({
+            user_id: session.user.id,
+            tmdb_id: movie.tmdb_id,
+            title: movie.title,
+            poster_url: movie.poster_url ?? null,
+          });
+
+        if (insertError) throw insertError;
+
+        const { error: deleteError } = await supabase
+          .from('watchlist')
+          .delete()
+          .eq('id', watchlistId)
+          .eq('user_id', session.user.id);
+
+        if (deleteError) throw deleteError;
+      } catch (err) {
+        console.error('Watched error:', err);
+        fetchWatchlist(session.user.id);
+        Alert.alert(
+          'Could not mark as watched',
+          'Failed to save. Please try again.'
+        );
+      }
+    },
+    [session]
+  );
+
+  const handleRemove = useCallback(
+    async (watchlistId: string) => {
+      if (!session) return;
+
+      setMovies((prev) => prev.filter((m) => m.watchlistId !== watchlistId));
+
+      const { error } = await supabase
+        .from('watchlist')
+        .delete()
+        .eq('id', watchlistId)
+        .eq('user_id', session.user.id);
+
+      if (error) {
+        console.error('Watchlist remove error:', error);
+        fetchWatchlist(session.user.id);
+        Alert.alert(
+          'Could not remove',
+          'Failed to remove from watchlist. Please try again.'
+        );
+      }
+    },
+    [session]
+  );
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -180,8 +247,6 @@ export default function WatchlistScreen() {
                 )
               }
             >
-              <Text style={styles.rank}>{index + 1}</Text>
-
               {movie.poster_url ? (
                 <Image
                   source={{ uri: movie.poster_url }}
@@ -203,35 +268,59 @@ export default function WatchlistScreen() {
                 ) : null}
               </View>
 
-              <View style={styles.arrows}>
-                {index > 0 ? (
-                  <Pressable
-                    style={styles.arrowButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      moveItem(index, 'up');
-                    }}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="chevron-up" size={22} color="#a5b4fc" />
-                  </Pressable>
-                ) : (
-                  <View style={styles.arrowSpacer} />
-                )}
-                {index < movies.length - 1 ? (
-                  <Pressable
-                    style={styles.arrowButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      moveItem(index, 'down');
-                    }}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="chevron-down" size={22} color="#a5b4fc" />
-                  </Pressable>
-                ) : (
-                  <View style={styles.arrowSpacer} />
-                )}
+              <View style={styles.actionButtons}>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleWatched(movie.watchlistId, movie);
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
+                </Pressable>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleRemove(movie.watchlistId);
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={24} color="#dc2626" />
+                </Pressable>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    moveItem(index, 'up');
+                  }}
+                  hitSlop={8}
+                  disabled={index === 0}
+                >
+                  <Ionicons
+                    name="chevron-up"
+                    size={24}
+                    color={index === 0 ? '#4b5563' : '#a5b4fc'}
+                  />
+                </Pressable>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    moveItem(index, 'down');
+                  }}
+                  hitSlop={8}
+                  disabled={index === movies.length - 1}
+                >
+                  <Ionicons
+                    name="chevron-down"
+                    size={24}
+                    color={
+                      index === movies.length - 1 ? '#4b5563' : '#a5b4fc'
+                    }
+                  />
+                </Pressable>
               </View>
             </Pressable>
           ))}
@@ -290,13 +379,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
   },
-  rank: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#6366f1',
-    width: 28,
-    textAlign: 'center',
-  },
   thumbnail: {
     width: 44,
     height: 66,
@@ -330,19 +412,15 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 2,
   },
-  arrows: {
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
   },
-  arrowButton: {
+  actionButton: {
     width: 36,
     height: 36,
-    borderRadius: 8,
-    backgroundColor: '#1e1b4b',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  arrowSpacer: {
-    width: 36,
-    height: 36,
   },
 });
