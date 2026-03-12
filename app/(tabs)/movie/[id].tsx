@@ -11,6 +11,7 @@ import {
   Linking,
   Alert,
   Keyboard,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,6 +22,7 @@ import { useSearch } from '../../../lib/search-context';
 import { useMovie } from '../../../lib/movie-context';
 import { TrailerPlayer } from '../../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../../components/SearchResultsOverlay';
+import { MovieDetailsHeader } from '../../../components/MovieDetailsHeader';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -757,6 +759,9 @@ export default function MovieDetailsScreen() {
 
   return (
     <View style={styles.wrapper}>
+      <SafeAreaView style={styles.safeHeader}>
+        <MovieDetailsHeader onBack={() => router.back()} />
+      </SafeAreaView>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -1021,6 +1026,10 @@ const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  safeHeader: {
+    backgroundColor: '#0f0f0f',
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
   },
   backButtonText: {
     color: '#ffffff',
