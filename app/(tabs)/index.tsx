@@ -9,9 +9,7 @@ import {
   ActivityIndicator,
   Pressable,
   Keyboard,
-  Platform,
 } from 'react-native';
-import { supabase } from '../../lib/supabase';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useRouter } from 'expo-router';
 
@@ -83,65 +81,79 @@ export default function HomeScreen() {
     setSearchResult(null);
     setError(null);
 
+    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    if (!apiKey) {
+      setError('TMDB API key not configured');
+      setLoading(false);
+      return;
+    }
+
+    console.log('Using Key:', process.env.EXPO_PUBLIC_TMDB_API_KEY?.slice(0, 5) + '...');
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const baseUrl =
-        Platform.OS === 'web'
-          ? typeof window !== 'undefined'
-            ? window.location.origin
-            : ''
-          : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
-      const url = `${baseUrl || ''}/api/search?q=${encodeURIComponent(trimmed)}`;
+      const searchUrl = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(trimmed)}&language=en-US`;
 
-      const res = await fetch(url, { method: 'POST', signal: controller.signal });
+      const res = await fetch(searchUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
 
-      let data: Record<string, unknown>;
+      const responseText = await res.text();
+
+      let data: { results?: Array<{ id: number; title: string; poster_path: string | null; release_date?: string; vote_average?: number }> };
       try {
-        data = await res.json();
-      } catch {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseErr) {
+        console.error('[Search] Invalid JSON response:', {
+          status: res.status,
+          statusText: res.statusText,
+          url: searchUrl,
+          bodyPreview: responseText.slice(0, 200),
+          parseError: parseErr,
+        });
         setError(res.ok ? 'Invalid response from server' : `Request failed (${res.status})`);
         return;
       }
 
       if (!res.ok) {
-        const msg = typeof data.error === 'string' ? data.error : `Request failed (${res.status})`;
-        setError(msg);
+        const errData = (data as Record<string, unknown>)?.status_message ?? (data as Record<string, unknown>)?.error;
+        console.error('[Search] Non-OK response:', {
+          status: res.status,
+          statusText: res.statusText,
+          data: errData,
+        });
+        setError(typeof errData === 'string' ? errData : `Request failed (${res.status})`);
         return;
       }
 
-      if (data.error) {
-        setError(typeof data.error === 'string' ? data.error : 'Unknown error');
+      const movie = data.results?.[0];
+      if (!movie) {
+        setError('No results found');
         return;
       }
 
-      const mediaId = data.mediaId;
-      if (!mediaId) {
-        setError('No media ID returned');
-        return;
-      }
-
-      const { data: media, error: fetchError } = await supabase
-        .from('media')
-        .select('id, title, poster_url, release_year')
-        .eq('id', mediaId)
-        .single();
-
-      if (fetchError || !media) {
-        setError(fetchError?.message ?? 'Could not load movie');
-        return;
-      }
+      const releaseYear = movie.release_date
+        ? parseInt(movie.release_date.slice(0, 4), 10)
+        : null;
 
       setSearchResult({
-        id: media.id,
-        title: media.title,
-        poster_url: media.poster_url,
-        release_year: media.release_year,
+        id: String(movie.id),
+        title: movie.title,
+        poster_url: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : null,
+        release_year: releaseYear,
+        vote_average: movie.vote_average ?? null,
       });
     } catch (err) {
-      console.error('Search error:', err);
+      console.error('[Search] Error:', {
+        error: err,
+        message: err instanceof Error ? err.message : String(err),
+        name: err instanceof Error ? err.name : undefined,
+      });
       if (err instanceof Error) {
         setError(err.name === 'AbortError' ? 'Request timed out. Try again.' : err.message);
       } else {

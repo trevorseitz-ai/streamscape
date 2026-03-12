@@ -76,55 +76,13 @@ async function fetchMovieData(query: string): Promise<MediaData | null> {
 
   console.log('[Search API] Found movie:', movie.title, 'id:', movieId);
 
-  const [providersRes, creditsRes] = await Promise.all([
-    fetchTMDB<{
-      results?: {
-        US?: {
-          flatrate?: Array<{ provider_name: string }>;
-          rent?: Array<{ provider_name: string }>;
-          buy?: Array<{ provider_name: string }>;
-        };
-      };
-    }>(`/movie/${movieId}/watch/providers`),
-    fetchTMDB<{
-      cast?: Array<{ name: string; character: string | null }>;
-      crew?: Array<{ name: string; job: string }>;
-    }>(`/movie/${movieId}/credits`),
-  ]);
+  // Fetch credits only; streaming icons are shown on Watchlist and Movie Details pages
+  const creditsRes = await fetchTMDB<{
+    cast?: Array<{ name: string; character: string | null }>;
+    crew?: Array<{ name: string; job: string }>;
+  }>(`/movie/${movieId}/credits`);
 
-  const us = providersRes.results?.US;
   const platforms: MediaData['platforms'] = [];
-
-  if (us?.flatrate) {
-    for (const p of us.flatrate) {
-      platforms.push({
-        name: p.provider_name,
-        access_type: 'subscription',
-        price: null,
-        direct_url: null,
-      });
-    }
-  }
-  if (us?.rent) {
-    for (const p of us.rent) {
-      platforms.push({
-        name: p.provider_name,
-        access_type: 'rent',
-        price: null,
-        direct_url: null,
-      });
-    }
-  }
-  if (us?.buy) {
-    for (const p of us.buy) {
-      platforms.push({
-        name: p.provider_name,
-        access_type: 'buy',
-        price: null,
-        direct_url: null,
-      });
-    }
-  }
 
   const cast: MediaData['cast'] = [];
   const topCast = (creditsRes.cast ?? []).slice(0, 10);
