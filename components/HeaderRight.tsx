@@ -66,6 +66,7 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     padding: 4,
+    marginRight: 8,
   },
   headerButton: {
     flexDirection: 'row',

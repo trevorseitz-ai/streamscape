@@ -4,7 +4,6 @@ import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { HeaderRight } from '../../components/HeaderRight';
-import { HeaderTitle } from '../../components/HeaderTitle';
 import { WatchlistHeaderTitle } from '../../components/WatchlistHeaderTitle';
 
 function getTabIcon(routeName: string, focused: boolean) {
@@ -67,6 +66,7 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: '#0f0f0f' },
         headerTintColor: '#ffffff',
         headerTitleStyle: { fontWeight: '600' },
+        headerTitleAlign: 'left',
         headerShadowVisible: false,
         headerRight: () => (
           <HeaderRight
@@ -82,7 +82,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: () => <HeaderTitle />,
+          headerShown: false,
         }}
       />
       <Tabs.Screen

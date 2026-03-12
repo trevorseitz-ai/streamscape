@@ -8,12 +8,15 @@ import {
   ActivityIndicator,
   Pressable,
   Keyboard,
+  SafeAreaView,
+  Platform,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { useRouter } from 'expo-router';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
+import { HomeHeader } from '../../components/HomeHeader';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -92,17 +95,15 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.wrapper}>
+      <SafeAreaView style={styles.safeHeader}>
+        <HomeHeader />
+      </SafeAreaView>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>StreamScape</Text>
-          <Text style={styles.subtitle}>Find where to stream it</Text>
-        </View>
-
         {/* Hero: #1 Trending */}
       {trendingLoading ? (
         <View style={styles.heroSkeleton}>
@@ -212,19 +213,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginTop: 4,
+  safeHeader: {
+    backgroundColor: '#0f0f0f',
+    paddingTop: Platform.OS === 'android' ? 24 : 0,
   },
   section: {
     marginBottom: 24,
