@@ -103,6 +103,12 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="movie"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

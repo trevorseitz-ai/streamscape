@@ -12,6 +12,7 @@ import {
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useRouter } from 'expo-router';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
+import { useCountry } from '../../lib/country-context';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -75,12 +76,13 @@ async function fetchDiscoverFromTMDB(
   page: number,
   providers: number[],
   genres: number[],
-  phase: number
+  phase: number,
+  watchRegion: string
 ): Promise<{ movies: DiscoverResult[]; total_pages: number }> {
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  let url = `${TMDB_BASE}/discover/movie?primary_release_year=${year}&region=US&page=${page}&language=en-US`;
+  let url = `${TMDB_BASE}/discover/movie?primary_release_year=${year}&region=${watchRegion}&page=${page}&language=en-US`;
 
   if (phase === 2) {
     url += '&sort_by=popularity.desc';
@@ -89,9 +91,9 @@ async function fetchDiscoverFromTMDB(
   }
 
   if (providers.length > 0) {
-    url += `&with_watch_providers=${providers.join('|')}&watch_region=US`;
+    url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
   } else if (streaming) {
-    url += '&with_watch_monetization_types=flatrate&watch_region=US';
+    url += `&with_watch_monetization_types=flatrate&watch_region=${watchRegion}`;
   }
 
   if (genres.length > 0) {
@@ -144,6 +146,7 @@ function useNumColumns() {
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  const { selectedCountry } = useCountry();
   const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -171,6 +174,12 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
+  useEffect(() => {
+    if (selectedYear) {
+      triggerFetch(selectedYear, streamingOnly, selectedGenres);
+    }
+  }, [selectedCountry]);
+
   const itemWidth = useMemo(() => {
     const available = screenWidth - HORIZONTAL_PADDING * 2;
     return (available - GRID_GAP * (numColumns - 1)) / numColumns;
@@ -190,13 +199,13 @@ export default function DiscoverScreen() {
         const freshProviders = await getSavedProviderIds();
         setProviderIds(freshProviders);
 
-        const data = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 1);
+        const data = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
-          const data2 = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 2);
+          const data2 = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 2, selectedCountry);
           setPhase2Movies(data2.movies);
           setTotalPages(data2.total_pages);
           setPage(1);
@@ -211,7 +220,7 @@ export default function DiscoverScreen() {
         setLoading(false);
       }
     },
-    []
+    [selectedCountry]
   );
 
   const loadMore = useCallback(async () => {
@@ -225,7 +234,7 @@ export default function DiscoverScreen() {
 
         try {
           const data = await fetchDiscoverFromTMDB(
-            selectedYear, streamingOnly, 1, providerIds, selectedGenres, 2
+            selectedYear, streamingOnly, 1, providerIds, selectedGenres, 2, selectedCountry
           );
           const deduped = data.movies.filter(
             (m) => !phase1IdsRef.current.has(m.id)
@@ -250,7 +259,7 @@ export default function DiscoverScreen() {
 
     try {
       const data = await fetchDiscoverFromTMDB(
-        selectedYear, streamingOnly, nextPage, providerIds, selectedGenres, fetchPhase
+        selectedYear, streamingOnly, nextPage, providerIds, selectedGenres, fetchPhase, selectedCountry
       );
 
       if (fetchPhase === 1) {
@@ -269,7 +278,7 @@ export default function DiscoverScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loading, selectedYear, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedGenres]);
+  }, [loading, selectedYear, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedGenres, selectedCountry]);
 
   const triggerFetch = useCallback(
     (year: number | null, streaming: boolean, genres: number[]) => {

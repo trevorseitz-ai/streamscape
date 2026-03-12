@@ -13,11 +13,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { getSavedProviderIds } from '../../lib/provider-preferences';
-import { useCountry } from '../../lib/country-context';
-import { CountrySelector } from '../../components/CountrySelector';
-import { TrailerPlayer } from '../../components/TrailerPlayer';
+import { supabase } from '../../../lib/supabase';
+import { getSavedProviderIds } from '../../../lib/provider-preferences';
+import { useCountry } from '../../../lib/country-context';
+import { CountrySelector } from '../../../components/CountrySelector';
+import { TrailerPlayer } from '../../../components/TrailerPlayer';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
