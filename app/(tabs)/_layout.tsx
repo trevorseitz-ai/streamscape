@@ -5,6 +5,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { CountrySelector } from '../../components/CountrySelector';
 
+function getTabIcon(routeName: string, focused: boolean) {
+  const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
+    index: { active: 'home', inactive: 'home-outline' },
+    discover: { active: 'compass', inactive: 'compass-outline' },
+    watchlist: { active: 'list', inactive: 'list-outline' },
+    settings: { active: 'settings', inactive: 'settings-outline' },
+  };
+  const icons = iconMap[routeName];
+  const name = icons ? (focused ? icons.active : icons.inactive) : 'ellipse-outline';
+  return name;
+}
+
 export default function TabLayout() {
   const router = useRouter();
   const [session, setSession] = useState<{
@@ -27,13 +39,28 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={({ route }) => ({
         tabBarStyle: {
           backgroundColor: '#0f0f0f',
           borderTopColor: '#2d2d2d',
         },
         tabBarActiveTintColor: '#6366f1',
         tabBarInactiveTintColor: '#6b7280',
+        tabBarIcon: ({ color, size, focused }) => (
+          <Ionicons
+            name={getTabIcon(route.name, focused)}
+            size={size}
+            color={color}
+          />
+        ),
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+        },
+        tabBarItemStyle: {
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
         headerShown: true,
         headerStyle: { backgroundColor: '#0f0f0f' },
         headerTintColor: '#ffffff',
@@ -65,43 +92,23 @@ export default function TabLayout() {
             )}
           </View>
         ),
-      }}
+      })}
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Home' }}
       />
       <Tabs.Screen
         name="discover"
-        options={{
-          title: 'Discover',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass-outline" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Discover' }}
       />
       <Tabs.Screen
         name="watchlist"
-        options={{
-          title: 'My Watchlist',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'My Watchlist' }}
       />
       <Tabs.Screen
         name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Settings' }}
       />
       <Tabs.Screen
         name="movie"
