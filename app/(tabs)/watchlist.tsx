@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
-  Platform,
   Alert,
   Keyboard,
 } from 'react-native';
@@ -51,6 +50,7 @@ export default function WatchlistScreen() {
   } = useSearch();
   const [movies, setMovies] = useState<WatchlistMovie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [orderSaving, setOrderSaving] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
 
@@ -135,10 +135,10 @@ export default function WatchlistScreen() {
     setLoading(true);
     const { data, error } = await supabase
       .from('watchlist')
-      .select('id, sort_order, watched, media_id, media (id, tmdb_id, title, poster_url, release_year)')
+      .select('id, sort_order, order_index, watched, media_id, media (id, tmdb_id, title, poster_url, release_year)')
       .eq('user_id', userId)
       .eq('watched', false)
-      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('order_index', { ascending: true, nullsFirst: false })
       .order('added_at', { ascending: true });
 
     if (error) {
@@ -151,7 +151,7 @@ export default function WatchlistScreen() {
           if (!m) return null;
           return {
             watchlistId: row.id as string,
-            sortOrder: (row.sort_order as number) ?? index,
+            sortOrder: (row.order_index as number) ?? (row.sort_order as number) ?? index,
             id: m.id as string,
             tmdb_id: (m.tmdb_id as number | null) ?? null,
             title: m.title as string,
@@ -165,28 +165,26 @@ export default function WatchlistScreen() {
     setLoading(false);
   }
 
-  const syncOrder = useCallback(
-    (items: WatchlistMovie[]) => {
+  const updateDatabaseOrder = useCallback(
+    async (reorderedList: WatchlistMovie[]) => {
       if (!session) return;
 
-      const baseUrl =
-        Platform.OS === 'web'
-          ? typeof window !== 'undefined'
-            ? window.location.origin
-            : ''
-          : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
-
-      fetch(`${baseUrl}/api/watchlist-reorder`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: session.user.id,
-          items: items.map((m) => ({
-            id: m.watchlistId,
-            sort_order: m.sortOrder,
-          })),
-        }),
-      }).catch((err) => console.error('Reorder sync error:', err));
+      setOrderSaving(true);
+      try {
+        await Promise.all(
+          reorderedList.map((item, index) =>
+            supabase
+              .from('watchlist')
+              .update({ order_index: index })
+              .eq('id', item.watchlistId)
+              .eq('user_id', session.user.id)
+          )
+        );
+      } catch (err) {
+        console.error('Reorder sync error:', err);
+      } finally {
+        setOrderSaving(false);
+      }
     },
     [session]
   );
@@ -203,9 +201,9 @@ export default function WatchlistScreen() {
       });
 
       setMovies(updated);
-      syncOrder(updated);
+      updateDatabaseOrder(updated);
     },
-    [movies, syncOrder]
+    [movies, updateDatabaseOrder]
   );
 
   const handleWatched = useCallback(
@@ -341,6 +339,12 @@ export default function WatchlistScreen() {
           <Text style={styles.subtitle}>
             {movies.length} {movies.length === 1 ? 'movie' : 'movies'} saved
           </Text>
+          {orderSaving ? (
+            <View style={styles.savingOrderBanner}>
+              <ActivityIndicator size="small" color="#6366f1" />
+              <Text style={styles.savingOrderText}>Saving order...</Text>
+            </View>
+          ) : null}
         </View>
 
         {movies.length === 0 ? (
@@ -509,6 +513,21 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
+    color: '#9ca3af',
+  },
+  savingOrderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  savingOrderText: {
+    fontSize: 13,
     color: '#9ca3af',
   },
   empty: {

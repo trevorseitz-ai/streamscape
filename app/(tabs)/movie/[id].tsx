@@ -435,6 +435,7 @@ export default function MovieDetailsScreen() {
                     media_id: resolvedId,
                     watched: false,
                     sort_order: count ?? 0,
+                    order_index: count ?? 0,
                   });
                 if (insertErr) throw insertErr;
                 await syncCheck(resolvedId);
@@ -459,6 +460,7 @@ export default function MovieDetailsScreen() {
                   media_id: newMediaId,
                   watched: false,
                   sort_order: count ?? 0,
+                  order_index: count ?? 0,
                 });
               if (insertErr) throw insertErr;
               await syncCheck(newMediaId);
@@ -478,6 +480,7 @@ export default function MovieDetailsScreen() {
               media_id: mediaId,
               watched: false,
               sort_order: count ?? 0,
+              order_index: count ?? 0,
             });
           if (error) throw error;
           await syncCheck(mediaId);

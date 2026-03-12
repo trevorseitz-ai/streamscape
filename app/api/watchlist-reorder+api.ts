@@ -17,15 +17,28 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdmin();
 
-    await Promise.all(
-      items.map((item) =>
-        supabase
-          .from('watchlist')
-          .update({ sort_order: item.sort_order })
-          .eq('id', item.id)
-          .eq('user_id', userId)
-      )
-    );
+    const rpcItems = items.map((item) => ({
+      id: item.id,
+      order_index: item.sort_order,
+    }));
+
+    const { error } = await supabase.rpc('update_watchlist_order', {
+      p_user_id: userId,
+      p_items: rpcItems,
+    });
+
+    if (error) {
+      console.warn('Watchlist reorder RPC not available, falling back to individual updates:', error.message);
+      await Promise.all(
+        items.map((item) =>
+          supabase
+            .from('watchlist')
+            .update({ sort_order: item.sort_order })
+            .eq('id', item.id)
+            .eq('user_id', userId)
+        )
+      );
+    }
 
     return Response.json({ success: true });
   } catch (error) {
