@@ -18,9 +18,8 @@ import { supabase } from '../../../lib/supabase';
 import { getSavedProviderIds } from '../../../lib/provider-preferences';
 import { useCountry } from '../../../lib/country-context';
 import { useSearch } from '../../../lib/search-context';
-import { CountrySelector } from '../../../components/CountrySelector';
+import { useMovie } from '../../../lib/movie-context';
 import { TrailerPlayer } from '../../../components/TrailerPlayer';
-import { MovieSearchInput } from '../../../components/MovieSearchInput';
 import { SearchResultsOverlay } from '../../../components/SearchResultsOverlay';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -247,8 +246,15 @@ export default function MovieDetailsScreen() {
     setSearchResult,
     setSearchError,
   } = useSearch();
+  const { setTitle } = useMovie();
 
   const isTmdbId = /^\d+$/.test(id ?? '');
+
+  useEffect(() => {
+    return () => {
+      setIsSearching(false);
+    };
+  }, [setIsSearching]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -597,8 +603,11 @@ export default function MovieDetailsScreen() {
     if (!id) {
       setError('No movie ID');
       setLoading(false);
+      setTitle(null);
       return;
     }
+
+    setTitle(null);
 
     async function fetchMovie() {
       try {
@@ -607,6 +616,7 @@ export default function MovieDetailsScreen() {
           const { movie: tmdbMovie, trailerKey: key, watchProvidersResults: providers } =
             await fetchMovieFromTMDB(tmdbId);
           setMovie(tmdbMovie);
+          setTitle(tmdbMovie.title);
           setWatchProvidersResults(providers);
           if (key) setTrailerKey(key);
           await findSupabaseMediaId(
@@ -619,6 +629,7 @@ export default function MovieDetailsScreen() {
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
           setMovie(initial);
+          setTitle(initial.title);
 
           const key = await enrichFromTMDB(id);
           if (key) setTrailerKey(key);
@@ -630,13 +641,14 @@ export default function MovieDetailsScreen() {
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
+        setTitle(null);
       } finally {
         setLoading(false);
       }
     }
 
     fetchMovie();
-  }, [id]);
+  }, [id, setTitle]);
 
   useEffect(() => {
     if (!watchProvidersResults) return;
@@ -750,28 +762,6 @@ export default function MovieDetailsScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-      {/* Header: Back button + Search + Country selector */}
-      <View style={styles.movieHeader}>
-        <Pressable
-          style={styles.backButtonFloating}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>← Back</Text>
-        </Pressable>
-        <View style={styles.movieHeaderRight}>
-          {!isSearching && (
-            <Pressable
-              style={styles.movieSearchIcon}
-              onPress={() => setIsSearching(true)}
-              hitSlop={8}
-            >
-              <Ionicons name="search-outline" size={22} color="#ffffff" />
-            </Pressable>
-          )}
-          <CountrySelector />
-        </View>
-      </View>
-
       {/* Trailer */}
       {trailerKey ? (
         <View style={styles.trailerSection}>
@@ -810,19 +800,12 @@ export default function MovieDetailsScreen() {
         </View>
       </View>
 
-      {/* Title & Meta */}
-      <View style={styles.metaSection}>
-        {isSearching ? (
-          <MovieSearchInput />
-        ) : (
-          <>
-            <Text style={styles.title}>{movie.title}</Text>
-            {movie.release_year != null ? (
-              <Text style={styles.year}>{movie.release_year}</Text>
-            ) : null}
-          </>
-        )}
-      </View>
+      {/* Release Year */}
+      {movie.release_year != null ? (
+        <View style={styles.metaSection}>
+          <Text style={styles.year}>{movie.release_year}</Text>
+        </View>
+      ) : null}
 
       {/* Watchlist Button */}
       <View style={styles.watchlistSection}>
@@ -1039,39 +1022,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f0f0f',
   },
-  movieHeader: {
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    zIndex: 10,
-  },
-  movieHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginRight: 4,
-  },
-  movieSearchIcon: {
-    padding: 4,
-  },
-  backButtonFloating: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
   backButtonText: {
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
   },
   trailerSection: {
-    paddingTop: 90,
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 8,
   },

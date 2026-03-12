@@ -104,6 +104,7 @@ export default function TabLayout() {
         name="movie"
         options={{
           href: null,
+          headerShown: false,
         }}
       />
     </Tabs>

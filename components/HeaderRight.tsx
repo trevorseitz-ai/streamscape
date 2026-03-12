@@ -1,47 +1,58 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, Text, StyleSheet, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { CountrySelector } from './CountrySelector';
 
 interface HeaderRightProps {
-  routeName: string;
-  session: { user: { id: string; email?: string } } | null;
-  onLogout: () => void;
-  onLogin: () => void;
+  routeName?: string;
+  session?: { user: { id: string; email?: string } } | null;
+  onLogout?: () => void;
+  onLogin?: () => void;
+  /** When true, only show Search + Country (no auth). Used for movie details. */
+  compact?: boolean;
 }
 
 export function HeaderRight({
-  routeName,
-  session,
-  onLogout,
-  onLogin,
+  routeName = '',
+  session = null,
+  onLogout = () => {},
+  onLogin = () => {},
+  compact = false,
 }: HeaderRightProps) {
-  const { setIsSearching } = useSearch();
+  const { setIsSearching, isSearching } = useSearch();
+
+  const showSearch =
+    routeName === 'index' ||
+    routeName === 'watchlist' ||
+    routeName === 'movie';
 
   return (
     <View style={styles.headerRight}>
-      {(routeName === 'index' || routeName === 'watchlist') && (
+      {showSearch && (
         <Pressable
           style={styles.searchIcon}
-          onPress={() => setIsSearching(true)}
+          onPress={() => {
+            if (isSearching) Keyboard.dismiss();
+            setIsSearching(!isSearching);
+          }}
           hitSlop={8}
         >
           <Ionicons name="search-outline" size={22} color="#ffffff" />
         </Pressable>
       )}
       <CountrySelector />
-      {session ? (
+      {!compact && session ? (
         <Pressable style={styles.headerButton} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color="#ef4444" />
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>
-      ) : (
+      ) : !compact ? (
         <Pressable style={styles.headerButton} onPress={onLogin}>
           <Ionicons name="person-circle-outline" size={20} color="#6366f1" />
           <Text style={styles.loginText}>Sign In</Text>
         </Pressable>
-      )}
+      ) : null}
     </View>
   );
 }
