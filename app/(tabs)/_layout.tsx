@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable, Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { CountrySelector } from '../../components/CountrySelector';
+import { HeaderRight } from '../../components/HeaderRight';
+import { HeaderTitle } from '../../components/HeaderTitle';
 
 function getTabIcon(routeName: string, focused: boolean) {
   const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
@@ -67,36 +68,21 @@ export default function TabLayout() {
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
         headerRight: () => (
-          <View style={styles.headerRight}>
-            <CountrySelector />
-            {session ? (
-              <Pressable
-                style={styles.headerButton}
-                onPress={() => supabase.auth.signOut()}
-              >
-                <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-                <Text style={styles.logoutText}>Log Out</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={styles.headerButton}
-                onPress={() => router.push('/login')}
-              >
-                <Ionicons
-                  name="person-circle-outline"
-                  size={20}
-                  color="#6366f1"
-                />
-                <Text style={styles.loginText}>Sign In</Text>
-              </Pressable>
-            )}
-          </View>
+          <HeaderRight
+            routeName={route.name}
+            session={session}
+            onLogout={() => supabase.auth.signOut()}
+            onLogin={() => router.push('/login')}
+          />
         ),
       })}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home' }}
+        options={{
+          title: 'Home',
+          headerTitle: () => <HeaderTitle />,
+        }}
       />
       <Tabs.Screen
         name="discover"

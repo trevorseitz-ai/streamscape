@@ -2,17 +2,16 @@ import { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   ScrollView,
   Image,
   StyleSheet,
   ActivityIndicator,
   Pressable,
-  Keyboard,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useRouter } from 'expo-router';
 import { useCountry } from '../../lib/country-context';
+import { useSearch } from '../../lib/search-context';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -24,10 +23,15 @@ interface TrendingMovie extends Movie {
 export default function HomeScreen() {
   const router = useRouter();
   const { selectedCountry } = useCountry();
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [searchResult, setSearchResult] = useState<Movie | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    isSearching,
+    searchResult,
+    searchError,
+    searchLoading,
+    setIsSearching,
+    setSearchResult,
+    setSearchError,
+  } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
 
@@ -75,156 +79,29 @@ export default function HomeScreen() {
   const heroMovie = trending.length > 0 ? trending[0] : null;
   const restTrending = trending.slice(1);
 
-  const handleSearch = async () => {
-    const trimmed = query.trim();
-    if (!trimmed || loading) return;
-
-    Keyboard.dismiss();
-    setLoading(true);
-    setSearchResult(null);
-    setError(null);
-
-    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
-    if (!apiKey) {
-      setError('TMDB API key not configured');
-      setLoading(false);
-      return;
-    }
-
-    console.log('Using Key:', process.env.EXPO_PUBLIC_TMDB_API_KEY?.slice(0, 5) + '...');
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    try {
-      const searchUrl = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(trimmed)}&language=en-US`;
-
-      const res = await fetch(searchUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      const responseText = await res.text();
-
-      let data: { results?: Array<{ id: number; title: string; poster_path: string | null; release_date?: string; vote_average?: number }> };
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (parseErr) {
-        console.error('[Search] Invalid JSON response:', {
-          status: res.status,
-          statusText: res.statusText,
-          url: searchUrl,
-          bodyPreview: responseText.slice(0, 200),
-          parseError: parseErr,
-        });
-        setError(res.ok ? 'Invalid response from server' : `Request failed (${res.status})`);
-        return;
-      }
-
-      if (!res.ok) {
-        const errData = (data as Record<string, unknown>)?.status_message ?? (data as Record<string, unknown>)?.error;
-        console.error('[Search] Non-OK response:', {
-          status: res.status,
-          statusText: res.statusText,
-          data: errData,
-        });
-        setError(typeof errData === 'string' ? errData : `Request failed (${res.status})`);
-        return;
-      }
-
-      const movie = data.results?.[0];
-      if (!movie) {
-        setError('No results found');
-        return;
-      }
-
-      const releaseYear = movie.release_date
-        ? parseInt(movie.release_date.slice(0, 4), 10)
-        : null;
-
-      setSearchResult({
-        id: String(movie.id),
-        title: movie.title,
-        poster_url: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : null,
-        release_year: releaseYear,
-        vote_average: movie.vote_average ?? null,
-      });
-    } catch (err) {
-      console.error('[Search] Error:', {
-        error: err,
-        message: err instanceof Error ? err.message : String(err),
-        name: err instanceof Error ? err.name : undefined,
-      });
-      if (err instanceof Error) {
-        setError(err.name === 'AbortError' ? 'Request timed out. Try again.' : err.message);
-      } else {
-        setError('Request failed');
-      }
-    } finally {
-      clearTimeout(timeoutId);
-      setLoading(false);
-    }
-  };
-
   const handleMoviePress = (movie: Movie) => {
+    setIsSearching(false);
+    setSearchResult(null);
+    setSearchError(null);
     router.push(`/movie/${movie.id}`);
   };
 
+  const showSearchOverlay = isSearching && (searchResult || searchError || searchLoading);
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>StreamScape</Text>
-        <Text style={styles.subtitle}>Find where to stream it</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search movies, shows, actors..."
-          placeholderTextColor="#6b7280"
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={handleSearch}
-          returnKeyType="search"
-          editable={!loading}
-        />
-      </View>
-
-      {loading && (
-        <View style={styles.resultBox}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.resultText}>Searching...</Text>
+    <View style={styles.wrapper}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>StreamScape</Text>
+          <Text style={styles.subtitle}>Find where to stream it</Text>
         </View>
-      )}
 
-      {error ? (
-        !loading ? (
-          <View style={styles.resultBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null
-      ) : null}
-
-      {searchResult && !loading && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Search Result</Text>
-          <View style={styles.resultRow}>
-            <MovieCard
-              movie={searchResult}
-              onPress={() => handleMoviePress(searchResult)}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Hero: #1 Trending */}
+        {/* Hero: #1 Trending */}
       {trendingLoading ? (
         <View style={styles.heroSkeleton}>
           <ActivityIndicator size="large" color="#6366f1" />
@@ -299,14 +176,70 @@ export default function HomeScreen() {
           </Text>
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+
+      {showSearchOverlay && (
+        <View style={styles.searchOverlay}>
+          <Pressable
+            style={styles.overlayBackdrop}
+            onPress={() => {
+              setIsSearching(false);
+              setSearchResult(null);
+              setSearchError(null);
+            }}
+          />
+          <View style={styles.searchOverlayContent}>
+            {searchLoading && (
+              <View style={styles.resultBox}>
+                <ActivityIndicator size="large" color="#6366f1" />
+                <Text style={styles.resultText}>Searching...</Text>
+              </View>
+            )}
+            {searchError && !searchLoading && (
+              <View style={styles.resultBox}>
+                <Text style={styles.errorText}>{searchError}</Text>
+              </View>
+            )}
+            {searchResult && !searchLoading && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Search Result</Text>
+                <View style={styles.resultRow}>
+                  <MovieCard
+                    movie={searchResult}
+                    onPress={() => handleMoviePress(searchResult)}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  searchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+  },
+  overlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  searchOverlayContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    justifyContent: 'flex-start',
   },
   content: {
     paddingTop: 16,
@@ -326,19 +259,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#9ca3af',
     marginTop: 4,
-  },
-  searchContainer: {
-    marginBottom: 32,
-  },
-  searchInput: {
-    backgroundColor: '#1f1f1f',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
   },
   resultBox: {
     backgroundColor: '#1f1f1f',
