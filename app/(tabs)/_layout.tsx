@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, Text, StyleSheet } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { CountrySelector } from '../../components/CountrySelector';
 
 export default function TabLayout() {
   const router = useRouter();
@@ -38,28 +39,32 @@ export default function TabLayout() {
         headerTintColor: '#ffffff',
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
-        headerRight: () =>
-          session ? (
-            <Pressable
-              style={styles.headerButton}
-              onPress={() => supabase.auth.signOut()}
-            >
-              <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-              <Text style={styles.logoutText}>Log Out</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              style={styles.headerButton}
-              onPress={() => router.push('/login')}
-            >
-              <Ionicons
-                name="person-circle-outline"
-                size={20}
-                color="#6366f1"
-              />
-              <Text style={styles.loginText}>Sign In</Text>
-            </Pressable>
-          ),
+        headerRight: () => (
+          <View style={styles.headerRight}>
+            <CountrySelector />
+            {session ? (
+              <Pressable
+                style={styles.headerButton}
+                onPress={() => supabase.auth.signOut()}
+              >
+                <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+                <Text style={styles.logoutText}>Log Out</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.headerButton}
+                onPress={() => router.push('/login')}
+              >
+                <Ionicons
+                  name="person-circle-outline"
+                  size={20}
+                  color="#6366f1"
+                />
+                <Text style={styles.loginText}>Sign In</Text>
+              </Pressable>
+            )}
+          </View>
+        ),
       }}
     >
       <Tabs.Screen
@@ -103,6 +108,11 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
   headerButton: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -13,6 +13,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useCountry } from '../../lib/country-context';
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
 interface WatchlistMovie {
   watchlistId: string;
@@ -24,11 +28,18 @@ interface WatchlistMovie {
   release_year: number | null;
 }
 
+interface ProviderLogo {
+  provider_id: number;
+  logo_url: string;
+}
+
 export default function WatchlistScreen() {
   const router = useRouter();
+  const { selectedCountry } = useCountry();
   const [movies, setMovies] = useState<WatchlistMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+  const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -53,6 +64,59 @@ export default function WatchlistScreen() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const tmdbIds = movies
+      .map((m) => m.tmdb_id)
+      .filter((id): id is number => id != null);
+
+    if (tmdbIds.length === 0) {
+      setProviderLogos({});
+      return;
+    }
+
+    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    if (!apiKey) {
+      setProviderLogos({});
+      return;
+    }
+
+    let cancelled = false;
+    const logos: Record<number, ProviderLogo[]> = {};
+
+    Promise.all(
+      tmdbIds.map(async (tmdbId) => {
+        if (cancelled) return;
+        try {
+          const res = await fetch(
+            `${TMDB_BASE}/movie/${tmdbId}/watch/providers`,
+            { headers: { Authorization: `Bearer ${apiKey}` } }
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          const countryData = data.results?.[selectedCountry];
+          const flatrate = countryData?.flatrate ?? [];
+          const list: ProviderLogo[] = flatrate.map(
+            (p: { provider_id: number; logo_path: string | null }) => ({
+              provider_id: p.provider_id,
+              logo_url: p.logo_path
+                ? `${TMDB_IMAGE_BASE}${p.logo_path}`
+                : '',
+            })
+          );
+          logos[tmdbId] = list.filter((p) => p.logo_url);
+        } catch {
+          logos[tmdbId] = [];
+        }
+      })
+    ).then(() => {
+      if (!cancelled) setProviderLogos(logos);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [movies, selectedCountry]);
 
   async function fetchWatchlist(userId: string) {
     setLoading(true);
@@ -268,6 +332,19 @@ export default function WatchlistScreen() {
                 ) : null}
               </View>
 
+              <View style={styles.providerIcons}>
+                {movie.tmdb_id != null && (providerLogos[movie.tmdb_id] ?? []).length > 0
+                  ? (providerLogos[movie.tmdb_id] ?? []).map((p) => (
+                      <Image
+                        key={p.provider_id}
+                        source={{ uri: p.logo_url }}
+                        style={styles.providerIcon}
+                        resizeMode="cover"
+                      />
+                    ))
+                  : null}
+              </View>
+
               <View style={styles.actionButtons}>
                 <Pressable
                   style={styles.actionButton}
@@ -373,6 +450,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 80,
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 12,
@@ -381,13 +459,13 @@ const styles = StyleSheet.create({
   },
   thumbnail: {
     width: 44,
-    height: 66,
+    height: 56,
     borderRadius: 6,
     backgroundColor: '#2d2d2d',
   },
   thumbnailPlaceholder: {
     width: 44,
-    height: 66,
+    height: 56,
     borderRadius: 6,
     backgroundColor: '#2d2d2d',
     alignItems: 'center',
@@ -398,9 +476,10 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   movieInfo: {
-    flex: 1,
+    flex: 2,
     marginLeft: 12,
     marginRight: 8,
+    minWidth: 0,
   },
   movieTitle: {
     fontSize: 15,
@@ -411,6 +490,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9ca3af',
     marginTop: 2,
+  },
+  providerIcons: {
+    flex: 1,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 8,
+    minWidth: 0,
+  },
+  providerIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 6,
+    backgroundColor: '#2d2d2d',
   },
   actionButtons: {
     flexDirection: 'row',

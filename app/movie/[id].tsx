@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
+import { CountrySelector } from '../../components/CountrySelector';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -219,7 +220,9 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 export default function MovieDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { selectedCountry, setSelectedCountry } = useCountry();
+  const { selectedCountry } = useCountry();
+  const [isUpdatingProviders, setIsUpdatingProviders] = useState(false);
+  const prevCountryRef = useRef(selectedCountry);
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -621,6 +624,15 @@ export default function MovieDetailsScreen() {
     fetchMovie();
   }, [id]);
 
+  useEffect(() => {
+    if (!watchProvidersResults) return;
+    if (prevCountryRef.current === selectedCountry) return;
+    prevCountryRef.current = selectedCountry;
+    setIsUpdatingProviders(true);
+    const t = setTimeout(() => setIsUpdatingProviders(false), 400);
+    return () => clearTimeout(t);
+  }, [selectedCountry, watchProvidersResults]);
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -713,13 +725,18 @@ export default function MovieDetailsScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Back button */}
-      <Pressable
-        style={styles.backButtonFloating}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.backButtonText}>← Back</Text>
-      </Pressable>
+      {/* Header: Back button + Country selector */}
+      <View style={styles.movieHeader}>
+        <Pressable
+          style={styles.backButtonFloating}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>← Back</Text>
+        </Pressable>
+        <View style={styles.movieHeaderRight}>
+          <CountrySelector />
+        </View>
+      </View>
 
       {/* Trailer */}
       {trailerKey ? (
@@ -883,39 +900,18 @@ export default function MovieDetailsScreen() {
 
       {/* Where to Watch */}
       <View style={styles.streamSection}>
-        <View style={styles.streamSectionHeader}>
-          <Text style={styles.streamSectionTitle}>Where to Watch</Text>
-          {watchProvidersResults ? (
-            <View style={styles.countrySelector}>
-              <Pressable
-                style={[
-                  styles.countryButton,
-                  selectedCountry === 'US' && styles.countryButtonActive,
-                ]}
-                onPress={() => setSelectedCountry('US')}
-              >
-                <Text style={[
-                  styles.countryButtonText,
-                  selectedCountry === 'US' && styles.countryButtonTextActive,
-                ]}>🇺🇸 USA</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.countryButton,
-                  selectedCountry === 'CA' && styles.countryButtonActive,
-                ]}
-                onPress={() => setSelectedCountry('CA')}
-              >
-                <Text style={[
-                  styles.countryButtonText,
-                  selectedCountry === 'CA' && styles.countryButtonTextActive,
-                ]}>🇨🇦 Canada</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
-        {displayAvailability.length === 0 ? (
-          <Text style={styles.noStreaming}>No streaming options found</Text>
+        <Text style={styles.streamSectionTitle}>Where to Watch</Text>
+        {isUpdatingProviders ? (
+          <View style={styles.updatingProviders}>
+            <ActivityIndicator size="small" color="#6366f1" />
+            <Text style={styles.updatingProvidersText}>Updating providers...</Text>
+          </View>
+        ) : displayAvailability.length === 0 ? (
+          <Text style={styles.noStreaming}>
+            {watchProvidersResults
+              ? 'No streaming data available for this region.'
+              : 'No streaming options found'}
+          </Text>
         ) : (
           <>
             {renderProviderGroup(
@@ -983,11 +979,21 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
-  backButtonFloating: {
+  movieHeader: {
     position: 'absolute',
     top: 50,
-    left: 20,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
     zIndex: 10,
+  },
+  movieHeaderRight: {
+    marginRight: 4,
+  },
+  backButtonFloating: {
     backgroundColor: 'rgba(0,0,0,0.6)',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1189,43 +1195,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
   },
-  streamSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
   streamSectionTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#ffffff',
+    marginBottom: 16,
     letterSpacing: -0.3,
   },
-  countrySelector: {
+  updatingProviders: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 16,
   },
-  countryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#2d2d2d',
-    borderWidth: 1,
-    borderColor: '#3d3d3d',
-  },
-  countryButtonActive: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
-  },
-  countryButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
+  updatingProvidersText: {
+    fontSize: 14,
     color: '#9ca3af',
-  },
-  countryButtonTextActive: {
-    color: '#ffffff',
+    fontWeight: '500',
   },
   providerGroup: {
     marginBottom: 20,
