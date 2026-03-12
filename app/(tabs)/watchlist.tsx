@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,14 @@ import {
   Pressable,
   Platform,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useCountry } from '../../lib/country-context';
+import { useSearch } from '../../lib/search-context';
+import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -36,6 +39,16 @@ interface ProviderLogo {
 export default function WatchlistScreen() {
   const router = useRouter();
   const { selectedCountry } = useCountry();
+  const {
+    isSearching,
+    query,
+    searchResult,
+    searchError,
+    searchLoading,
+    setIsSearching,
+    setSearchResult,
+    setSearchError,
+  } = useSearch();
   const [movies, setMovies] = useState<WatchlistMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
@@ -236,6 +249,22 @@ export default function WatchlistScreen() {
     [session]
   );
 
+  const filteredMovies = useMemo(() => {
+    if (!isSearching || !query.trim()) return movies;
+    const q = query.trim().toLowerCase();
+    return movies.filter((m) => m.title.toLowerCase().includes(q));
+  }, [movies, isSearching, query]);
+
+  const handleMoviePress = useCallback(
+    (movie: { id: string; tmdb_id: number | null }) => {
+      setIsSearching(false);
+      setSearchResult(null);
+      setSearchError(null);
+      router.push(`/movie/${movie.tmdb_id ?? movie.id}`);
+    },
+    [router, setIsSearching, setSearchResult, setSearchError]
+  );
+
   const handleRemove = useCallback(
     async (watchlistId: string) => {
       if (!session) return;
@@ -268,40 +297,69 @@ export default function WatchlistScreen() {
     );
   }
 
+  const showSearchOverlay =
+    isSearching && (searchResult || searchError || searchLoading);
+
   if (!session) {
     return (
-      <View style={styles.center}>
-        <Ionicons name="list" size={48} color="#2d2d2d" />
-        <Text style={styles.emptyText}>Your watchlist awaits</Text>
-        <Text style={styles.emptySubtext}>
-          Tap "Sign In" in the top-right to get started
-        </Text>
+      <View style={styles.wrapper}>
+        <View style={styles.center}>
+          <Ionicons name="list" size={48} color="#2d2d2d" />
+          <Text style={styles.emptyText}>Your watchlist awaits</Text>
+          <Text style={styles.emptySubtext}>
+            Tap "Sign In" in the top-right to get started
+          </Text>
+        </View>
+        {showSearchOverlay && (
+          <SearchResultsOverlay
+            searchLoading={searchLoading}
+            searchError={searchError}
+            searchResult={searchResult}
+            onResultPress={(m) =>
+              handleMoviePress({ id: m.id, tmdb_id: Number(m.id) })
+            }
+            onDismiss={() => {
+              Keyboard.dismiss();
+              setIsSearching(false);
+              setSearchResult(null);
+              setSearchError(null);
+            }}
+          />
+        )}
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
-        <Text style={styles.subtitle}>
-          {movies.length} {movies.length === 1 ? 'movie' : 'movies'} saved
-        </Text>
-      </View>
+    <View style={styles.wrapper}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.subtitle}>
+            {movies.length} {movies.length === 1 ? 'movie' : 'movies'} saved
+          </Text>
+        </View>
 
-      {movies.length === 0 ? (
+        {movies.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>Your watchlist is empty</Text>
           <Text style={styles.emptySubtext}>
             Search for a movie and tap "Add to Watchlist" to save it
           </Text>
         </View>
+      ) : filteredMovies.length === 0 && query.trim() ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>No matches in your watchlist</Text>
+          <Text style={styles.emptySubtext}>
+            Try "Search Global" to find it on TMDB
+          </Text>
+        </View>
       ) : (
         <View style={styles.list}>
-          {movies.map((movie, index) => (
+          {filteredMovies.map((movie, index) => (
             <Pressable
               key={movie.watchlistId}
               style={styles.row}
@@ -370,31 +428,31 @@ export default function WatchlistScreen() {
                   style={styles.actionButton}
                   onPress={(e) => {
                     e.stopPropagation();
-                    moveItem(index, 'up');
+                    moveItem(movies.indexOf(movie), 'up');
                   }}
                   hitSlop={8}
-                  disabled={index === 0}
+                  disabled={movies.indexOf(movie) === 0}
                 >
                   <Ionicons
                     name="chevron-up"
                     size={24}
-                    color={index === 0 ? '#4b5563' : '#a5b4fc'}
+                    color={movies.indexOf(movie) === 0 ? '#4b5563' : '#a5b4fc'}
                   />
                 </Pressable>
                 <Pressable
                   style={styles.actionButton}
                   onPress={(e) => {
                     e.stopPropagation();
-                    moveItem(index, 'down');
+                    moveItem(movies.indexOf(movie), 'down');
                   }}
                   hitSlop={8}
-                  disabled={index === movies.length - 1}
+                  disabled={movies.indexOf(movie) === movies.length - 1}
                 >
                   <Ionicons
                     name="chevron-down"
                     size={24}
                     color={
-                      index === movies.length - 1 ? '#4b5563' : '#a5b4fc'
+                      movies.indexOf(movie) === movies.length - 1 ? '#4b5563' : '#a5b4fc'
                     }
                   />
                 </Pressable>
@@ -403,11 +461,33 @@ export default function WatchlistScreen() {
           ))}
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+
+      {showSearchOverlay && (
+        <SearchResultsOverlay
+          searchLoading={searchLoading}
+          searchError={searchError}
+          searchResult={searchResult}
+          onResultPress={(m) =>
+            handleMoviePress({ id: m.id, tmdb_id: Number(m.id) })
+          }
+          onDismiss={() => {
+            Keyboard.dismiss();
+            setIsSearching(false);
+            setSearchResult(null);
+            setSearchError(null);
+          }}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',

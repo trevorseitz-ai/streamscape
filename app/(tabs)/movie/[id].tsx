@@ -10,14 +10,18 @@ import {
   Platform,
   Linking,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../lib/supabase';
 import { getSavedProviderIds } from '../../../lib/provider-preferences';
 import { useCountry } from '../../../lib/country-context';
+import { useSearch } from '../../../lib/search-context';
 import { CountrySelector } from '../../../components/CountrySelector';
 import { TrailerPlayer } from '../../../components/TrailerPlayer';
+import { MovieSearchInput } from '../../../components/MovieSearchInput';
+import { SearchResultsOverlay } from '../../../components/SearchResultsOverlay';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -233,6 +237,16 @@ export default function MovieDetailsScreen() {
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
+
+  const {
+    isSearching,
+    searchResult,
+    searchError,
+    searchLoading,
+    setIsSearching,
+    setSearchResult,
+    setSearchError,
+  } = useSearch();
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -719,13 +733,24 @@ export default function MovieDetailsScreen() {
     );
   }
 
+  const showSearchOverlay =
+    isSearching && (searchResult || searchError || searchLoading);
+
+  const handleSearchResultPress = (m: { id: string }) => {
+    setIsSearching(false);
+    setSearchResult(null);
+    setSearchError(null);
+    router.push(`/movie/${m.id}`);
+  };
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Header: Back button + Country selector */}
+    <View style={styles.wrapper}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+      {/* Header: Back button + Search + Country selector */}
       <View style={styles.movieHeader}>
         <Pressable
           style={styles.backButtonFloating}
@@ -734,6 +759,15 @@ export default function MovieDetailsScreen() {
           <Text style={styles.backButtonText}>← Back</Text>
         </Pressable>
         <View style={styles.movieHeaderRight}>
+          {!isSearching && (
+            <Pressable
+              style={styles.movieSearchIcon}
+              onPress={() => setIsSearching(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="search-outline" size={22} color="#ffffff" />
+            </Pressable>
+          )}
           <CountrySelector />
         </View>
       </View>
@@ -778,10 +812,16 @@ export default function MovieDetailsScreen() {
 
       {/* Title & Meta */}
       <View style={styles.metaSection}>
-        <Text style={styles.title}>{movie.title}</Text>
-        {movie.release_year != null ? (
-          <Text style={styles.year}>{movie.release_year}</Text>
-        ) : null}
+        {isSearching ? (
+          <MovieSearchInput />
+        ) : (
+          <>
+            <Text style={styles.title}>{movie.title}</Text>
+            {movie.release_year != null ? (
+              <Text style={styles.year}>{movie.release_year}</Text>
+            ) : null}
+          </>
+        )}
       </View>
 
       {/* Watchlist Button */}
@@ -949,7 +989,23 @@ export default function MovieDetailsScreen() {
       </View>
 
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+      </ScrollView>
+
+      {showSearchOverlay && (
+        <SearchResultsOverlay
+          searchLoading={searchLoading}
+          searchError={searchError}
+          searchResult={searchResult}
+          onResultPress={handleSearchResultPress}
+          onDismiss={() => {
+            Keyboard.dismiss();
+            setIsSearching(false);
+            setSearchResult(null);
+            setSearchError(null);
+          }}
+        />
+      )}
+    </View>
   );
 }
 
@@ -979,6 +1035,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
+  wrapper: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
   movieHeader: {
     position: 'absolute',
     top: 50,
@@ -991,7 +1051,13 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   movieHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     marginRight: 4,
+  },
+  movieSearchIcon: {
+    padding: 4,
   },
   backButtonFloating: {
     backgroundColor: 'rgba(0,0,0,0.6)',

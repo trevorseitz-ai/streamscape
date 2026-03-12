@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { HeaderRight } from '../../components/HeaderRight';
 import { HeaderTitle } from '../../components/HeaderTitle';
+import { WatchlistHeaderTitle } from '../../components/WatchlistHeaderTitle';
 
 function getTabIcon(routeName: string, focused: boolean) {
   const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
@@ -90,7 +91,10 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="watchlist"
-        options={{ title: 'My Watchlist' }}
+        options={{
+          title: 'My Watchlist',
+          headerTitle: () => <WatchlistHeaderTitle />,
+        }}
       />
       <Tabs.Screen
         name="settings"

@@ -7,8 +7,10 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  Keyboard,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
+import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { useRouter } from 'expo-router';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
@@ -179,40 +181,18 @@ export default function HomeScreen() {
       </ScrollView>
 
       {showSearchOverlay && (
-        <View style={styles.searchOverlay}>
-          <Pressable
-            style={styles.overlayBackdrop}
-            onPress={() => {
-              setIsSearching(false);
-              setSearchResult(null);
-              setSearchError(null);
-            }}
-          />
-          <View style={styles.searchOverlayContent}>
-            {searchLoading && (
-              <View style={styles.resultBox}>
-                <ActivityIndicator size="large" color="#6366f1" />
-                <Text style={styles.resultText}>Searching...</Text>
-              </View>
-            )}
-            {searchError && !searchLoading && (
-              <View style={styles.resultBox}>
-                <Text style={styles.errorText}>{searchError}</Text>
-              </View>
-            )}
-            {searchResult && !searchLoading && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Search Result</Text>
-                <View style={styles.resultRow}>
-                  <MovieCard
-                    movie={searchResult}
-                    onPress={() => handleMoviePress(searchResult)}
-                  />
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
+        <SearchResultsOverlay
+          searchLoading={searchLoading}
+          searchError={searchError}
+          searchResult={searchResult}
+          onResultPress={handleMoviePress}
+          onDismiss={() => {
+            Keyboard.dismiss();
+            setIsSearching(false);
+            setSearchResult(null);
+            setSearchError(null);
+          }}
+        />
       )}
     </View>
   );
@@ -226,20 +206,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',
-  },
-  searchOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 100,
-  },
-  overlayBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-  },
-  searchOverlayContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    justifyContent: 'flex-start',
   },
   content: {
     paddingTop: 16,
@@ -260,24 +226,6 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 4,
   },
-  resultBox: {
-    backgroundColor: '#1f1f1f',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    alignItems: 'center',
-  },
-  resultText: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 12,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#ef4444',
-  },
   section: {
     marginBottom: 24,
   },
@@ -286,10 +234,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 16,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    width: 120,
   },
   heroSkeleton: {
     height: 280,

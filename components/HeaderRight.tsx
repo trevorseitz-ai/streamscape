@@ -21,7 +21,7 @@ export function HeaderRight({
 
   return (
     <View style={styles.headerRight}>
-      {routeName === 'index' && (
+      {(routeName === 'index' || routeName === 'watchlist') && (
         <Pressable
           style={styles.searchIcon}
           onPress={() => setIsSearching(true)}

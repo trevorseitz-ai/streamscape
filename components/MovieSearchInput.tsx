@@ -10,24 +10,28 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 
-export function HeaderSearchInput() {
-  const { query, setQuery, handleSearch, searchLoading, setIsSearching } = useSearch();
+export function MovieSearchInput() {
+  const { query, setQuery, handleSearch, searchLoading, setIsSearching } =
+    useSearch();
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  const handleCancel = () => {
+    Keyboard.dismiss();
+    setIsSearching(false);
+  };
+
+  const handleSubmit = () => {
+    Keyboard.dismiss();
+    handleSearch();
+  };
+
   return (
     <View style={styles.container}>
-      <Pressable
-        style={styles.backButton}
-        onPress={() => {
-          Keyboard.dismiss();
-          setIsSearching(false);
-        }}
-        hitSlop={8}
-      >
+      <Pressable style={styles.backButton} onPress={handleCancel} hitSlop={8}>
         <Ionicons name="arrow-back" size={22} color="#ffffff" />
       </Pressable>
       <TextInput
@@ -37,10 +41,7 @@ export function HeaderSearchInput() {
         placeholderTextColor="#6b7280"
         value={query}
         onChangeText={setQuery}
-        onSubmitEditing={() => {
-          Keyboard.dismiss();
-          handleSearch();
-        }}
+        onSubmitEditing={handleSubmit}
         returnKeyType="search"
         editable={!searchLoading}
         autoCapitalize="none"
