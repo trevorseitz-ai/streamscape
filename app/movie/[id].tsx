@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
+import { useCountry } from '../../lib/country-context';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -74,14 +75,12 @@ interface TMDBMovieResponse {
     }>;
   };
   'watch/providers'?: {
-    results?: {
-      US?: {
-        link?: string;
-        flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-        rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-        buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-      };
-    };
+    results?: Record<string, {
+      link?: string;
+      flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+      rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+      buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+    }>;
   };
   videos?: {
     results?: Array<{ key: string; site: string; type: string }>;
@@ -110,9 +109,44 @@ function toFullImageUrl(path: string | null | undefined): string | null {
   return `${TMDB_IMAGE_BASE}${path}`;
 }
 
+type WatchProviderCountry = {
+  link?: string;
+  flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+  rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+  buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+};
+
+function buildAvailabilityFromProviders(
+  countryData: WatchProviderCountry | undefined
+): PlatformAvailability[] {
+  const watchLink = countryData?.link ?? null;
+  const availability: PlatformAvailability[] = [];
+  const addProviders = (
+    list: Array<{ provider_id: number; provider_name: string; logo_path: string | null }> | undefined,
+    accessType: string
+  ) => {
+    for (const p of list ?? []) {
+      availability.push({
+        id: `${accessType}-${p.provider_name}`,
+        provider_id: p.provider_id,
+        platform_name: p.provider_name,
+        access_type: accessType,
+        price: null,
+        direct_url: watchLink,
+        logo_url: toFullImageUrl(p.logo_path),
+      });
+    }
+  };
+  addProviders(countryData?.flatrate, 'subscription');
+  addProviders(countryData?.rent, 'rent');
+  addProviders(countryData?.buy, 'buy');
+  return availability;
+}
+
 async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   movie: MovieDetails;
   trailerKey: string | null;
+  watchProvidersResults: Record<string, WatchProviderCountry> | null;
 }> {
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
@@ -156,28 +190,9 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
     });
   }
 
-  const us = data['watch/providers']?.results?.US;
-  const watchLink = us?.link ?? null;
-  const availability: PlatformAvailability[] = [];
-  const addProviders = (
-    list: Array<{ provider_id: number; provider_name: string; logo_path: string | null }> | undefined,
-    accessType: string
-  ) => {
-    for (const p of list ?? []) {
-      availability.push({
-        id: `${accessType}-${p.provider_name}`,
-        provider_id: p.provider_id,
-        platform_name: p.provider_name,
-        access_type: accessType,
-        price: null,
-        direct_url: watchLink,
-        logo_url: toFullImageUrl(p.logo_path),
-      });
-    }
-  };
-  addProviders(us?.flatrate, 'subscription');
-  addProviders(us?.rent, 'rent');
-  addProviders(us?.buy, 'buy');
+  const watchProvidersResults = data['watch/providers']?.results ?? null;
+  const us = watchProvidersResults?.US;
+  const availability = buildAvailabilityFromProviders(us);
 
   const trailer = (data.videos?.results ?? []).find(
     (v) => v.site === 'YouTube' && v.type === 'Trailer'
@@ -194,15 +209,17 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       type: 'movie',
       cast: [...actors, ...crew],
       availability,
-      watch_link: watchLink,
+      watch_link: us?.link ?? null,
     },
     trailerKey: trailer?.key ?? null,
+    watchProvidersResults,
   };
 }
 
 export default function MovieDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { selectedCountry, setSelectedCountry } = useCountry();
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +229,7 @@ export default function MovieDetailsScreen() {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
+  const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -569,9 +587,10 @@ export default function MovieDetailsScreen() {
       try {
         if (isTmdbId) {
           const tmdbId = Number(id);
-          const { movie: tmdbMovie, trailerKey: key } =
+          const { movie: tmdbMovie, trailerKey: key, watchProvidersResults: providers } =
             await fetchMovieFromTMDB(tmdbId);
           setMovie(tmdbMovie);
+          setWatchProvidersResults(providers);
           if (key) setTrailerKey(key);
           await findSupabaseMediaId(
             tmdbMovie.title,
@@ -579,6 +598,7 @@ export default function MovieDetailsScreen() {
             tmdbId
           );
         } else {
+          setWatchProvidersResults(null);
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
           setMovie(initial);
@@ -619,6 +639,14 @@ export default function MovieDetailsScreen() {
       </View>
     );
   }
+
+  const displayAvailability = watchProvidersResults
+    ? buildAvailabilityFromProviders(watchProvidersResults[selectedCountry])
+    : (movie?.availability ?? []);
+
+  const displayWatchLink = watchProvidersResults
+    ? watchProvidersResults[selectedCountry]?.link ?? null
+    : movie?.watch_link ?? null;
 
   function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
     return [...providers].sort((a, b) => {
@@ -855,33 +883,63 @@ export default function MovieDetailsScreen() {
 
       {/* Where to Watch */}
       <View style={styles.streamSection}>
-        <Text style={styles.streamSectionTitle}>Where to Watch</Text>
-        {movie.availability.length === 0 ? (
+        <View style={styles.streamSectionHeader}>
+          <Text style={styles.streamSectionTitle}>Where to Watch</Text>
+          {watchProvidersResults ? (
+            <View style={styles.countrySelector}>
+              <Pressable
+                style={[
+                  styles.countryButton,
+                  selectedCountry === 'US' && styles.countryButtonActive,
+                ]}
+                onPress={() => setSelectedCountry('US')}
+              >
+                <Text style={[
+                  styles.countryButtonText,
+                  selectedCountry === 'US' && styles.countryButtonTextActive,
+                ]}>🇺🇸 USA</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.countryButton,
+                  selectedCountry === 'CA' && styles.countryButtonActive,
+                ]}
+                onPress={() => setSelectedCountry('CA')}
+              >
+                <Text style={[
+                  styles.countryButtonText,
+                  selectedCountry === 'CA' && styles.countryButtonTextActive,
+                ]}>🇨🇦 Canada</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+        {displayAvailability.length === 0 ? (
           <Text style={styles.noStreaming}>No streaming options found</Text>
         ) : (
           <>
             {renderProviderGroup(
-              movie.availability.filter((a) => a.access_type === 'subscription'),
+              displayAvailability.filter((a) => a.access_type === 'subscription'),
               'Stream'
             )}
             {renderProviderGroup(
-              movie.availability.filter((a) => a.access_type === 'rent'),
+              displayAvailability.filter((a) => a.access_type === 'rent'),
               'Rent'
             )}
             {renderProviderGroup(
-              movie.availability.filter((a) => a.access_type === 'buy'),
+              displayAvailability.filter((a) => a.access_type === 'buy'),
               'Buy'
             )}
           </>
         )}
 
-        {movie.watch_link ? (
+        {displayWatchLink ? (
           <Pressable
             style={({ pressed }) => [
               styles.moreInfoButton,
               pressed && styles.moreInfoButtonPressed,
             ]}
-            onPress={() => Linking.openURL(movie.watch_link!)}
+            onPress={() => Linking.openURL(displayWatchLink!)}
           >
             <Text style={styles.moreInfoText}>More Info on TMDB →</Text>
           </Pressable>
@@ -1131,12 +1189,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
   },
+  streamSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
   streamSectionTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 16,
     letterSpacing: -0.3,
+  },
+  countrySelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  countryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#2d2d2d',
+    borderWidth: 1,
+    borderColor: '#3d3d3d',
+  },
+  countryButtonActive: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  countryButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  countryButtonTextActive: {
+    color: '#ffffff',
   },
   providerGroup: {
     marginBottom: 20,
