@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useRouter } from 'expo-router';
+import { useCountry } from '../../lib/country-context';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -22,6 +23,7 @@ interface TrendingMovie extends Movie {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { selectedCountry } = useCountry();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchResult, setSearchResult] = useState<Movie | null>(null);
@@ -31,6 +33,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     async function fetchTrending() {
+      setTrendingLoading(true);
       const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
       if (!apiKey) {
         setTrendingLoading(false);
@@ -39,7 +42,7 @@ export default function HomeScreen() {
 
       try {
         const res = await fetch(
-          `${TMDB_BASE}/trending/movie/day?language=en-US`,
+          `${TMDB_BASE}/trending/movie/day?language=en-US&region=${selectedCountry}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         if (!res.ok) throw new Error(`TMDB error ${res.status}`);
@@ -67,7 +70,7 @@ export default function HomeScreen() {
     }
 
     fetchTrending();
-  }, []);
+  }, [selectedCountry]);
 
   const heroMovie = trending.length > 0 ? trending[0] : null;
   const restTrending = trending.slice(1);
@@ -225,6 +228,7 @@ export default function HomeScreen() {
       {trendingLoading ? (
         <View style={styles.heroSkeleton}>
           <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
         </View>
       ) : heroMovie ? (
         <Pressable
@@ -374,6 +378,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 28,
+  },
+  heroSkeletonText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 12,
   },
   heroContainer: {
     height: 280,

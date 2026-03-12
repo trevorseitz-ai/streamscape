@@ -440,7 +440,7 @@ export default function DiscoverScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
-            Discovering {selectedYear} movies...
+            Discovering {selectedYear} movies for your region...
           </Text>
         </View>
       )}
