@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
   Pressable,
   Keyboard,
-  SafeAreaView,
   Platform,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
@@ -34,6 +34,10 @@ export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+
+  const handleLogout = useCallback(() => {
+    supabase.auth.signOut();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -123,9 +127,7 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeHeader}>
         <HomeHeader
           session={session}
-          onLogout={() => {
-            supabase.auth.signOut();
-          }}
+          onLogout={handleLogout}
           onLogin={() => router.push('/login')}
         />
       </SafeAreaView>
@@ -243,7 +245,6 @@ const styles = StyleSheet.create({
   },
   safeHeader: {
     backgroundColor: '#0f0f0f',
-    paddingTop: Platform.OS === 'android' ? 24 : 0,
     zIndex: 10,
     elevation: 10,
   },

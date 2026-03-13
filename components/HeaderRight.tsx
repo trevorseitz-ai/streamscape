@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet, Keyboard } from 'react-native';
+import { View, Pressable, Text, StyleSheet, Keyboard, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { CountrySelector } from './CountrySelector';
@@ -43,19 +43,25 @@ export function HeaderRight({
       )}
       <CountrySelector />
       {!compact && session ? (
-        <Pressable style={styles.headerButton} onPress={onLogout}>
+        <TouchableOpacity
+          style={styles.authButton}
+          onPress={onLogout}
+          activeOpacity={0.8}
+          userInteractionEnabled
+        >
           <Ionicons name="log-out-outline" size={20} color="#ef4444" />
           <Text style={styles.logoutText}>Log Out</Text>
-        </Pressable>
+        </TouchableOpacity>
       ) : !compact ? (
-        <Pressable
-          style={styles.headerButton}
+        <TouchableOpacity
+          style={styles.authButton}
           onPress={onLogin}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
+          userInteractionEnabled
         >
           <Ionicons name="person-circle-outline" size={20} color="#6366f1" />
-          <Text style={styles.loginText}>Sign In</Text>
-        </Pressable>
+          <Text style={styles.loginText}>Log In</Text>
+        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -80,6 +86,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 6,
+  },
+  authButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    gap: 6,
+    zIndex: 999,
   },
   loginText: {
     color: '#6366f1',
