@@ -378,20 +378,6 @@ export default function DiscoverScreen() {
 
   const hasMovies = phase1Movies.length > 0 || phase2Movies.length > 0;
 
-  // Auth guard: blackout when not logged in (immediate effect on signOut)
-  if (!session) {
-    return (
-      <View style={styles.blackout}>
-        <TouchableOpacity
-          style={styles.blackoutButton}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.blackoutText}>Sign in to discover movies</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   const listData = useMemo(() => {
     const items: ListItem[] = [];
 
@@ -418,6 +404,20 @@ export default function DiscoverScreen() {
 
     return items;
   }, [phase1Movies, phase2Movies, numColumns, fetchPhase, dividerTitle]);
+
+  // Auth guard: blackout when not logged in (after all hooks)
+  if (!session) {
+    return (
+      <View style={styles.blackout}>
+        <TouchableOpacity
+          style={styles.blackoutButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.blackoutText}>Sign in to discover movies</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
