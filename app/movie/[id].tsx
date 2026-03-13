@@ -26,6 +26,7 @@ import { useMovie } from '../../lib/movie-context';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -261,6 +262,7 @@ export default function MovieDetailsScreen() {
     setSearchError,
   } = useSearch();
   const { setTitle } = useMovie();
+  const { isMobile } = useBreakpoint();
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -785,44 +787,48 @@ export default function MovieDetailsScreen() {
       {/* Main container: single ScrollView for full-page scroll */}
       <ScrollView
         style={styles.mainScroll}
-        contentContainerStyle={styles.mainScrollContent}
+        contentContainerStyle={[
+          styles.mainScrollContent,
+          !isMobile && styles.mainScrollContentRow,
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Poster (Top) */}
-        <View style={styles.posterColumn}>
-          {movie.poster_url ? (
-            <Image
-              source={{ uri: movie.poster_url }}
-              style={styles.posterImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.posterHeroPlaceholder}>
-              <Text style={styles.posterPlaceholderText}>?</Text>
-            </View>
-          )}
-        </View>
+        <View style={[styles.heroLayout, !isMobile && styles.heroLayoutRow]}>
+          {/* Poster: mobile = full width top, desktop = left 40% */}
+          <View style={[styles.posterColumn, !isMobile && styles.posterColumnDesktop]}>
+            {movie.poster_url ? (
+              <Image
+                source={{ uri: movie.poster_url }}
+                style={styles.posterImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.posterHeroPlaceholder}>
+                <Text style={styles.posterPlaceholderText}>?</Text>
+              </View>
+            )}
+          </View>
 
-        {/* Title & Year */}
-        <View style={styles.infoColumn}>
+          {/* Title & Year */}
+          <View style={[styles.infoColumn, !isMobile && styles.infoColumnDesktop]}>
           <View>
-            <Text style={styles.title}>{movie.title}</Text>
+            <Text style={[styles.title, !isMobile && styles.titleDesktop]}>{movie.title}</Text>
             {movie.release_year != null ? (
-              <Text style={styles.year}>{movie.release_year}</Text>
+              <Text style={[styles.year, !isMobile && styles.yearDesktop]}>{movie.release_year}</Text>
             ) : null}
           </View>
 
           {/* Overview */}
           {movie.synopsis ? (
-            <View style={styles.overviewCompact}>
-              <Text style={styles.overviewText}>{movie.synopsis}</Text>
+            <View style={[styles.overviewCompact, !isMobile && styles.overviewCompactDesktop]}>
+              <Text style={[styles.overviewText, !isMobile && styles.overviewTextDesktop]}>{movie.synopsis}</Text>
             </View>
           ) : null}
 
           {/* Cast (Actors) - horizontal scroll within page */}
           {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Cast</Text>
+            <View style={[styles.section, !isMobile && styles.sectionDesktop]}>
+              <Text style={[styles.sectionTitle, !isMobile && styles.sectionTitleDesktop]}>Cast</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -831,25 +837,25 @@ export default function MovieDetailsScreen() {
                 {movie.cast
                   .filter((p) => p.role_type === 'actor')
                   .map((person, idx) => (
-                    <View key={`${person.id}-${idx}`} style={styles.castCard}>
+                    <View key={`${person.id}-${idx}`} style={[styles.castCard, !isMobile && styles.castCardDesktop]}>
                       {person.headshot_url ? (
                         <Image
                           source={{ uri: person.headshot_url }}
-                          style={styles.castPhoto}
+                          style={[styles.castPhoto, !isMobile && styles.castPhotoDesktop]}
                           resizeMode="cover"
                         />
                       ) : (
-                        <View style={styles.castPhotoPlaceholder}>
+                        <View style={[styles.castPhotoPlaceholder, !isMobile && styles.castPhotoPlaceholderDesktop]}>
                           <Text style={styles.castInitial}>
                             {person.name.charAt(0)}
                           </Text>
                         </View>
                       )}
-                      <Text style={styles.castName} numberOfLines={1}>
+                      <Text style={[styles.castName, !isMobile && styles.castNameDesktop]} numberOfLines={1}>
                         {person.name}
                       </Text>
                       {person.character ? (
-                        <Text style={styles.castCharacter} numberOfLines={1}>
+                        <Text style={[styles.castCharacter, !isMobile && styles.castCharacterDesktop]} numberOfLines={1}>
                           {person.character}
                         </Text>
                       ) : null}
@@ -861,17 +867,17 @@ export default function MovieDetailsScreen() {
 
           {/* Crew */}
           {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Crew</Text>
+            <View style={[styles.section, !isMobile && styles.sectionDesktop]}>
+              <Text style={[styles.sectionTitle, !isMobile && styles.sectionTitleDesktop]}>Crew</Text>
               <View style={styles.crewGrid}>
                 {movie.cast
                   .filter((p) => p.role_type !== 'actor')
                   .map((person, idx) => (
-                    <View key={`${person.id}-crew-${idx}`} style={styles.crewItem}>
-                      <Text style={styles.crewRole}>
+                    <View key={`${person.id}-crew-${idx}`} style={[styles.crewItem, !isMobile && styles.crewItemDesktop]}>
+                      <Text style={[styles.crewRole, !isMobile && styles.crewRoleDesktop]}>
                         {person.job ?? person.role_type}
                       </Text>
-                      <Text style={styles.crewName}>{person.name}</Text>
+                      <Text style={[styles.crewName, !isMobile && styles.crewNameDesktop]}>{person.name}</Text>
                     </View>
                   ))}
               </View>
@@ -879,10 +885,11 @@ export default function MovieDetailsScreen() {
           ) : null}
 
           {/* Action Buttons (Bottom) */}
-          <View style={styles.watchlistButtonCompact}>
+          <View style={[styles.watchlistButtonCompact, !isMobile && styles.watchlistButtonCompactDesktop]}>
             <Pressable
               style={[
                 styles.watchlistButton,
+                !isMobile && styles.watchlistButtonDesktop,
                 inWatchlist && styles.watchlistButtonRemove,
                 watchlistLoading && styles.watchlistButtonDisabled,
               ]}
@@ -930,12 +937,13 @@ export default function MovieDetailsScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.watchTrailerButton,
+                !isMobile && styles.watchTrailerButtonDesktop,
                 pressed && styles.watchTrailerButtonPressed,
               ]}
               onPress={() => setTrailerModalVisible(true)}
             >
-              <Ionicons name="play-circle" size={24} color="#ffffff" />
-              <Text style={styles.watchTrailerText}>Watch Trailer</Text>
+              <Ionicons name="play-circle" size={!isMobile ? 28 : 24} color="#ffffff" />
+              <Text style={[styles.watchTrailerText, !isMobile && styles.watchTrailerTextDesktop]}>Watch Trailer</Text>
             </Pressable>
           ) : null}
 
@@ -962,7 +970,7 @@ export default function MovieDetailsScreen() {
             if (!watchProvidersResults) return null;
 
             return (
-              <View style={styles.streamingSection}>
+              <View style={[styles.streamingSection, !isMobile && styles.streamingSectionDesktop]}>
                 {allProviders.length > 0 ? (
                   <View style={styles.streamingIconsRowCompact}>
                     {allProviders.map((p) => (
@@ -992,16 +1000,18 @@ export default function MovieDetailsScreen() {
                   <Pressable
                     style={({ pressed }) => [
                       styles.watchNowButton,
+                      !isMobile && styles.watchNowButtonDesktop,
                       pressed && styles.watchNowButtonPressed,
                     ]}
                     onPress={() => Linking.openURL(countryData!.link!)}
                   >
-                    <Text style={styles.watchNowButtonText}>Watch Now</Text>
+                    <Text style={[styles.watchNowButtonText, !isMobile && styles.watchNowButtonTextDesktop]}>Watch Now</Text>
                   </Pressable>
                 ) : null}
               </View>
             );
           })()}
+        </View>
         </View>
       </ScrollView>
 
@@ -1057,6 +1067,17 @@ const styles = StyleSheet.create({
   mainScrollContent: {
     paddingBottom: 40,
   },
+  mainScrollContentRow: {
+    flexGrow: 1,
+  },
+  heroLayout: {
+    width: '100%',
+  },
+  heroLayoutRow: {
+    flexDirection: 'row',
+    width: '100%',
+    alignItems: 'flex-start',
+  },
   center: {
     flex: 1,
     backgroundColor: '#0f0f0f',
@@ -1093,6 +1114,11 @@ const styles = StyleSheet.create({
     height: 500,
     overflow: 'hidden',
   },
+  posterColumnDesktop: {
+    width: '40%',
+    minHeight: 600,
+    height: 600,
+  },
   posterImage: {
     width: '100%',
     height: '100%',
@@ -1108,6 +1134,11 @@ const styles = StyleSheet.create({
   infoColumn: {
     padding: 20,
   },
+  infoColumnDesktop: {
+    width: '60%',
+    padding: 28,
+    flex: 1,
+  },
   watchTrailerButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1120,6 +1151,11 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
   },
+  watchTrailerButtonDesktop: {
+    paddingVertical: 16,
+    borderRadius: 14,
+    marginTop: 16,
+  },
   watchTrailerButtonPressed: {
     opacity: 0.8,
   },
@@ -1128,8 +1164,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  watchTrailerTextDesktop: {
+    fontSize: 18,
+  },
   streamingSection: {
     marginTop: 24,
+  },
+  streamingSectionDesktop: {
+    marginTop: 28,
   },
   noStreamingText: {
     fontSize: 13,
@@ -1174,6 +1216,10 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
   },
+  watchNowButtonDesktop: {
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
   watchNowButtonPressed: {
     opacity: 0.8,
   },
@@ -1181,6 +1227,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  watchNowButtonTextDesktop: {
+    fontSize: 18,
   },
   streamingIconsRow: {
     flexDirection: 'row',
@@ -1218,13 +1267,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
     width: '100%',
   },
+  watchlistButtonCompactDesktop: {
+    marginTop: 24,
+  },
   overviewCompact: {
     marginTop: 12,
+  },
+  overviewCompactDesktop: {
+    marginTop: 16,
   },
   overviewText: {
     fontSize: 13,
     color: '#d1d5db',
     lineHeight: 20,
+  },
+  overviewTextDesktop: {
+    fontSize: 15,
+    lineHeight: 24,
   },
   trailerModalContainer: {
     flex: 1,
@@ -1259,6 +1318,10 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
   },
+  watchlistButtonDesktop: {
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
   watchlistButtonRemove: {
     backgroundColor: 'transparent',
     borderWidth: 2,
@@ -1289,20 +1352,35 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     letterSpacing: -0.5,
   },
+  titleDesktop: {
+    fontSize: 34,
+  },
   year: {
     fontSize: 16,
     color: '#9ca3af',
     marginTop: 4,
   },
+  yearDesktop: {
+    fontSize: 18,
+    marginTop: 6,
+  },
   section: {
     marginTop: 16,
     marginBottom: 24,
+  },
+  sectionDesktop: {
+    marginTop: 20,
+    marginBottom: 28,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#ffffff',
     marginBottom: 12,
+  },
+  sectionTitleDesktop: {
+    fontSize: 20,
+    marginBottom: 14,
   },
   synopsis: {
     fontSize: 15,
@@ -1317,10 +1395,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
+  castCardDesktop: {
+    width: 100,
+    marginRight: 20,
+  },
   castPhoto: {
     width: 72,
     height: 72,
     borderRadius: 36,
+  },
+  castPhotoDesktop: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   castPhotoPlaceholder: {
     width: 72,
@@ -1329,6 +1416,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#2d2d2d',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  castPhotoPlaceholderDesktop: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   castInitial: {
     fontSize: 24,
@@ -1341,10 +1433,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginTop: 6,
   },
+  castNameDesktop: {
+    fontSize: 14,
+    marginTop: 8,
+  },
   castCharacter: {
     fontSize: 11,
     color: '#9ca3af',
     marginTop: 2,
+  },
+  castCharacterDesktop: {
+    fontSize: 12,
+    marginTop: 4,
   },
   crewGrid: {
     flexDirection: 'row',
@@ -1359,6 +1459,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
   },
+  crewItemDesktop: {
+    padding: 14,
+    borderRadius: 12,
+  },
   crewRole: {
     fontSize: 11,
     fontWeight: '700',
@@ -1367,10 +1471,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 4,
   },
+  crewRoleDesktop: {
+    fontSize: 12,
+    marginBottom: 6,
+  },
   crewName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#e5e7eb',
+  },
+  crewNameDesktop: {
+    fontSize: 15,
   },
   streamSection: {
     backgroundColor: '#1a1a1a',
