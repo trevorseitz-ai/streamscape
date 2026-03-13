@@ -14,7 +14,6 @@ import {
   SafeAreaView,
   Modal,
   Dimensions,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -24,7 +23,6 @@ import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { useMovie } from '../../lib/movie-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
@@ -252,36 +250,6 @@ export default function MovieDetailsScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
-  const [contentHeight, setContentHeight] = useState(0);
-  const [scrollViewHeight, setScrollViewHeight] = useState(0);
-  const showScrollGradient = contentHeight > scrollViewHeight;
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const bounceY = useRef(new Animated.Value(0)).current;
-
-  const chevronOpacity = scrollY.interpolate({
-    inputRange: [0, 10],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-
-  useEffect(() => {
-    const bounce = Animated.loop(
-      Animated.sequence([
-        Animated.timing(bounceY, {
-          toValue: 6,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(bounceY, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    bounce.start();
-    return () => bounce.stop();
-  }, [bounceY]);
 
   const {
     isSearching,
@@ -814,264 +782,228 @@ export default function MovieDetailsScreen() {
         <SafeAreaView style={styles.safeHeader}>
           <MovieDetailsHeader hideBackButton />
       </SafeAreaView>
-      {/* Main container: column layout for mobile */}
-      <View style={styles.mainContainer}>
-        <View style={styles.splitRow}>
-          {/* Poster: full width, top */}
-          <View style={styles.posterColumn}>
-            {movie.poster_url ? (
-              <Image
-                source={{ uri: movie.poster_url }}
-                style={styles.posterImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.posterHeroPlaceholder}>
-                <Text style={styles.posterPlaceholderText}>?</Text>
-              </View>
-            )}
+      {/* Main container: single ScrollView for full-page scroll */}
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Poster (Top) */}
+        <View style={styles.posterColumn}>
+          {movie.poster_url ? (
+            <Image
+              source={{ uri: movie.poster_url }}
+              style={styles.posterImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.posterHeroPlaceholder}>
+              <Text style={styles.posterPlaceholderText}>?</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Title & Year */}
+        <View style={styles.infoColumn}>
+          <View>
+            <Text style={styles.title}>{movie.title}</Text>
+            {movie.release_year != null ? (
+              <Text style={styles.year}>{movie.release_year}</Text>
+            ) : null}
           </View>
 
-          {/* Info: full width below poster, scrollable */}
-          <View style={styles.infoColumn}>
-            <ScrollView
-              style={styles.sidebarScroll}
-              contentContainerStyle={styles.sidebarContent}
-              showsVerticalScrollIndicator={false}
-              onContentSizeChange={(_, h) => setContentHeight(h)}
-              onLayout={(e) => setScrollViewHeight(e.nativeEvent.layout.height)}
-              onScroll={Animated.event(
-                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                { useNativeDriver: true }
-              )}
-              scrollEventThrottle={16}
+          {/* Overview */}
+          {movie.synopsis ? (
+            <View style={styles.overviewCompact}>
+              <Text style={styles.overviewText}>{movie.synopsis}</Text>
+            </View>
+          ) : null}
+
+          {/* Cast (Actors) - horizontal scroll within page */}
+          {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Cast</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.castScroll}
+              >
+                {movie.cast
+                  .filter((p) => p.role_type === 'actor')
+                  .map((person, idx) => (
+                    <View key={`${person.id}-${idx}`} style={styles.castCard}>
+                      {person.headshot_url ? (
+                        <Image
+                          source={{ uri: person.headshot_url }}
+                          style={styles.castPhoto}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.castPhotoPlaceholder}>
+                          <Text style={styles.castInitial}>
+                            {person.name.charAt(0)}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={styles.castName} numberOfLines={1}>
+                        {person.name}
+                      </Text>
+                      {person.character ? (
+                        <Text style={styles.castCharacter} numberOfLines={1}>
+                          {person.character}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {/* Crew */}
+          {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Crew</Text>
+              <View style={styles.crewGrid}>
+                {movie.cast
+                  .filter((p) => p.role_type !== 'actor')
+                  .map((person, idx) => (
+                    <View key={`${person.id}-crew-${idx}`} style={styles.crewItem}>
+                      <Text style={styles.crewRole}>
+                        {person.job ?? person.role_type}
+                      </Text>
+                      <Text style={styles.crewName}>{person.name}</Text>
+                    </View>
+                  ))}
+              </View>
+            </View>
+          ) : null}
+
+          {/* Action Buttons (Bottom) */}
+          <View style={styles.watchlistButtonCompact}>
+            <Pressable
+              style={[
+                styles.watchlistButton,
+                inWatchlist && styles.watchlistButtonRemove,
+                watchlistLoading && styles.watchlistButtonDisabled,
+              ]}
+              onPress={toggleWatchlist}
+              disabled={watchlistLoading}
             >
-              {/* 1. Title & Year */}
-              <View>
-                <Text style={styles.title}>{movie.title}</Text>
-                {movie.release_year != null ? (
-                  <Text style={styles.year}>{movie.release_year}</Text>
+              <View style={styles.watchlistButtonContent}>
+                {watchlistLoading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={inWatchlist ? '#22c55e' : '#ffffff'}
+                    style={styles.watchlistSpinner}
+                  />
+                ) : (
+                  <Ionicons
+                    name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
+                    size={20}
+                    color={
+                      inWatchlist
+                        ? '#22c55e'
+                        : session
+                          ? '#ffffff'
+                          : '#a5b4fc'
+                    }
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.watchlistButtonText,
+                    inWatchlist && styles.watchlistButtonTextRemove,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {session
+                    ? inWatchlist
+                      ? 'On Watchlist'
+                      : 'Add to Watchlist'
+                    : 'Sign in to Add'}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+
+          {trailerKey ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.watchTrailerButton,
+                pressed && styles.watchTrailerButtonPressed,
+              ]}
+              onPress={() => setTrailerModalVisible(true)}
+            >
+              <Ionicons name="play-circle" size={24} color="#ffffff" />
+              <Text style={styles.watchTrailerText}>Watch Trailer</Text>
+            </Pressable>
+          ) : null}
+
+          {/* Streaming Section */}
+          {(() => {
+            const countryData = watchProvidersResults?.[selectedCountry];
+            const hasLink = !!countryData?.link;
+
+            const providerMap = new Map<
+              number,
+              { provider_id: number; provider_name: string; logo_path: string | null }
+            >();
+            for (const p of countryData?.flatrate ?? []) {
+              providerMap.set(p.provider_id, p);
+            }
+            for (const p of countryData?.rent ?? []) {
+              if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
+            }
+            for (const p of countryData?.buy ?? []) {
+              if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
+            }
+            const allProviders = Array.from(providerMap.values());
+
+            if (!watchProvidersResults) return null;
+
+            return (
+              <View style={styles.streamingSection}>
+                {allProviders.length > 0 ? (
+                  <View style={styles.streamingIconsRowCompact}>
+                    {allProviders.map((p) => (
+                      <View key={p.provider_id} style={styles.streamingIcon}>
+                        {p.logo_path ? (
+                          <Image
+                            source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
+                            style={styles.streamingIconImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.streamingIconPlaceholder}>
+                            <Text style={styles.streamingIconInitial}>
+                              {p.provider_name.charAt(0)}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.noStreamingText}>
+                    No streaming info available for this region
+                  </Text>
+                )}
+                {hasLink ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.watchNowButton,
+                      pressed && styles.watchNowButtonPressed,
+                    ]}
+                    onPress={() => Linking.openURL(countryData!.link!)}
+                  >
+                    <Text style={styles.watchNowButtonText}>Watch Now</Text>
+                  </Pressable>
                 ) : null}
               </View>
-
-              {/* 2. Overview */}
-              {movie.synopsis ? (
-                <View style={styles.overviewCompact}>
-                  <Text style={styles.overviewText}>{movie.synopsis}</Text>
-                </View>
-              ) : null}
-
-              {/* Cast (Actors) */}
-              {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Cast</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.castScroll}
-                  >
-                    {movie.cast
-                      .filter((p) => p.role_type === 'actor')
-                      .map((person, idx) => (
-                        <View key={`${person.id}-${idx}`} style={styles.castCard}>
-                          {person.headshot_url ? (
-                            <Image
-                              source={{ uri: person.headshot_url }}
-                              style={styles.castPhoto}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.castPhotoPlaceholder}>
-                              <Text style={styles.castInitial}>
-                                {person.name.charAt(0)}
-                              </Text>
-                            </View>
-                          )}
-                          <Text style={styles.castName} numberOfLines={1}>
-                            {person.name}
-                          </Text>
-                          {person.character ? (
-                            <Text style={styles.castCharacter} numberOfLines={1}>
-                              {person.character}
-                            </Text>
-                          ) : null}
-                        </View>
-                      ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-
-              {/* Crew */}
-              {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Crew</Text>
-                  <View style={styles.crewGrid}>
-                    {movie.cast
-                      .filter((p) => p.role_type !== 'actor')
-                      .map((person, idx) => (
-                        <View key={`${person.id}-crew-${idx}`} style={styles.crewItem}>
-                          <Text style={styles.crewRole}>
-                            {person.job ?? person.role_type}
-                          </Text>
-                          <Text style={styles.crewName}>{person.name}</Text>
-                        </View>
-                      ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Action Buttons - at bottom of sidebar */}
-              <View style={styles.watchlistButtonCompact}>
-                <Pressable
-                  style={[
-                    styles.watchlistButton,
-                    inWatchlist && styles.watchlistButtonRemove,
-                    watchlistLoading && styles.watchlistButtonDisabled,
-                  ]}
-                  onPress={toggleWatchlist}
-                  disabled={watchlistLoading}
-                >
-                  <View style={styles.watchlistButtonContent}>
-                    {watchlistLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={inWatchlist ? '#22c55e' : '#ffffff'}
-                        style={styles.watchlistSpinner}
-                      />
-                    ) : (
-                      <Ionicons
-                        name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
-                        size={20}
-                        color={
-                          inWatchlist
-                            ? '#22c55e'
-                            : session
-                              ? '#ffffff'
-                              : '#a5b4fc'
-                        }
-                      />
-                    )}
-                    <Text
-                      style={[
-                        styles.watchlistButtonText,
-                        inWatchlist && styles.watchlistButtonTextRemove,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {session
-                        ? inWatchlist
-                          ? 'On Watchlist'
-                          : 'Add to Watchlist'
-                        : 'Sign in to Add'}
-                    </Text>
-                  </View>
-                </Pressable>
-              </View>
-
-              {trailerKey ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.watchTrailerButton,
-                    pressed && styles.watchTrailerButtonPressed,
-                  ]}
-                  onPress={() => setTrailerModalVisible(true)}
-                >
-                  <Ionicons name="play-circle" size={24} color="#ffffff" />
-                  <Text style={styles.watchTrailerText}>Watch Trailer</Text>
-                </Pressable>
-              ) : null}
-
-              {/* Streaming Section */}
-              {(() => {
-                const countryData = watchProvidersResults?.[selectedCountry];
-                const hasLink = !!countryData?.link;
-
-                // Merge flatrate, rent, buy and de-duplicate by provider_id
-                const providerMap = new Map<
-                  number,
-                  { provider_id: number; provider_name: string; logo_path: string | null }
-                >();
-                for (const p of countryData?.flatrate ?? []) {
-                  providerMap.set(p.provider_id, p);
-                }
-                for (const p of countryData?.rent ?? []) {
-                  if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
-                }
-                for (const p of countryData?.buy ?? []) {
-                  if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
-                }
-                const allProviders = Array.from(providerMap.values());
-
-                if (!watchProvidersResults) return null;
-
-                return (
-                <View style={styles.streamingSection}>
-                  {allProviders.length > 0 ? (
-                    <View style={styles.streamingIconsRowCompact}>
-                      {allProviders.map((p) => (
-                        <View key={p.provider_id} style={styles.streamingIcon}>
-                          {p.logo_path ? (
-                            <Image
-                              source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
-                              style={styles.streamingIconImage}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.streamingIconPlaceholder}>
-                              <Text style={styles.streamingIconInitial}>
-                                {p.provider_name.charAt(0)}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.noStreamingText}>
-                      No streaming info available for this region
-                    </Text>
-                  )}
-                  {hasLink ? (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.watchNowButton,
-                        pressed && styles.watchNowButtonPressed,
-                      ]}
-                      onPress={() => Linking.openURL(countryData!.link!)}
-                    >
-                      <Text style={styles.watchNowButtonText}>Watch Now</Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-                );
-              })()}
-
-              <View style={styles.bottomSpacer} />
-            </ScrollView>
-            {showScrollGradient ? (
-              <LinearGradient
-                colors={['transparent', '#0f0f0f']}
-                style={styles.scrollGradient}
-                pointerEvents="none"
-              />
-            ) : null}
-            {showScrollGradient ? (
-              <Animated.View
-                style={[
-                  styles.scrollChevron,
-                  {
-                    opacity: chevronOpacity,
-                    transform: [{ translateY: bounceY }],
-                  },
-                ]}
-                pointerEvents="none"
-              >
-                <Ionicons name="chevron-down" size={28} color="#9ca3af" />
-              </Animated.View>
-            ) : null}
-          </View>
+            );
+          })()}
         </View>
-      </View>
+      </ScrollView>
 
       {/* Trailer Modal */}
       <Modal
@@ -1118,9 +1050,12 @@ export default function MovieDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
+  mainScroll: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  mainScrollContent: {
+    paddingBottom: 40,
   },
   center: {
     flex: 1,
@@ -1153,13 +1088,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  splitRow: {
-    flex: 1,
-    flexDirection: 'column',
-  },
   posterColumn: {
     width: '100%',
-    height: 450,
+    height: 500,
     overflow: 'hidden',
   },
   posterImage: {
@@ -1175,24 +1106,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   infoColumn: {
-    flex: 1,
     padding: 20,
-    position: 'relative',
-  },
-  scrollGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
-  },
-  scrollChevron: {
-    position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   watchTrailerButton: {
     flexDirection: 'row',
@@ -1267,12 +1181,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  sidebarScroll: {
-    flex: 1,
-  },
-  sidebarContent: {
-    paddingBottom: 40,
   },
   streamingIconsRow: {
     flexDirection: 'row',
@@ -1594,8 +1502,5 @@ const styles = StyleSheet.create({
   justWatchText: {
     fontSize: 11,
     color: '#6b7280',
-  },
-  bottomSpacer: {
-    height: 40,
   },
 });
