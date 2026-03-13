@@ -262,7 +262,7 @@ export default function MovieDetailsScreen() {
     setSearchError,
   } = useSearch();
   const { setTitle } = useMovie();
-  const { isMobile } = useBreakpoint();
+  const { isLandscape, height: viewportHeight } = useBreakpoint();
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -789,13 +789,17 @@ export default function MovieDetailsScreen() {
         style={styles.mainScroll}
         contentContainerStyle={[
           styles.mainScrollContent,
-          !isMobile && styles.mainScrollContentRow,
+          isLandscape && styles.mainScrollContentRow,
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.heroLayout, !isMobile && styles.heroLayoutRow]}>
+        <View style={[styles.heroLayout, isLandscape && styles.heroLayoutRow]}>
           {/* Poster: mobile = full width top, desktop = left 40% */}
-          <View style={[styles.posterColumn, !isMobile && styles.posterColumnDesktop]}>
+          <View style={[
+            styles.posterColumn,
+            isLandscape && styles.posterColumnLandscape,
+            isLandscape && { maxHeight: viewportHeight },
+          ]}>
             {movie.poster_url ? (
               <Image
                 source={{ uri: movie.poster_url }}
@@ -810,25 +814,25 @@ export default function MovieDetailsScreen() {
           </View>
 
           {/* Title & Year */}
-          <View style={[styles.infoColumn, !isMobile && styles.infoColumnDesktop]}>
+          <View style={[styles.infoColumn, isLandscape && styles.infoColumnLandscape]}>
           <View>
-            <Text style={[styles.title, !isMobile && styles.titleDesktop]}>{movie.title}</Text>
+            <Text style={[styles.title, isLandscape && styles.titleDesktop]}>{movie.title}</Text>
             {movie.release_year != null ? (
-              <Text style={[styles.year, !isMobile && styles.yearDesktop]}>{movie.release_year}</Text>
+              <Text style={[styles.year, isLandscape && styles.yearDesktop]}>{movie.release_year}</Text>
             ) : null}
           </View>
 
           {/* Overview */}
           {movie.synopsis ? (
-            <View style={[styles.overviewCompact, !isMobile && styles.overviewCompactDesktop]}>
-              <Text style={[styles.overviewText, !isMobile && styles.overviewTextDesktop]}>{movie.synopsis}</Text>
+            <View style={[styles.overviewCompact, isLandscape && styles.overviewCompactDesktop]}>
+              <Text style={[styles.overviewText, isLandscape && styles.overviewTextDesktop]}>{movie.synopsis}</Text>
             </View>
           ) : null}
 
           {/* Cast (Actors) - horizontal scroll within page */}
           {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
-            <View style={[styles.section, !isMobile && styles.sectionDesktop]}>
-              <Text style={[styles.sectionTitle, !isMobile && styles.sectionTitleDesktop]}>Cast</Text>
+            <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
+              <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Cast</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -837,25 +841,25 @@ export default function MovieDetailsScreen() {
                 {movie.cast
                   .filter((p) => p.role_type === 'actor')
                   .map((person, idx) => (
-                    <View key={`${person.id}-${idx}`} style={[styles.castCard, !isMobile && styles.castCardDesktop]}>
+                    <View key={`${person.id}-${idx}`} style={[styles.castCard, isLandscape && styles.castCardDesktop]}>
                       {person.headshot_url ? (
                         <Image
                           source={{ uri: person.headshot_url }}
-                          style={[styles.castPhoto, !isMobile && styles.castPhotoDesktop]}
+                          style={[styles.castPhoto, isLandscape && styles.castPhotoDesktop]}
                           resizeMode="cover"
                         />
                       ) : (
-                        <View style={[styles.castPhotoPlaceholder, !isMobile && styles.castPhotoPlaceholderDesktop]}>
+                        <View style={[styles.castPhotoPlaceholder, isLandscape && styles.castPhotoPlaceholderDesktop]}>
                           <Text style={styles.castInitial}>
                             {person.name.charAt(0)}
                           </Text>
                         </View>
                       )}
-                      <Text style={[styles.castName, !isMobile && styles.castNameDesktop]} numberOfLines={1}>
+                      <Text style={[styles.castName, isLandscape && styles.castNameDesktop]} numberOfLines={1}>
                         {person.name}
                       </Text>
                       {person.character ? (
-                        <Text style={[styles.castCharacter, !isMobile && styles.castCharacterDesktop]} numberOfLines={1}>
+                        <Text style={[styles.castCharacter, isLandscape && styles.castCharacterDesktop]} numberOfLines={1}>
                           {person.character}
                         </Text>
                       ) : null}
@@ -867,17 +871,17 @@ export default function MovieDetailsScreen() {
 
           {/* Crew */}
           {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
-            <View style={[styles.section, !isMobile && styles.sectionDesktop]}>
-              <Text style={[styles.sectionTitle, !isMobile && styles.sectionTitleDesktop]}>Crew</Text>
+            <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
+              <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Crew</Text>
               <View style={styles.crewGrid}>
                 {movie.cast
                   .filter((p) => p.role_type !== 'actor')
                   .map((person, idx) => (
-                    <View key={`${person.id}-crew-${idx}`} style={[styles.crewItem, !isMobile && styles.crewItemDesktop]}>
-                      <Text style={[styles.crewRole, !isMobile && styles.crewRoleDesktop]}>
+                    <View key={`${person.id}-crew-${idx}`} style={[styles.crewItem, isLandscape && styles.crewItemDesktop]}>
+                      <Text style={[styles.crewRole, isLandscape && styles.crewRoleDesktop]}>
                         {person.job ?? person.role_type}
                       </Text>
-                      <Text style={[styles.crewName, !isMobile && styles.crewNameDesktop]}>{person.name}</Text>
+                      <Text style={[styles.crewName, isLandscape && styles.crewNameDesktop]}>{person.name}</Text>
                     </View>
                   ))}
               </View>
@@ -885,11 +889,11 @@ export default function MovieDetailsScreen() {
           ) : null}
 
           {/* Action Buttons (Bottom) */}
-          <View style={[styles.watchlistButtonCompact, !isMobile && styles.watchlistButtonCompactDesktop]}>
+          <View style={[styles.watchlistButtonCompact, isLandscape && styles.watchlistButtonCompactDesktop]}>
             <Pressable
               style={[
                 styles.watchlistButton,
-                !isMobile && styles.watchlistButtonDesktop,
+                isLandscape && styles.watchlistButtonDesktop,
                 inWatchlist && styles.watchlistButtonRemove,
                 watchlistLoading && styles.watchlistButtonDisabled,
               ]}
@@ -937,13 +941,13 @@ export default function MovieDetailsScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.watchTrailerButton,
-                !isMobile && styles.watchTrailerButtonDesktop,
+                isLandscape && styles.watchTrailerButtonDesktop,
                 pressed && styles.watchTrailerButtonPressed,
               ]}
               onPress={() => setTrailerModalVisible(true)}
             >
-              <Ionicons name="play-circle" size={!isMobile ? 28 : 24} color="#ffffff" />
-              <Text style={[styles.watchTrailerText, !isMobile && styles.watchTrailerTextDesktop]}>Watch Trailer</Text>
+              <Ionicons name="play-circle" size={isLandscape ? 28 : 24} color="#ffffff" />
+              <Text style={[styles.watchTrailerText, isLandscape && styles.watchTrailerTextDesktop]}>Watch Trailer</Text>
             </Pressable>
           ) : null}
 
@@ -970,7 +974,7 @@ export default function MovieDetailsScreen() {
             if (!watchProvidersResults) return null;
 
             return (
-              <View style={[styles.streamingSection, !isMobile && styles.streamingSectionDesktop]}>
+              <View style={[styles.streamingSection, isLandscape && styles.streamingSectionDesktop]}>
                 {allProviders.length > 0 ? (
                   <View style={styles.streamingIconsRowCompact}>
                     {allProviders.map((p) => (
@@ -1000,12 +1004,12 @@ export default function MovieDetailsScreen() {
                   <Pressable
                     style={({ pressed }) => [
                       styles.watchNowButton,
-                      !isMobile && styles.watchNowButtonDesktop,
+                      isLandscape && styles.watchNowButtonDesktop,
                       pressed && styles.watchNowButtonPressed,
                     ]}
                     onPress={() => Linking.openURL(countryData!.link!)}
                   >
-                    <Text style={[styles.watchNowButtonText, !isMobile && styles.watchNowButtonTextDesktop]}>Watch Now</Text>
+                    <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>Watch Now</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -1072,11 +1076,13 @@ const styles = StyleSheet.create({
   },
   heroLayout: {
     width: '100%',
+    flexDirection: 'column',
   },
   heroLayoutRow: {
     flexDirection: 'row',
     width: '100%',
     alignItems: 'flex-start',
+    minHeight: 400,
   },
   center: {
     flex: 1,
@@ -1114,10 +1120,8 @@ const styles = StyleSheet.create({
     height: 500,
     overflow: 'hidden',
   },
-  posterColumnDesktop: {
-    width: '40%',
-    minHeight: 600,
-    height: 600,
+  posterColumnLandscape: {
+    width: '50%',
   },
   posterImage: {
     width: '100%',
@@ -1134,8 +1138,8 @@ const styles = StyleSheet.create({
   infoColumn: {
     padding: 20,
   },
-  infoColumnDesktop: {
-    width: '60%',
+  infoColumnLandscape: {
+    width: '50%',
     padding: 28,
     flex: 1,
   },
