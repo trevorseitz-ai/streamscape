@@ -17,7 +17,7 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
@@ -804,7 +804,13 @@ export default function MovieDetailsScreen() {
   };
 
   return (
-    <View style={styles.wrapper}>
+    <>
+      <Stack.Screen
+        options={{
+          title: movie?.title ?? 'Movie',
+        }}
+      />
+      <View style={styles.wrapper}>
         <SafeAreaView style={styles.safeHeader}>
           <MovieDetailsHeader hideBackButton />
       </SafeAreaView>
@@ -1108,6 +1114,7 @@ export default function MovieDetailsScreen() {
         />
       )}
     </View>
+    </>
   );
 }
 
