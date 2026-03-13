@@ -122,6 +122,21 @@ export default function HomeScreen() {
 
   const showSearchOverlay = isSearching && (searchResult || searchError || searchLoading);
 
+  // Auth guard: blackout when not logged in (immediate effect on signOut)
+  if (!session) {
+    return (
+      <View style={styles.blackout}>
+        <Text style={styles.blackoutBrand}>StreamScape</Text>
+        <Pressable
+          style={styles.blackoutButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.blackoutButtonText}>Log In</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.wrapper}>
       <SafeAreaView style={styles.safeHeader}>
@@ -231,6 +246,30 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  blackout: {
+    flex: 1,
+    backgroundColor: 'black',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  blackoutBrand: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 32,
+  },
+  blackoutButton: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  blackoutButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   wrapper: {
     flex: 1,
     backgroundColor: '#0f0f0f',

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -27,6 +28,7 @@ interface ProviderEntry {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { selectedCountry } = useCountry();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -34,10 +36,15 @@ export default function SettingsScreen() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
 
+  useFocusEffect(
+    useCallback(() => {
+      supabase.auth.getSession().then(({ data: { session: s } }) => {
+        setSession(s);
+      });
+    }, [])
+  );
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, s) => setSession(s)
     );
@@ -148,6 +155,22 @@ export default function SettingsScreen() {
     [session]
   );
 
+  // Auth guard: blackout when not logged in (Log In button always accessible)
+  if (!session) {
+    return (
+      <View style={styles.blackout}>
+        <Text style={styles.blackoutBrand}>StreamScape</Text>
+        <Text style={styles.blackoutHint}>Sign in to manage your settings</Text>
+        <Pressable
+          style={styles.blackoutButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.blackoutButtonText}>Log In</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -239,6 +262,35 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  blackout: {
+    flex: 1,
+    backgroundColor: 'black',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  blackoutBrand: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  blackoutHint: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginBottom: 32,
+  },
+  blackoutButton: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  blackoutButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',

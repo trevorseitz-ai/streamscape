@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   FlatList,
   Switch,
   useWindowDimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
+import { supabase } from '../../lib/supabase';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -146,14 +148,26 @@ function useNumColumns() {
 }
 
 export default function DiscoverScreen() {
+  const router = useRouter();
   const status = useWatchlistStatus();
   const { selectedCountry } = useCountry();
+  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       status?.refetch();
+      supabase.auth.getSession().then(({ data: { session: s } }) => {
+        setSession(s);
+      });
     }, [status])
   );
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, s) => setSession(s)
+    );
+    return () => subscription.unsubscribe();
+  }, []);
   const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -364,6 +378,20 @@ export default function DiscoverScreen() {
 
   const hasMovies = phase1Movies.length > 0 || phase2Movies.length > 0;
 
+  // Auth guard: blackout when not logged in (immediate effect on signOut)
+  if (!session) {
+    return (
+      <View style={styles.blackout}>
+        <TouchableOpacity
+          style={styles.blackoutButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.blackoutText}>Sign in to discover movies</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const listData = useMemo(() => {
     const items: ListItem[] = [];
 
@@ -546,6 +574,21 @@ export default function DiscoverScreen() {
 }
 
 const styles = StyleSheet.create({
+  blackout: {
+    flex: 1,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  blackoutButton: {
+    padding: 16,
+  },
+  blackoutText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',
