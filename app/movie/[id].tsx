@@ -814,17 +814,16 @@ export default function MovieDetailsScreen() {
         <SafeAreaView style={styles.safeHeader}>
           <MovieDetailsHeader hideBackButton />
       </SafeAreaView>
-      {/* Main container: flex 1, no ScrollView */}
+      {/* Main container: column layout for mobile */}
       <View style={styles.mainContainer}>
-        {/* 50/50 Left/Right Split */}
         <View style={styles.splitRow}>
-          {/* Left: Poster */}
+          {/* Poster: full width, top */}
           <View style={styles.posterColumn}>
             {movie.poster_url ? (
               <Image
                 source={{ uri: movie.poster_url }}
                 style={styles.posterImage}
-                resizeMode="contain"
+                resizeMode="cover"
               />
             ) : (
               <View style={styles.posterHeroPlaceholder}>
@@ -833,7 +832,7 @@ export default function MovieDetailsScreen() {
             )}
           </View>
 
-          {/* Right: Info Sidebar */}
+          {/* Info: full width below poster, scrollable */}
           <View style={styles.infoColumn}>
             <ScrollView
               style={styles.sidebarScroll}
@@ -1121,7 +1120,6 @@ export default function MovieDetailsScreen() {
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    paddingHorizontal: 20,
     backgroundColor: '#0f0f0f',
   },
   center: {
@@ -1157,12 +1155,12 @@ const styles = StyleSheet.create({
   },
   splitRow: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
   },
   posterColumn: {
-    width: '50%',
-    height: '98%',
-    alignSelf: 'center',
+    width: '100%',
+    height: 450,
+    overflow: 'hidden',
   },
   posterImage: {
     width: '100%',
@@ -1177,10 +1175,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   infoColumn: {
-    width: '50%',
     flex: 1,
-    minWidth: 0,
-    padding: 16,
+    padding: 20,
     position: 'relative',
   },
   scrollGradient: {
@@ -1208,6 +1204,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 12,
     width: '100%',
+    alignSelf: 'stretch',
   },
   watchTrailerButtonPressed: {
     opacity: 0.8,
@@ -1261,6 +1258,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    alignSelf: 'stretch',
   },
   watchNowButtonPressed: {
     opacity: 0.8,
@@ -1351,6 +1349,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 12,
     width: '100%',
+    alignSelf: 'stretch',
   },
   watchlistButtonRemove: {
     backgroundColor: 'transparent',
