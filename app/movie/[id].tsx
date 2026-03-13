@@ -13,17 +13,21 @@ import {
   Keyboard,
   SafeAreaView,
   Modal,
+  Dimensions,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '../../../lib/supabase';
-import { getSavedProviderIds } from '../../../lib/provider-preferences';
-import { useCountry } from '../../../lib/country-context';
-import { useSearch } from '../../../lib/search-context';
-import { useMovie } from '../../../lib/movie-context';
-import { TrailerPlayer } from '../../../components/TrailerPlayer';
-import { SearchResultsOverlay } from '../../../components/SearchResultsOverlay';
-import { MovieDetailsHeader } from '../../../components/MovieDetailsHeader';
+import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../../lib/supabase';
+import { getSavedProviderIds } from '../../lib/provider-preferences';
+import { useCountry } from '../../lib/country-context';
+import { useSearch } from '../../lib/search-context';
+import { useMovie } from '../../lib/movie-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { TrailerPlayer } from '../../components/TrailerPlayer';
+import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
+import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -228,6 +232,12 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 export default function MovieDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
+
+  useEffect(() => {
+    const state = navigation.getState();
+    console.log('[MovieDetails] navigation.getState() on mount:', JSON.stringify(state, null, 2));
+  }, [navigation]);
   const { selectedCountry } = useCountry();
   const [isUpdatingProviders, setIsUpdatingProviders] = useState(false);
   const prevCountryRef = useRef(selectedCountry);
@@ -242,6 +252,36 @@ export default function MovieDetailsScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [scrollViewHeight, setScrollViewHeight] = useState(0);
+  const showScrollGradient = contentHeight > scrollViewHeight;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const bounceY = useRef(new Animated.Value(0)).current;
+
+  const chevronOpacity = scrollY.interpolate({
+    inputRange: [0, 10],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  useEffect(() => {
+    const bounce = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceY, {
+          toValue: 6,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(bounceY, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    bounce.start();
+    return () => bounce.stop();
+  }, [bounceY]);
 
   const {
     isSearching,
@@ -757,29 +797,28 @@ export default function MovieDetailsScreen() {
   const showSearchOverlay =
     isSearching && (searchResult || searchError || searchLoading);
 
-  const handleSearchResultPress = (m: { id: string }) => {
+  const handleSearchResultPress = () => {
     setIsSearching(false);
     setSearchResult(null);
     setSearchError(null);
-    router.push(`/movie/${m.id}`);
   };
 
   return (
     <View style={styles.wrapper}>
-      <SafeAreaView style={styles.safeHeader}>
-        <MovieDetailsHeader onBack={() => router.back()} />
+        <SafeAreaView style={styles.safeHeader}>
+          <MovieDetailsHeader hideBackButton />
       </SafeAreaView>
-      {/* Fixed container: fits between header and tab bar */}
+      {/* Main container: flex 1, no ScrollView */}
       <View style={styles.mainContainer}>
-        {/* Split Row: flex 1 */}
+        {/* 50/50 Left/Right Split */}
         <View style={styles.splitRow}>
-          {/* Left: Hero Poster - fills vertical space */}
+          {/* Left: Poster */}
           <View style={styles.posterColumn}>
             {movie.poster_url ? (
               <Image
                 source={{ uri: movie.poster_url }}
-                style={styles.posterHero}
-                resizeMode="cover"
+                style={styles.posterImage}
+                resizeMode="contain"
               />
             ) : (
               <View style={styles.posterHeroPlaceholder}>
@@ -788,12 +827,19 @@ export default function MovieDetailsScreen() {
             )}
           </View>
 
-          {/* Right: Dynamic Sidebar - ScrollView for overflow */}
+          {/* Right: Info Sidebar */}
           <View style={styles.infoColumn}>
             <ScrollView
               style={styles.sidebarScroll}
               contentContainerStyle={styles.sidebarContent}
               showsVerticalScrollIndicator={false}
+              onContentSizeChange={(_, h) => setContentHeight(h)}
+              onLayout={(e) => setScrollViewHeight(e.nativeEvent.layout.height)}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: true }
+              )}
+              scrollEventThrottle={16}
             >
               {/* 1. Title & Year */}
               <View>
@@ -803,124 +849,14 @@ export default function MovieDetailsScreen() {
                 ) : null}
               </View>
 
-              {/* 2. Streaming Icons */}
-              {displayAvailability.length > 0 ? (
-                <View style={styles.streamingIconsRow}>
-                  {sortByEnabled(displayAvailability.slice(0, 8)).map((avail) => (
-                    <Pressable
-                      key={avail.id}
-                      style={({ pressed }) => [
-                        styles.streamingIconCompact,
-                        pressed && styles.streamingIconCompactPressed,
-                      ]}
-                      onPress={() => {
-                        if (avail.direct_url) Linking.openURL(avail.direct_url);
-                      }}
-                    >
-                      {avail.logo_url ? (
-                        <Image
-                          source={{ uri: avail.logo_url }}
-                          style={styles.streamingLogoCompact}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.streamingLogoPlaceholderCompact}>
-                          <Text style={styles.streamingLogoInitialCompact}>
-                            {avail.platform_name.charAt(0)}
-                          </Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
-
-              {/* 3. Overview */}
+              {/* 2. Overview */}
               {movie.synopsis ? (
                 <View style={styles.overviewCompact}>
                   <Text style={styles.overviewText}>{movie.synopsis}</Text>
                 </View>
               ) : null}
 
-              {/* 4. Cast & Crew */}
-              <View style={styles.castCrewCompact}>
-                <Text style={styles.castCrewHeader}>Cast</Text>
-                {movie.cast.filter((p) => p.role_type === 'director').length > 0 ? (
-                  <Text style={styles.castCrewLabel}>
-                    Dir: {movie.cast.filter((p) => p.role_type === 'director').map((p) => p.name).join(', ')}
-                  </Text>
-                ) : null}
-                {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
-                  <Text style={styles.castCrewLabel}>
-                    {movie.cast.filter((p) => p.role_type === 'actor').slice(0, 4).map((p) => p.name).join(', ')}
-                    {movie.cast.filter((p) => p.role_type === 'actor').length > 4 ? '...' : ''}
-                  </Text>
-                ) : null}
-              </View>
-
-              {/* Watchlist Button */}
-              <View style={styles.watchlistButtonCompact}>
-                <Pressable
-                  style={[
-                    styles.watchlistButton,
-                    inWatchlist && styles.watchlistButtonRemove,
-                    watchlistLoading && styles.watchlistButtonDisabled,
-                  ]}
-                  onPress={toggleWatchlist}
-                  disabled={watchlistLoading}
-                >
-                  <View style={styles.watchlistButtonContent}>
-                    {watchlistLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={inWatchlist ? '#22c55e' : '#ffffff'}
-                        style={styles.watchlistSpinner}
-                      />
-                    ) : (
-                      <Ionicons
-                        name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
-                        size={20}
-                        color={
-                          inWatchlist
-                            ? '#22c55e'
-                            : session
-                              ? '#ffffff'
-                              : '#a5b4fc'
-                        }
-                      />
-                    )}
-                    <Text
-                      style={[
-                        styles.watchlistButtonText,
-                        inWatchlist && styles.watchlistButtonTextRemove,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {session
-                        ? inWatchlist
-                          ? 'On Watchlist'
-                          : 'Add to Watchlist'
-                        : 'Sign in to Add'}
-                    </Text>
-                  </View>
-                </Pressable>
-              </View>
-
-              {/* 5. Play Trailer Button */}
-              {trailerKey ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.playTrailerButton,
-                    pressed && styles.playTrailerButtonPressed,
-                  ]}
-                  onPress={() => setTrailerModalVisible(true)}
-                >
-                  <Ionicons name="play-circle" size={24} color="#ffffff" />
-                  <Text style={styles.playTrailerText}>Play Trailer</Text>
-                </Pressable>
-              ) : null}
-
-              {/* Cast (Actors) - full section */}
+              {/* Cast (Actors) */}
               {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Cast</Text>
@@ -979,63 +915,160 @@ export default function MovieDetailsScreen() {
                 </View>
               ) : null}
 
-              {/* Where to Watch */}
-              <View style={styles.streamSection}>
-                <Text style={styles.streamSectionTitle}>Where to Watch</Text>
-                {isUpdatingProviders ? (
-                  <View style={styles.updatingProviders}>
-                    <ActivityIndicator size="small" color="#6366f1" />
-                    <Text style={styles.updatingProvidersText}>Updating providers...</Text>
+              {/* Action Buttons - at bottom of sidebar */}
+              <View style={styles.watchlistButtonCompact}>
+                <Pressable
+                  style={[
+                    styles.watchlistButton,
+                    inWatchlist && styles.watchlistButtonRemove,
+                    watchlistLoading && styles.watchlistButtonDisabled,
+                  ]}
+                  onPress={toggleWatchlist}
+                  disabled={watchlistLoading}
+                >
+                  <View style={styles.watchlistButtonContent}>
+                    {watchlistLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={inWatchlist ? '#22c55e' : '#ffffff'}
+                        style={styles.watchlistSpinner}
+                      />
+                    ) : (
+                      <Ionicons
+                        name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
+                        size={20}
+                        color={
+                          inWatchlist
+                            ? '#22c55e'
+                            : session
+                              ? '#ffffff'
+                              : '#a5b4fc'
+                        }
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.watchlistButtonText,
+                        inWatchlist && styles.watchlistButtonTextRemove,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {session
+                        ? inWatchlist
+                          ? 'On Watchlist'
+                          : 'Add to Watchlist'
+                        : 'Sign in to Add'}
+                    </Text>
                   </View>
-                ) : displayAvailability.length === 0 ? (
-                  <Text style={styles.noStreaming}>
-                    {watchProvidersResults
-                      ? 'No streaming data available for this region.'
-                      : 'No streaming options found'}
-                  </Text>
-                ) : (
-                  <>
-                    {renderProviderGroup(
-                      displayAvailability.filter((a) => a.access_type === 'subscription'),
-                      'Stream'
-                    )}
-                    {renderProviderGroup(
-                      displayAvailability.filter((a) => a.access_type === 'rent'),
-                      'Rent'
-                    )}
-                    {renderProviderGroup(
-                      displayAvailability.filter((a) => a.access_type === 'buy'),
-                      'Buy'
-                    )}
-                  </>
-                )}
-
-                {displayWatchLink ? (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.moreInfoButton,
-                      pressed && styles.moreInfoButtonPressed,
-                    ]}
-                    onPress={() => Linking.openURL(displayWatchLink!)}
-                  >
-                    <Text style={styles.moreInfoText}>More Info on TMDB →</Text>
-                  </Pressable>
-                ) : null}
-
-                <View style={styles.justWatchAttribution}>
-                  <Text style={styles.justWatchText}>
-                    Streaming data powered by JustWatch
-                  </Text>
-                </View>
+                </Pressable>
               </View>
+
+              {trailerKey ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.watchTrailerButton,
+                    pressed && styles.watchTrailerButtonPressed,
+                  ]}
+                  onPress={() => setTrailerModalVisible(true)}
+                >
+                  <Ionicons name="play-circle" size={24} color="#ffffff" />
+                  <Text style={styles.watchTrailerText}>Watch Trailer</Text>
+                </Pressable>
+              ) : null}
+
+              {/* Streaming Section */}
+              {(() => {
+                const countryData = watchProvidersResults?.[selectedCountry];
+                const hasLink = !!countryData?.link;
+
+                // Merge flatrate, rent, buy and de-duplicate by provider_id
+                const providerMap = new Map<
+                  number,
+                  { provider_id: number; provider_name: string; logo_path: string | null }
+                >();
+                for (const p of countryData?.flatrate ?? []) {
+                  providerMap.set(p.provider_id, p);
+                }
+                for (const p of countryData?.rent ?? []) {
+                  if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
+                }
+                for (const p of countryData?.buy ?? []) {
+                  if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
+                }
+                const allProviders = Array.from(providerMap.values());
+
+                if (!watchProvidersResults) return null;
+
+                return (
+                <View style={styles.streamingSection}>
+                  {allProviders.length > 0 ? (
+                    <View style={styles.streamingIconsRowCompact}>
+                      {allProviders.map((p) => (
+                        <View key={p.provider_id} style={styles.streamingIcon}>
+                          {p.logo_path ? (
+                            <Image
+                              source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
+                              style={styles.streamingIconImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.streamingIconPlaceholder}>
+                              <Text style={styles.streamingIconInitial}>
+                                {p.provider_name.charAt(0)}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.noStreamingText}>
+                      No streaming info available for this region
+                    </Text>
+                  )}
+                  {hasLink ? (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.watchNowButton,
+                        pressed && styles.watchNowButtonPressed,
+                      ]}
+                      onPress={() => Linking.openURL(countryData!.link!)}
+                    >
+                      <Text style={styles.watchNowButtonText}>Watch Now</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                );
+              })()}
 
               <View style={styles.bottomSpacer} />
             </ScrollView>
+            {showScrollGradient ? (
+              <LinearGradient
+                colors={['transparent', '#0f0f0f']}
+                style={styles.scrollGradient}
+                pointerEvents="none"
+              />
+            ) : null}
+            {showScrollGradient ? (
+              <Animated.View
+                style={[
+                  styles.scrollChevron,
+                  {
+                    opacity: chevronOpacity,
+                    transform: [{ translateY: bounceY }],
+                  },
+                ]}
+                pointerEvents="none"
+              >
+                <Ionicons name="chevron-down" size={28} color="#9ca3af" />
+              </Animated.View>
+            ) : null}
           </View>
         </View>
       </View>
 
-      {/* Trailer Modal - full-screen */}
+      {/* Trailer Modal */}
       <Modal
         visible={trailerModalVisible}
         animationType="slide"
@@ -1051,7 +1084,10 @@ export default function MovieDetailsScreen() {
           </Pressable>
           {trailerKey ? (
             <View style={styles.trailerModalPlayer}>
-              <TrailerPlayer videoId={trailerKey} />
+              <TrailerPlayer
+                videoId={trailerKey}
+                height={Math.floor(Dimensions.get('window').height * 0.6)}
+              />
             </View>
           ) : null}
         </View>
@@ -1078,6 +1114,7 @@ export default function MovieDetailsScreen() {
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
+    paddingHorizontal: 20,
     backgroundColor: '#0f0f0f',
   },
   center: {
@@ -1114,13 +1151,13 @@ const styles = StyleSheet.create({
   splitRow: {
     flex: 1,
     flexDirection: 'row',
-    flexWrap: 'nowrap',
   },
   posterColumn: {
-    width: '45%',
-    height: '100%',
+    width: '50%',
+    height: '98%',
+    alignSelf: 'center',
   },
-  posterHero: {
+  posterImage: {
     width: '100%',
     height: '100%',
     backgroundColor: '#1a1a1a',
@@ -1133,10 +1170,98 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   infoColumn: {
+    width: '50%',
     flex: 1,
     minWidth: 0,
     padding: 16,
-    flexDirection: 'column',
+    position: 'relative',
+  },
+  scrollGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+  },
+  scrollChevron: {
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  watchTrailerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    width: '100%',
+  },
+  watchTrailerButtonPressed: {
+    opacity: 0.8,
+  },
+  watchTrailerText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  streamingSection: {
+    marginTop: 24,
+  },
+  noStreamingText: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  streamingIconsRowCompact: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  streamingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#1f1f1f',
+  },
+  streamingIconImage: {
+    width: '100%',
+    height: '100%',
+  },
+  streamingIconPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streamingIconInitial: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6b7280',
+  },
+  watchNowButton: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  watchNowButtonPressed: {
+    opacity: 0.8,
+  },
+  watchNowButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   sidebarScroll: {
     flex: 1,
@@ -1177,7 +1302,8 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   watchlistButtonCompact: {
-    marginTop: 16,
+    marginTop: 20,
+    width: '100%',
   },
   overviewCompact: {
     marginTop: 12,
@@ -1186,45 +1312,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#d1d5db',
     lineHeight: 20,
-  },
-  castCrewHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  castCrewCompact: {
-    marginTop: 12,
-    gap: 4,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  castCrewLabel: {
-    fontSize: 12,
-    color: '#9ca3af',
-    lineHeight: 18,
-    marginBottom: 2,
-    flexShrink: 1,
-  },
-  playTrailerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#6366f1',
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  playTrailerButtonPressed: {
-    opacity: 0.8,
-  },
-  playTrailerText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   trailerModalContainer: {
     flex: 1,
@@ -1256,6 +1343,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
+    width: '100%',
   },
   watchlistButtonRemove: {
     backgroundColor: 'transparent',
@@ -1293,6 +1381,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   section: {
+    marginTop: 16,
     marginBottom: 24,
   },
   sectionTitle: {

@@ -4,45 +4,30 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Switch,
   ActivityIndicator,
   Image,
+  Pressable,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import {
   getSavedProviderIds,
   saveProviderIds,
 } from '../../lib/provider-preferences';
+import { useCountry } from '../../lib/country-context';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_LOGO_BASE = 'https://image.tmdb.org/t/p/w92';
-
-// Comprehensive list: Netflix, Amazon Prime, Disney+, Hulu, Max, Peacock, Paramount+,
-// Apple TV+, Showtime, Starz, Discovery+, Criterion, Mubi, AMC+
-const COMPREHENSIVE_PROVIDER_IDS = new Set([
-  8,    // Netflix
-  9,    // Amazon Prime Video
-  337,  // Disney+
-  15,   // Hulu
-  384,  // Max (HBO Max)
-  386,  // Paramount+
-  531,  // Peacock
-  350,  // Apple TV+
-  37,   // Showtime
-  43,   // Starz
-  540,  // Discovery+
-  258,  // Criterion Channel
-  11,   // Mubi
-  528,  // AMC+
-]);
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 interface ProviderEntry {
   id: number;
   name: string;
   logo_url: string | null;
+  display_priority: number;
 }
 
 export default function SettingsScreen() {
+  const { selectedCountry } = useCountry();
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -86,14 +71,17 @@ export default function SettingsScreen() {
 
         const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
         if (!apiKey) {
+          console.log('Fetching providers: API key is missing or empty');
           setFetchError('TMDB API key not configured');
           return;
         }
 
-        const res = await fetch(
-          `${TMDB_BASE}/watch/providers/movie?watch_region=US&language=en-US`,
-          { headers: { Authorization: `Bearer ${apiKey}` } }
-        );
+        const url = `${TMDB_BASE}/watch/providers/movie?watch_region=${selectedCountry}&language=en-US`;
+        console.log('Fetching providers with URL:', url);
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
 
         if (!res.ok) {
           setFetchError(`Failed to load providers (${res.status})`);
@@ -108,19 +96,13 @@ export default function SettingsScreen() {
           display_priority: number;
         }> = data.results ?? [];
 
-        const enabledSet = new Set(enabledIds);
-
         const mapped = results
-          .filter(
-            (p) =>
-              COMPREHENSIVE_PROVIDER_IDS.has(p.provider_id) ||
-              enabledSet.has(p.provider_id)
-          )
           .sort((a, b) => a.display_priority - b.display_priority)
           .map((p) => ({
             id: p.provider_id,
             name: p.provider_name,
-            logo_url: p.logo_path ? `${TMDB_LOGO_BASE}${p.logo_path}` : null,
+            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : null,
+            display_priority: p.display_priority,
           }));
 
         setProviders(mapped);
@@ -134,16 +116,16 @@ export default function SettingsScreen() {
     }
 
     load();
-  }, [session]);
+  }, [session, selectedCountry]);
 
   const handleToggle = useCallback(
-    (providerId: number, value: boolean) => {
+    (providerId: number) => {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        if (value) {
-          next.add(providerId);
-        } else {
+        if (next.has(providerId)) {
           next.delete(providerId);
+        } else {
+          next.add(providerId);
         }
         const idsArray = Array.from(next);
         saveProviderIds(idsArray);
@@ -186,10 +168,10 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>My Streaming Services</Text>
+        <Text style={styles.sectionTitle}>My Services</Text>
         <Text style={styles.sectionDescription}>
-          Select the services you subscribe to. Discover results will be filtered
-          to show movies available on your services.
+          Tap to select the services you subscribe to. Discover results will be
+          filtered to show movies available on your services.
         </Text>
 
         {fetchError ? (
@@ -197,32 +179,50 @@ export default function SettingsScreen() {
             <Text style={styles.errorText}>{fetchError}</Text>
           </View>
         ) : (
-          <View style={styles.providerList}>
-            {providers.map((provider) => (
-              <View key={provider.id} style={styles.providerRow}>
-                <View style={styles.providerInfo}>
-                  {provider.logo_url ? (
-                    <Image
-                      source={{ uri: provider.logo_url }}
-                      style={styles.providerLogo}
-                    />
-                  ) : (
-                    <View style={styles.providerLogoPlaceholder}>
-                      <Text style={styles.providerLogoPlaceholderText}>?</Text>
+          <View style={styles.providerGrid}>
+            {[...providers]
+              .sort(
+                (a, b) =>
+                  (selectedIds.has(b.id) ? 1 : 0) - (selectedIds.has(a.id) ? 1 : 0) ||
+                  a.display_priority - b.display_priority
+              )
+              .map((provider) => {
+              const isSelected = selectedIds.has(provider.id);
+              return (
+                <Pressable
+                  key={provider.id}
+                  style={({ pressed }) => [
+                    styles.providerCard,
+                    isSelected && styles.providerCardSelected,
+                    pressed && styles.providerCardPressed,
+                  ]}
+                  onPress={() => handleToggle(provider.id)}
+                >
+                  <View style={styles.providerCardContent}>
+                    {provider.logo_url ? (
+                      <Image
+                        source={{ uri: provider.logo_url }}
+                        style={styles.providerLogo}
+                      />
+                    ) : (
+                      <View style={styles.providerLogoPlaceholder}>
+                        <Text style={styles.providerLogoPlaceholderText}>
+                          {provider.name.charAt(0)}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.providerName} numberOfLines={2}>
+                      {provider.name}
+                    </Text>
+                  </View>
+                  {isSelected ? (
+                    <View style={styles.providerCheckmark}>
+                      <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
                     </View>
-                  )}
-                  <Text style={styles.providerName}>{provider.name}</Text>
-                </View>
-                <Switch
-                  value={selectedIds.has(provider.id)}
-                  onValueChange={(value) => handleToggle(provider.id, value)}
-                  trackColor={{ false: '#2d2d2d', true: '#4f46e5' }}
-                  thumbColor={
-                    selectedIds.has(provider.id) ? '#a5b4fc' : '#6b7280'
-                  }
-                />
-              </View>
-            ))}
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
         )}
       </View>
@@ -284,51 +284,63 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 20,
   },
-  providerList: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    overflow: 'hidden',
-  },
-  providerRow: {
+  providerGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2d2d2d',
-  },
-  providerInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
   },
+  providerCard: {
+    width: '31%',
+    minWidth: 90,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#2d2d2d',
+    padding: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  providerCardSelected: {
+    borderColor: '#6366f1',
+    backgroundColor: '#1e1b4b',
+  },
+  providerCardPressed: {
+    opacity: 0.8,
+  },
+  providerCardContent: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  providerCheckmark: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
   providerLogo: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 10,
     backgroundColor: '#2d2d2d',
   },
   providerLogoPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 10,
     backgroundColor: '#2d2d2d',
     alignItems: 'center',
     justifyContent: 'center',
   },
   providerLogoPlaceholderText: {
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '600',
     color: '#6b7280',
   },
   providerName: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '600',
     color: '#ffffff',
-    flexShrink: 1,
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorBox: {
     backgroundColor: '#1a1a1a',

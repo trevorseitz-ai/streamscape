@@ -11,6 +11,7 @@ function getTabIcon(routeName: string, focused: boolean) {
     index: { active: 'home', inactive: 'home-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
+    history: { active: 'time', inactive: 'time-outline' },
     settings: { active: 'settings', inactive: 'settings-outline' },
   };
   const icons = iconMap[routeName];
@@ -97,15 +98,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings' }}
+        name="history"
+        options={{ title: 'History' }}
       />
       <Tabs.Screen
-        name="movie"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
+        name="settings"
+        options={{ title: 'Settings' }}
       />
     </Tabs>
   );

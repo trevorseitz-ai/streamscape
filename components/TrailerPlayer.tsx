@@ -3,12 +3,13 @@ import YoutubePlayer from 'react-native-youtube-iframe';
 
 interface TrailerPlayerProps {
   videoId: string;
+  height?: number;
 }
 
-export function TrailerPlayer({ videoId }: TrailerPlayerProps) {
+export function TrailerPlayer({ videoId, height = 250 }: TrailerPlayerProps) {
   return (
-    <View style={styles.container}>
-      <YoutubePlayer height={250} videoId={videoId} />
+    <View style={[styles.container, height ? { height } : undefined]}>
+      <YoutubePlayer height={height} videoId={videoId} />
     </View>
   );
 }

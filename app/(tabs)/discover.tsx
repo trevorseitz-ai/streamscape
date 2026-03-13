@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -10,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
-import { useRouter } from 'expo-router';
+import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
 
@@ -145,8 +146,14 @@ function useNumColumns() {
 }
 
 export default function DiscoverScreen() {
-  const router = useRouter();
+  const status = useWatchlistStatus();
   const { selectedCountry } = useCountry();
+
+  useFocusEffect(
+    useCallback(() => {
+      status?.refetch();
+    }, [status])
+  );
   const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -307,9 +314,6 @@ export default function DiscoverScreen() {
     });
   };
 
-  const handleMoviePress = (movie: Movie) => {
-    router.push(`/movie/${movie.id}`);
-  };
 
   const renderYearChip = ({ item: year }: { item: number }) => {
     const isSelected = year === selectedYear;
@@ -507,14 +511,6 @@ export default function DiscoverScreen() {
                         release_year: movie.release_year,
                         vote_average: movie.vote_average,
                       }}
-                      onPress={() =>
-                        handleMoviePress({
-                          id: movie.id,
-                          title: movie.title,
-                          poster_url: movie.poster_url,
-                          release_year: movie.release_year,
-                        })
-                      }
                     />
                     {movie.platforms.length > 0 && (
                       <View style={styles.platformBadges}>

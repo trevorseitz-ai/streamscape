@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 
 interface TrailerPlayerProps {
   videoId: string;
+  height?: number;
 }
 
 const iframe = React.createElement as (
@@ -10,13 +11,13 @@ const iframe = React.createElement as (
   props: Record<string, unknown>,
 ) => React.ReactElement;
 
-export function TrailerPlayer({ videoId }: TrailerPlayerProps) {
+export function TrailerPlayer({ videoId, height = 250 }: TrailerPlayerProps) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, height ? { height } : undefined]}>
       {iframe('iframe', {
         src: `https://www.youtube.com/embed/${videoId}`,
         width: '100%',
-        height: 250,
+        height,
         style: { border: 'none', borderRadius: 12 },
         allowFullScreen: true,
         title: 'Movie Trailer',

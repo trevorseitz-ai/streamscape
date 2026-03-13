@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -10,10 +11,11 @@ import {
   Keyboard,
   SafeAreaView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
-import { useRouter } from 'expo-router';
+import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { HomeHeader } from '../../components/HomeHeader';
@@ -21,12 +23,23 @@ import { HomeHeader } from '../../components/HomeHeader';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
+const HEADER_AND_TAB_HEIGHT = 120;
+
 interface TrendingMovie extends Movie {
   backdrop_url: string | null;
 }
 
 export default function HomeScreen() {
-  const router = useRouter();
+  const status = useWatchlistStatus();
+
+  useFocusEffect(
+    useCallback(() => {
+      status?.refetch();
+    }, [status])
+  );
+  const { height: screenHeight } = Dimensions.get('window');
+  const availableHeight = screenHeight - HEADER_AND_TAB_HEIGHT;
+  const halfHeight = availableHeight * 0.5;
   const { selectedCountry } = useCountry();
   const {
     isSearching,
@@ -88,7 +101,6 @@ export default function HomeScreen() {
     setIsSearching(false);
     setSearchResult(null);
     setSearchError(null);
-    router.push(`/movie/${movie.id}`);
   };
 
   const showSearchOverlay = isSearching && (searchResult || searchError || searchLoading);
@@ -98,31 +110,27 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeHeader}>
         <HomeHeader />
       </SafeAreaView>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Hero: #1 Trending */}
-      {trendingLoading ? (
-        <View style={styles.heroSkeleton}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
-        </View>
-      ) : heroMovie ? (
-        <Pressable
-          style={({ pressed }) => [
-            styles.heroContainer,
-            pressed && styles.heroPressed,
-          ]}
-          onPress={() => handleMoviePress(heroMovie)}
-        >
+      <View style={styles.mainContainer}>
+        {/* Top Half: Hero #1 Trending */}
+        {trendingLoading ? (
+          <View style={[styles.heroSkeleton, { height: halfHeight }]}>
+            <ActivityIndicator size="large" color="#6366f1" />
+            <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
+          </View>
+        ) : heroMovie ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.heroContainer,
+              { height: halfHeight },
+              pressed && styles.heroPressed,
+            ]}
+            onPress={() => handleMoviePress(heroMovie)}
+          >
           {heroMovie.backdrop_url ? (
             <Image
               source={{ uri: heroMovie.backdrop_url }}
               style={styles.heroBackdrop}
-              resizeMode="cover"
+              resizeMode="contain"
             />
           ) : (
             <View style={styles.heroBackdropPlaceholder} />
@@ -150,36 +158,38 @@ export default function HomeScreen() {
               <Text style={styles.heroButtonText}>View Details</Text>
             </View>
           </View>
-        </Pressable>
-      ) : null}
+          </Pressable>
+        ) : null}
 
-      {/* Trending Now: #2–#10 */}
-      {!trendingLoading && restTrending.length > 0 ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trending Now</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.trendingScroll}
-          >
-            {restTrending.map((movie) => (
-              <View key={movie.id} style={styles.trendingCard}>
-                <MovieCard
-                  movie={movie}
-                  onPress={() => handleMoviePress(movie)}
-                />
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      ) : !trendingLoading && trending.length === 0 ? (
-        <View style={styles.section}>
-          <Text style={styles.trendingEmpty}>
-            Could not load trending movies
-          </Text>
-        </View>
-      ) : null}
-      </ScrollView>
+        {/* Bottom Half: Trending Now #2–#10 */}
+        {trendingLoading ? (
+          <View style={[styles.bottomHalf, { height: halfHeight }]} />
+        ) : restTrending.length > 0 ? (
+          <View style={[styles.bottomHalf, { height: halfHeight }]}>
+            <Text style={styles.sectionTitle}>Trending Now</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.trendingScroll}
+            >
+              {restTrending.map((movie) => (
+                <View key={movie.id} style={styles.trendingCard}>
+                  <MovieCard
+                    movie={movie}
+                    onPress={() => handleMoviePress(movie)}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : (
+          <View style={[styles.bottomHalf, { height: halfHeight }]}>
+            <Text style={styles.trendingEmpty}>
+              {trending.length === 0 ? 'Could not load trending movies' : 'No more trending'}
+            </Text>
+          </View>
+        )}
+      </View>
 
       {showSearchOverlay && (
         <SearchResultsOverlay
@@ -204,14 +214,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f0f0f',
   },
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: '#0f0f0f',
-  },
-  content: {
     paddingTop: 16,
     paddingHorizontal: 20,
-    paddingBottom: 40,
+  },
+  bottomHalf: {
+    paddingTop: 16,
   },
   safeHeader: {
     backgroundColor: '#0f0f0f',
@@ -227,12 +236,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   heroSkeleton: {
-    height: 280,
     borderRadius: 16,
     backgroundColor: '#1a1a1a',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
+    marginBottom: 16,
   },
   heroSkeletonText: {
     fontSize: 14,
@@ -240,10 +248,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   heroContainer: {
-    height: 280,
     borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 28,
+    marginBottom: 16,
     position: 'relative',
   },
   heroPressed: {

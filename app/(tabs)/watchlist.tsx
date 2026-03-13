@@ -254,13 +254,12 @@ export default function WatchlistScreen() {
   }, [movies, isSearching, query]);
 
   const handleMoviePress = useCallback(
-    (movie: { id: string; tmdb_id: number | null }) => {
+    (_movie?: { id: string; tmdb_id: number | null }) => {
       setIsSearching(false);
       setSearchResult(null);
       setSearchError(null);
-      router.push(`/movie/${movie.tmdb_id ?? movie.id}`);
     },
-    [router, setIsSearching, setSearchResult, setSearchError]
+    [setIsSearching, setSearchResult, setSearchError]
   );
 
   const handleRemove = useCallback(
@@ -367,11 +366,9 @@ export default function WatchlistScreen() {
             <Pressable
               key={movie.watchlistId}
               style={styles.row}
-              onPress={() =>
-                router.push(
-                  `/movie/${movie.tmdb_id ?? movie.id}`
-                )
-              }
+              onPress={() => {
+                router.push(`/movie/${movie.tmdb_id ?? movie.id}`);
+              }}
             >
               {movie.poster_url ? (
                 <Image

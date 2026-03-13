@@ -8,15 +8,30 @@ import {
   Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { useSearch } from '../lib/search-context';
 import { useMovie } from '../lib/movie-context';
 import { HeaderRight } from './HeaderRight';
 
 interface MovieDetailsHeaderProps {
-  onBack: () => void;
+  onBack?: () => void;
+  /** When true, hide the back button (e.g. when Stack header provides it). */
+  hideBackButton?: boolean;
 }
 
-export function MovieDetailsHeader({ onBack }: MovieDetailsHeaderProps) {
+export function MovieDetailsHeader({ onBack, hideBackButton }: MovieDetailsHeaderProps) {
+  const navigation = useNavigation();
+  const router = useRouter();
+  const canGoBack = navigation.canGoBack();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
   const { isSearching, query, setQuery, handleSearch, searchLoading } =
     useSearch();
   const { title } = useMovie();
@@ -31,12 +46,16 @@ export function MovieDetailsHeader({ onBack }: MovieDetailsHeaderProps) {
   return (
     <View style={styles.headerRow}>
       <View style={styles.leftGroup}>
-        <Pressable style={styles.backButton} onPress={onBack} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color="#ffffff" />
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>
-          {title ?? 'Movie'}
-        </Text>
+        {!hideBackButton && canGoBack ? (
+          <Pressable style={styles.backButton} onPress={handleBack} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color="#ffffff" />
+          </Pressable>
+        ) : null}
+        {!hideBackButton ? (
+          <Text style={styles.title} numberOfLines={1}>
+            {title ?? 'Movie'}
+          </Text>
+        ) : null}
         {isSearching && (
           <View style={styles.inputWrapper}>
             <TextInput
