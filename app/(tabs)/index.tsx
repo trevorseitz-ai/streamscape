@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { HomeHeader } from '../../components/HomeHeader';
+import { supabase } from '../../lib/supabase';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -30,13 +31,25 @@ interface TrendingMovie extends Movie {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const status = useWatchlistStatus();
+  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       status?.refetch();
+      supabase.auth.getSession().then(({ data: { session: s } }) => {
+        setSession(s);
+      });
     }, [status])
   );
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, s) => setSession(s)
+    );
+    return () => subscription.unsubscribe();
+  }, []);
   const { height: screenHeight } = Dimensions.get('window');
   const availableHeight = screenHeight - HEADER_AND_TAB_HEIGHT;
   const halfHeight = availableHeight * 0.5;
@@ -108,7 +121,13 @@ export default function HomeScreen() {
   return (
     <View style={styles.wrapper}>
       <SafeAreaView style={styles.safeHeader}>
-        <HomeHeader />
+        <HomeHeader
+          session={session}
+          onLogout={() => {
+            supabase.auth.signOut();
+          }}
+          onLogin={() => router.push('/login')}
+        />
       </SafeAreaView>
       <View style={styles.mainContainer}>
         {/* Top Half: Hero #1 Trending */}
@@ -225,6 +244,8 @@ const styles = StyleSheet.create({
   safeHeader: {
     backgroundColor: '#0f0f0f',
     paddingTop: Platform.OS === 'android' ? 24 : 0,
+    zIndex: 10,
+    elevation: 10,
   },
   section: {
     marginBottom: 24,

@@ -11,7 +11,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { HeaderRight } from './HeaderRight';
 
-export function HomeHeader() {
+export interface HomeHeaderProps {
+  session?: { user: { id: string; email?: string } } | null;
+  onLogout?: () => void;
+  onLogin?: () => void;
+}
+
+export function HomeHeader(props: HomeHeaderProps) {
+  const { session = null, onLogout = () => {}, onLogin = () => {} } = props;
   const { isSearching, query, setQuery, handleSearch, searchLoading } =
     useSearch();
   const inputRef = useRef<TextInput>(null);
@@ -60,7 +67,12 @@ export function HomeHeader() {
         )}
       </View>
       <View style={styles.rightGroup}>
-        <HeaderRight routeName="index" />
+        <HeaderRight
+          routeName="index"
+          session={session}
+          onLogout={onLogout}
+          onLogin={onLogin}
+        />
       </View>
     </View>
   );
@@ -75,6 +87,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: '#0f0f0f',
     minHeight: 56,
+    zIndex: 10,
+    elevation: 10,
   },
   leftGroup: {
     flex: 1,

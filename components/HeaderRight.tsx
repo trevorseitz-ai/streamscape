@@ -48,7 +48,11 @@ export function HeaderRight({
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>
       ) : !compact ? (
-        <Pressable style={styles.headerButton} onPress={onLogin}>
+        <Pressable
+          style={styles.headerButton}
+          onPress={onLogin}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Ionicons name="person-circle-outline" size={20} color="#6366f1" />
           <Text style={styles.loginText}>Sign In</Text>
         </Pressable>
@@ -63,6 +67,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
     gap: 12,
+    zIndex: 11,
   },
   searchIcon: {
     padding: 4,
