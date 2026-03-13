@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  TouchableOpacity,
   Keyboard,
   Platform,
   Dimensions,
@@ -154,47 +155,47 @@ export default function HomeScreen() {
             <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
           </View>
         ) : heroMovie ? (
-          <Pressable
-            style={({ pressed }) => [
-              styles.heroContainer,
-              { height: halfHeight },
-              pressed && styles.heroPressed,
-            ]}
-            onPress={() => handleMoviePress(heroMovie)}
+          <TouchableOpacity
+            style={[styles.heroContainer, styles.heroTouchable, { height: halfHeight }]}
+            onPress={() => {
+              handleMoviePress(heroMovie);
+              router.push(`/movie/${heroMovie.id}`);
+            }}
+            activeOpacity={0.9}
           >
-          {heroMovie.backdrop_url ? (
-            <Image
-              source={{ uri: heroMovie.backdrop_url }}
-              style={styles.heroBackdrop}
-              resizeMode="contain"
-            />
-          ) : (
-            <View style={styles.heroBackdropPlaceholder} />
-          )}
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroContent}>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>#1 Trending Today</Text>
+            {heroMovie.backdrop_url ? (
+              <Image
+                source={{ uri: heroMovie.backdrop_url }}
+                style={styles.heroBackdrop}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={styles.heroBackdropPlaceholder} />
+            )}
+            <View style={styles.heroOverlay} />
+            <View style={styles.heroContent}>
+              <View style={styles.heroBadge}>
+                <Text style={styles.heroBadgeText}>#1 Trending Today</Text>
+              </View>
+              <Text style={styles.heroTitle}>{heroMovie.title}</Text>
+              <View style={styles.heroMeta}>
+                {heroMovie.release_year != null ? (
+                  <Text style={styles.heroYear}>{heroMovie.release_year}</Text>
+                ) : null}
+                {heroMovie.vote_average != null ? (
+                  <View style={styles.heroRating}>
+                    <Text style={styles.heroRatingStar}>★</Text>
+                    <Text style={styles.heroRatingText}>
+                      {(Math.round(heroMovie.vote_average * 10) / 10).toFixed(1)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.heroButton}>
+                <Text style={styles.heroButtonText}>View Details</Text>
+              </View>
             </View>
-            <Text style={styles.heroTitle}>{heroMovie.title}</Text>
-            <View style={styles.heroMeta}>
-              {heroMovie.release_year != null ? (
-                <Text style={styles.heroYear}>{heroMovie.release_year}</Text>
-              ) : null}
-              {heroMovie.vote_average != null ? (
-                <View style={styles.heroRating}>
-                  <Text style={styles.heroRatingStar}>★</Text>
-                  <Text style={styles.heroRatingText}>
-                    {(Math.round(heroMovie.vote_average * 10) / 10).toFixed(1)}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            <View style={styles.heroButton}>
-              <Text style={styles.heroButtonText}>View Details</Text>
-            </View>
-          </View>
-          </Pressable>
+          </TouchableOpacity>
         ) : null}
 
         {/* Bottom Half: Trending Now #2–#10 */}
@@ -313,9 +314,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     position: 'relative',
   },
-  heroPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
+  heroTouchable: {
+    zIndex: 10,
   },
   heroBackdrop: {
     ...StyleSheet.absoluteFillObject,
