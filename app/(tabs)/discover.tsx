@@ -108,6 +108,12 @@ async function fetchDiscoverFromTMDB(
 
   if (providers.length > 0) {
     url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
+    if (monetization === 'flatrate') {
+      url += '&with_watch_monetization_types=flatrate|free';
+    } else if (monetization === 'rent') {
+      url += '&with_watch_monetization_types=rent|buy';
+    }
+    // "Both": keep providers, omit monetization to show everything on user's platforms
   } else if (monetization === 'flatrate') {
     url += `&with_watch_monetization_types=flatrate|free&watch_region=${watchRegion}`;
   } else if (monetization === 'rent') {
@@ -166,11 +172,17 @@ export default function DiscoverScreen() {
   const { selectedCountry } = useCountry();
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
   useFocusEffect(
     useCallback(() => {
       status?.refetch();
       supabase.auth.getSession().then(({ data: { session: s } }) => {
         setSession(s);
+      });
+      getSavedProviderIds().then((ids) => {
+        setProviderIds(ids);
+        setRefreshTrigger((t) => t + 1);
       });
     }, [status])
   );
@@ -333,7 +345,7 @@ export default function DiscoverScreen() {
 
   useEffect(() => {
     triggerFetch(selectedYear, monetization, selectedGenres);
-  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, monetization]);
+  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, monetization, refreshTrigger]);
 
   const handleYearSelect = (year: number) => {
     const nextYear = selectedYear === year ? null : year;
