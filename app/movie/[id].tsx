@@ -64,6 +64,7 @@ interface MovieDetails {
   availability: PlatformAvailability[];
   watch_link: string | null;
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
+  filming_locations?: string[];
 }
 
 interface TMDBMovieResponse {
@@ -101,6 +102,9 @@ interface TMDBMovieResponse {
     results?: Array<{ key: string; site: string; type: string }>;
   };
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
+  keywords?: {
+    keywords?: Array<{ id: number; name: string }>;
+  };
 }
 
 const CREW_JOBS = new Set([
@@ -155,6 +159,52 @@ function buildAvailabilityFromProviders(
   return availability;
 }
 
+const THEMATIC_KEYWORD_PATTERNS = [
+  /based on|novel|book|adapted from/i,
+  /remake|sequel|prequel/i,
+  /friendship|love|revenge|murder|death|violence/i,
+  /during credit|post-credit/i,
+  /flashback|dreams?|dream sequence/i,
+  /allegory|metaphor|symbolism/i,
+  /dystopia|utopia/i,
+  /time travel|alternate (history|reality|universe)/i,
+  /superhero|supervillain/i,
+];
+
+function parseFilmingLocations(
+  keywords: Array<{ id: number; name: string }> | undefined,
+  productionCountries: Array<{ iso_3166_1: string; name: string }> | undefined
+): string[] {
+  const normalize = (s: string) => s.trim().toLowerCase();
+  const seen = new Set<string>();
+  const locationKeywords: string[] = [];
+
+  for (const kw of keywords ?? []) {
+    const name = kw.name?.trim();
+    if (!name || name.length < 2) continue;
+    if (THEMATIC_KEYWORD_PATTERNS.some((p) => p.test(name))) continue;
+    const key = normalize(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    locationKeywords.push(name);
+  }
+
+  if (locationKeywords.length === 0) return [];
+
+  const result = [...locationKeywords];
+
+  for (const c of productionCountries ?? []) {
+    const name = c.name?.trim();
+    if (!name) continue;
+    const key = normalize(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(name);
+  }
+
+  return result;
+}
+
 async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   movie: MovieDetails;
   trailerKey: string | null;
@@ -163,7 +213,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos&language=en-US`;
+  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos,keywords&language=en-US`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -225,6 +275,10 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       availability,
       watch_link: us?.link ?? null,
       production_countries: data.production_countries ?? undefined,
+      filming_locations: parseFilmingLocations(
+        data.keywords?.keywords,
+        data.production_countries
+      ),
     },
     trailerKey: trailer?.key ?? null,
     watchProvidersResults,
@@ -966,6 +1020,15 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
+        {movie.filming_locations && movie.filming_locations.length > 0 ? (
+          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
+            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Filming Locations</Text>
+            <Text style={styles.filmingLocationsText}>
+              {movie.filming_locations.join(', ')}
+            </Text>
+          </View>
+        ) : null}
+
         {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
           <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
             <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Crew</Text>
@@ -980,19 +1043,6 @@ export default function MovieDetailsScreen() {
                     <Text style={[styles.crewName, isLandscape && styles.crewNameDesktop]}>{person.name}</Text>
                   </View>
                 ))}
-            </View>
-          </View>
-        ) : null}
-
-        {movie.production_countries && movie.production_countries.length > 0 ? (
-          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
-            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Production</Text>
-            <View style={styles.productionCountries}>
-              {movie.production_countries.map((c) => (
-                <Text key={c.iso_3166_1} style={styles.productionCountryText}>
-                  {c.name}
-                </Text>
-              ))}
             </View>
           </View>
         ) : null}
@@ -1691,15 +1741,10 @@ const styles = StyleSheet.create({
   crewNameDesktop: {
     fontSize: 15,
   },
-  productionCountries: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  productionCountryText: {
+  filmingLocationsText: {
     fontSize: 14,
-    color: '#d1d5db',
-    fontWeight: '500',
+    color: '#ffffff',
+    lineHeight: 22,
   },
   streamSection: {
     backgroundColor: '#1a1a1a',
