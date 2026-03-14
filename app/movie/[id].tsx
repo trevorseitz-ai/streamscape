@@ -792,6 +792,82 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
+        {(() => {
+          const countryData = watchProvidersResults?.[selectedCountry];
+          const flatrate = countryData?.flatrate ?? [];
+          const rent = countryData?.rent ?? [];
+          const buy = countryData?.buy ?? [];
+          const hasAny = flatrate.length > 0 || rent.length > 0 || buy.length > 0;
+
+          if (!watchProvidersResults || !hasAny) return null;
+
+          const renderProviderBadges = (
+            providers: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>
+          ) => (
+            <View style={styles.providerBadgesRow}>
+              {providers.map((p) => (
+                <View key={p.provider_id} style={styles.providerBadge}>
+                  {p.logo_path ? (
+                    <Image
+                      source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
+                      style={styles.providerBadgeImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.providerBadgePlaceholder}>
+                      <Text style={styles.providerBadgeInitial}>{p.provider_name.charAt(0)}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.providerBadgeName} numberOfLines={1}>{p.provider_name}</Text>
+                </View>
+              ))}
+            </View>
+          );
+
+          return (
+            <View style={[styles.watchProvidersSection, isLandscape && styles.watchProvidersSectionDesktop]}>
+              {flatrate.length > 0 ? (
+                <View style={styles.watchProviderCategory}>
+                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
+                    Stream for Free
+                  </Text>
+                  {renderProviderBadges(flatrate)}
+                </View>
+              ) : null}
+              {rent.length > 0 ? (
+                <View style={styles.watchProviderCategory}>
+                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
+                    Available for Rent
+                  </Text>
+                  {renderProviderBadges(rent)}
+                </View>
+              ) : null}
+              {buy.length > 0 ? (
+                <View style={styles.watchProviderCategory}>
+                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
+                    Available to Buy
+                  </Text>
+                  {renderProviderBadges(buy)}
+                </View>
+              ) : null}
+              {countryData?.link ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.watchNowButton,
+                    isLandscape && styles.watchNowButtonDesktop,
+                    pressed && styles.watchNowButtonPressed,
+                  ]}
+                  onPress={() => Linking.openURL(countryData.link)}
+                >
+                  <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>
+                    Watch Now
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })()}
+
         <View style={styles.buttonGroup}>
           <View style={styles.watchlistButtonCompact}>
             <Pressable
@@ -915,66 +991,6 @@ export default function MovieDetailsScreen() {
             </View>
           </View>
         ) : null}
-
-        {(() => {
-          const countryData = watchProvidersResults?.[selectedCountry];
-          const hasLink = !!countryData?.link;
-          const providerMap = new Map<
-            number,
-            { provider_id: number; provider_name: string; logo_path: string | null }
-          >();
-          for (const p of countryData?.flatrate ?? []) {
-            providerMap.set(p.provider_id, p);
-          }
-          for (const p of countryData?.rent ?? []) {
-            if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
-          }
-          for (const p of countryData?.buy ?? []) {
-            if (!providerMap.has(p.provider_id)) providerMap.set(p.provider_id, p);
-          }
-
-          if (!watchProvidersResults) return null;
-
-          return (
-            <View style={[styles.streamingSection, isLandscape && styles.streamingSectionDesktop]}>
-              {providerMap.size > 0 ? (
-                <View style={styles.streamingIconsRowCompact}>
-                  {Array.from(providerMap.values()).map((p) => (
-                    <View key={p.provider_id} style={styles.streamingIcon}>
-                      {p.logo_path ? (
-                        <Image
-                          source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
-                          style={styles.streamingIconImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.streamingIconPlaceholder}>
-                          <Text style={styles.streamingIconInitial}>{p.provider_name.charAt(0)}</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.noStreamingText}>
-                  No streaming info available for this region
-                </Text>
-              )}
-              {hasLink ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.watchNowButton,
-                    isLandscape && styles.watchNowButtonDesktop,
-                    pressed && styles.watchNowButtonPressed,
-                  ]}
-                  onPress={() => Linking.openURL(countryData!.link!)}
-                >
-                  <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>Watch Now</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          );
-        })()}
       </>
     );
   }
@@ -1217,6 +1233,66 @@ const styles = StyleSheet.create({
   },
   watchTrailerTextDesktop: {
     fontSize: 18,
+  },
+  watchProvidersSection: {
+    marginTop: 20,
+    width: '100%',
+  },
+  watchProvidersSectionDesktop: {
+    marginTop: 24,
+  },
+  watchProviderCategory: {
+    marginBottom: 14,
+  },
+  watchProviderLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9ca3af',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  watchProviderLabelDesktop: {
+    fontSize: 14,
+  },
+  providerBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  providerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f1f1f',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    maxWidth: 140,
+  },
+  providerBadgeImage: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  providerBadgePlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    marginRight: 8,
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerBadgeInitial: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6b7280',
+  },
+  providerBadgeName: {
+    fontSize: 13,
+    color: '#e5e7eb',
+    flex: 1,
   },
   streamingSection: {
     marginTop: 24,
