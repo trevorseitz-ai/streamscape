@@ -27,8 +27,14 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 const HEADER_AND_TAB_HEIGHT = 120;
 
+interface Genre {
+  id: number;
+  name: string;
+}
+
 interface TrendingMovie extends Movie {
   backdrop_url: string | null;
+  genre_ids?: number[];
 }
 
 export default function HomeScreen() {
@@ -70,6 +76,26 @@ export default function HomeScreen() {
   } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
+
+  useEffect(() => {
+    async function fetchGenres() {
+      const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+      if (!apiKey) return;
+      try {
+        const res = await fetch(`${TMDB_BASE}/genre/movie/list?language=en-US`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setGenres(data.genres ?? []);
+      } catch (err) {
+        console.error('Genres fetch error:', err);
+      }
+    }
+    fetchGenres();
+  }, []);
 
   useEffect(() => {
     async function fetchTrending() {
@@ -90,7 +116,7 @@ export default function HomeScreen() {
 
         const movies: TrendingMovie[] = (data.results ?? [])
           .slice(0, 10)
-          .map((m: { id: number; title: string; poster_path: string | null; backdrop_path: string | null; release_date?: string; vote_average?: number }) => ({
+          .map((m: { id: number; title: string; poster_path: string | null; backdrop_path: string | null; release_date?: string; vote_average?: number; genre_ids?: number[] }) => ({
             id: String(m.id),
             title: m.title,
             poster_url: m.poster_path ? `${TMDB_IMAGE_BASE}${m.poster_path}` : null,
@@ -99,6 +125,7 @@ export default function HomeScreen() {
               ? parseInt(m.release_date.slice(0, 4), 10)
               : null,
             vote_average: m.vote_average ?? null,
+            genre_ids: m.genre_ids ?? [],
           }));
 
         setTrending(movies);
@@ -112,8 +139,15 @@ export default function HomeScreen() {
     fetchTrending();
   }, [selectedCountry]);
 
-  const heroMovie = trending.length > 0 ? trending[0] : null;
-  const restTrending = trending.slice(1);
+  const filteredTrending = selectedGenre
+    ? trending.filter((m) => (m.genre_ids ?? []).includes(selectedGenre))
+    : trending;
+  const heroMovie = filteredTrending.length > 0 ? filteredTrending[0] : null;
+  const restTrending = filteredTrending.slice(1);
+
+  const handleGenrePress = (genreId: number) => {
+    setSelectedGenre((prev) => (prev === genreId ? null : genreId));
+  };
 
   const handleMoviePress = (movie: Movie) => {
     setIsSearching(false);
@@ -148,6 +182,30 @@ export default function HomeScreen() {
         />
       </SafeAreaView>
       <View style={styles.mainContainer}>
+        {genres.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.genreScroll}
+            style={styles.genreRow}
+          >
+            {genres.map((g) => {
+              const isSelected = selectedGenre === g.id;
+              return (
+                <Pressable
+                  key={g.id}
+                  style={[styles.genreChip, isSelected && styles.genreChipSelected]}
+                  onPress={() => handleGenrePress(g.id)}
+                >
+                  <Text style={[styles.genreChipText, isSelected && styles.genreChipTextSelected]}>
+                    {g.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+
         {/* Top Half: Hero #1 Trending */}
         {trendingLoading ? (
           <View style={[styles.heroSkeleton, { height: halfHeight }]}>
@@ -279,6 +337,34 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 16,
     paddingHorizontal: 20,
+  },
+  genreRow: {
+    marginBottom: 12,
+  },
+  genreScroll: {
+    paddingRight: 20,
+  },
+  genreChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 20,
+    backgroundColor: '#1f1f1f',
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  genreChipSelected: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  genreChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#9ca3af',
+  },
+  genreChipTextSelected: {
+    color: '#ffffff',
+    fontWeight: '600',
   },
   bottomHalf: {
     paddingTop: 16,

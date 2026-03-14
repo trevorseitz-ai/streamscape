@@ -99,6 +99,7 @@ async function fetchDiscoverFromTMDB(
     url += `&with_watch_monetization_types=flatrate&watch_region=${watchRegion}`;
   }
 
+  // Omit with_genres when no genre selected (shows all movies)
   if (genres.length > 0) {
     url += `&with_genres=${genres.join('|')}`;
   }
@@ -323,6 +324,8 @@ export default function DiscoverScreen() {
       const next = prev.includes(genreId)
         ? prev.filter((id) => id !== genreId)
         : [...prev, genreId];
+      setPage(1);
+      setFetchPhase(1);
       triggerFetch(selectedYear, streamingOnly, next);
       return next;
     });
