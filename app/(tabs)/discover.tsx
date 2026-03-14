@@ -312,8 +312,9 @@ export default function DiscoverScreen() {
   }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, streamingOnly]);
 
   const handleYearSelect = (year: number) => {
-    setSelectedYear(year);
-    triggerFetch(year, streamingOnly, selectedGenres);
+    const nextYear = selectedYear === year ? null : year;
+    setSelectedYear(nextYear);
+    triggerFetch(nextYear, streamingOnly, selectedGenres);
   };
 
   const handleStreamingToggle = (value: boolean) => {
