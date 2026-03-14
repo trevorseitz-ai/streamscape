@@ -172,18 +172,13 @@ export default function DiscoverScreen() {
   const { selectedCountry } = useCountry();
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-
   useFocusEffect(
     useCallback(() => {
       status?.refetch();
       supabase.auth.getSession().then(({ data: { session: s } }) => {
         setSession(s);
       });
-      getSavedProviderIds().then((ids) => {
-        setProviderIds(ids);
-        setRefreshTrigger((t) => t + 1);
-      });
+      getSavedProviderIds().then(setProviderIds);
     }, [status])
   );
 
@@ -210,6 +205,7 @@ export default function DiscoverScreen() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const loadingMoreRef = useRef(false);
+  const fetchingRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const [yearScrollX, setYearScrollX] = useState(0);
@@ -239,8 +235,20 @@ export default function DiscoverScreen() {
     return (available - GRID_GAP * (numColumns - 1)) / numColumns;
   }, [screenWidth, numColumns]);
 
+  const providerIdsString = useMemo(
+    () => providerIds.join('|'),
+    [providerIds]
+  );
+
+  const selectedGenresKey = useMemo(
+    () => selectedGenres.join(','),
+    [selectedGenres]
+  );
+
   const fetchMovies = useCallback(
     async (year: number | null, monet: MonetizationType, genres: number[]) => {
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -250,16 +258,16 @@ export default function DiscoverScreen() {
       setTotalPages(1);
 
       try {
-        const freshProviders = await getSavedProviderIds();
-        setProviderIds(freshProviders);
-
-        const data = await fetchDiscoverFromTMDB(year, monet, 1, freshProviders, genres, 1, selectedCountry);
+        const providers = providerIdsString
+          ? providerIdsString.split('|').map(Number).filter(Boolean)
+          : [];
+        const data = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
-          const data2 = await fetchDiscoverFromTMDB(year, monet, 1, freshProviders, genres, 2, selectedCountry);
+          const data2 = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 2, selectedCountry);
           setPhase2Movies(data2.movies);
           setTotalPages(data2.total_pages);
           setPage(1);
@@ -271,10 +279,11 @@ export default function DiscoverScreen() {
         console.error('Discover error:', err);
         setError(err instanceof Error ? err.message : 'Request failed');
       } finally {
+        fetchingRef.current = false;
         setLoading(false);
       }
     },
-    [selectedCountry]
+    [selectedCountry, providerIdsString]
   );
 
   const loadMore = useCallback(async () => {
@@ -345,7 +354,7 @@ export default function DiscoverScreen() {
 
   useEffect(() => {
     triggerFetch(selectedYear, monetization, selectedGenres);
-  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, monetization, refreshTrigger]);
+  }, [selectedYear, selectedGenresKey, monetization, providerIdsString, selectedCountry, triggerFetch]);
 
   const handleYearSelect = (year: number) => {
     const nextYear = selectedYear === year ? null : year;
