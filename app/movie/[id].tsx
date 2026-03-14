@@ -1060,7 +1060,7 @@ export default function MovieDetailsScreen() {
                 <Image
                   source={{ uri: movie.poster_url }}
                   style={styles.posterImage}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               ) : (
                 <View style={styles.posterHeroPlaceholder}>
@@ -1138,7 +1138,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 10,
     overflow: 'hidden',
   },
   posterImageLandscape: {
@@ -1193,7 +1193,8 @@ const styles = StyleSheet.create({
   },
   posterColumn: {
     width: '100%',
-    height: 500,
+    height: 450,
+    padding: 10,
     overflow: 'hidden',
   },
   posterImage: {
