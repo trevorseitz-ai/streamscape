@@ -74,7 +74,7 @@ function toFullImageUrl(path: string | null | undefined): string | null {
 }
 
 async function fetchDiscoverFromTMDB(
-  year: number,
+  year: number | null,
   streaming: boolean,
   page: number,
   providers: number[],
@@ -85,7 +85,14 @@ async function fetchDiscoverFromTMDB(
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  let url = `${TMDB_BASE}/discover/movie?primary_release_year=${year}&region=${watchRegion}&page=${page}&language=en-US`;
+  let url = `${TMDB_BASE}/discover/movie?region=${watchRegion}&page=${page}&language=en-US`;
+
+  if (year != null) {
+    url += `&primary_release_year=${year}`;
+  }
+  if (genres.length > 0) {
+    url += `&with_genres=${genres.join('|')}`;
+  }
 
   if (phase === 2) {
     url += '&sort_by=popularity.desc';
@@ -97,11 +104,6 @@ async function fetchDiscoverFromTMDB(
     url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
   } else if (streaming) {
     url += `&with_watch_monetization_types=flatrate&watch_region=${watchRegion}`;
-  }
-
-  // Omit with_genres when no genre selected (shows all movies)
-  if (genres.length > 0) {
-    url += `&with_genres=${genres.join('|')}`;
   }
 
   const res = await fetch(url, {
@@ -196,19 +198,13 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
-  useEffect(() => {
-    if (selectedYear) {
-      triggerFetch(selectedYear, streamingOnly, selectedGenres);
-    }
-  }, [selectedCountry]);
-
   const itemWidth = useMemo(() => {
     const available = screenWidth - HORIZONTAL_PADDING * 2;
     return (available - GRID_GAP * (numColumns - 1)) / numColumns;
   }, [screenWidth, numColumns]);
 
   const fetchMovies = useCallback(
-    async (year: number, streaming: boolean, genres: number[]) => {
+    async (year: number | null, streaming: boolean, genres: number[]) => {
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -246,7 +242,7 @@ export default function DiscoverScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || loading || !selectedYear) return;
+    if (loadingMoreRef.current || loading) return;
 
     if (page >= totalPages) {
       if (fetchPhase === 1) {
@@ -300,14 +296,20 @@ export default function DiscoverScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loading, selectedYear, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedGenres, selectedCountry]);
+  }, [loading, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedYear, selectedGenres, selectedCountry]);
 
   const triggerFetch = useCallback(
     (year: number | null, streaming: boolean, genres: number[]) => {
-      if (year) fetchMovies(year, streaming, genres);
+      setPage(1);
+      setFetchPhase(1);
+      fetchMovies(year, streaming, genres);
     },
     [fetchMovies]
   );
+
+  useEffect(() => {
+    triggerFetch(selectedYear, streamingOnly, selectedGenres);
+  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, streamingOnly]);
 
   const handleYearSelect = (year: number) => {
     setSelectedYear(year);
@@ -367,10 +369,16 @@ export default function DiscoverScreen() {
 
   const sectionLabel =
     activeGenreNames.length === 0
-      ? `Top Rated Movies of ${selectedYear}`
+      ? selectedYear != null
+        ? `Top Rated Movies of ${selectedYear}`
+        : 'Top Rated Movies'
       : activeGenreNames.length <= 2
-        ? `Top ${activeGenreNames.join(' & ')} Movies of ${selectedYear}`
-        : `Top Movies of ${selectedYear} (${activeGenreNames.length} genres)`;
+        ? selectedYear != null
+          ? `Top ${activeGenreNames.join(' & ')} Movies of ${selectedYear}`
+          : `Top ${activeGenreNames.join(' & ')} Movies`
+        : selectedYear != null
+          ? `Top Movies of ${selectedYear} (${activeGenreNames.length} genres)`
+          : `Top Movies (${activeGenreNames.length} genres)`;
 
   const dividerTitle = useMemo(() => {
     if (activeGenreNames.length === 0) return 'Other streaming movies';
@@ -462,11 +470,13 @@ export default function DiscoverScreen() {
         />
       </View>
 
-      {!selectedYear && !loading && (
+      {!hasMovies && !loading && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🎬</Text>
           <Text style={styles.emptyText}>
-            Select a year above to discover movies
+            {!selectedYear && selectedGenres.length === 0
+              ? 'Select a year or genre to discover movies'
+              : 'No movies found. Try a different year or genre.'}
           </Text>
         </View>
       )}
@@ -475,7 +485,9 @@ export default function DiscoverScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
-            Discovering {selectedYear} movies for your region...
+            {selectedYear != null
+              ? `Discovering ${selectedYear} movies for your region...`
+              : 'Discovering movies for your region...'}
           </Text>
         </View>
       )}
@@ -563,14 +575,6 @@ export default function DiscoverScreen() {
             );
           }}
         />
-      )}
-
-      {!loading && selectedYear && !hasMovies && !error && (
-        <View style={styles.centered}>
-          <Text style={styles.emptyText}>
-            No movies found for {selectedYear}
-          </Text>
-        </View>
       )}
     </View>
   );
