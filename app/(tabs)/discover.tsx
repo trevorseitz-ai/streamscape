@@ -11,6 +11,8 @@ import {
   useWindowDimensions,
   TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
@@ -47,6 +49,8 @@ const HORIZONTAL_PADDING = 20;
 const GRID_GAP = 12;
 const MIN_POSTER_WIDTH = 100;
 const MAX_POSTER_WIDTH = 180;
+const YEAR_JUMP_DISTANCE = 350;
+const YEAR_CHIP_SNAP_INTERVAL = 70;
 
 interface DiscoverResult {
   id: string;
@@ -173,6 +177,7 @@ export default function DiscoverScreen() {
   }, []);
   const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
+  const { isLandscape } = useBreakpoint();
 
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
@@ -189,6 +194,19 @@ export default function DiscoverScreen() {
   const loadingMoreRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
+  const [yearScrollX, setYearScrollX] = useState(0);
+  const [yearContentWidth, setYearContentWidth] = useState(0);
+
+  const canScrollYearLeft = yearScrollX > 10;
+  const canScrollYearRight = yearContentWidth > screenWidth && yearScrollX < yearContentWidth - screenWidth - 10;
+
+  const scrollYear = useCallback((direction: 'left' | 'right') => {
+    const offset = direction === 'left' ? -YEAR_JUMP_DISTANCE : YEAR_JUMP_DISTANCE;
+    const currentX = yearScrollX;
+    const maxScroll = Math.max(0, yearContentWidth - screenWidth);
+    const nextX = Math.max(0, Math.min(maxScroll, currentX + offset));
+    yearListRef.current?.scrollToOffset({ offset: nextX, animated: true });
+  }, [yearScrollX, yearContentWidth, screenWidth]);
 
   useEffect(() => {
     getSavedProviderIds().then(setProviderIds);
@@ -439,15 +457,45 @@ export default function DiscoverScreen() {
       </View>
 
       <View style={styles.chipRowContainer}>
-        <FlatList
-          ref={yearListRef}
-          data={YEARS}
-          keyExtractor={(item) => String(item)}
-          renderItem={renderYearChip}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipListContent}
-        />
+        <View style={styles.yearListWrapper}>
+          <FlatList
+            ref={yearListRef}
+            data={YEARS}
+            keyExtractor={(item) => String(item)}
+            renderItem={renderYearChip}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipListContent}
+            onScroll={(e) => setYearScrollX(e.nativeEvent.contentOffset.x)}
+            onContentSizeChange={(w) => setYearContentWidth(w)}
+            scrollEventThrottle={16}
+            snapToInterval={YEAR_CHIP_SNAP_INTERVAL}
+            snapToAlignment="start"
+            decelerationRate="fast"
+          />
+          {isLandscape && (canScrollYearLeft || canScrollYearRight) ? (
+            <>
+              {canScrollYearLeft ? (
+                <TouchableOpacity
+                  style={[styles.yearScrollArrow, styles.yearScrollArrowLeft]}
+                  onPress={() => scrollYear('left')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : null}
+              {canScrollYearRight ? (
+                <TouchableOpacity
+                  style={[styles.yearScrollArrow, styles.yearScrollArrowRight]}
+                  onPress={() => scrollYear('right')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : null}
+            </>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.chipRowContainer}>
@@ -619,6 +667,24 @@ const styles = StyleSheet.create({
   },
   chipRowContainer: {
     marginBottom: 10,
+  },
+  yearListWrapper: {
+    position: 'relative',
+  },
+  yearScrollArrow: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    zIndex: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  yearScrollArrowLeft: {
+    left: 0,
+  },
+  yearScrollArrowRight: {
+    right: 0,
   },
   chipListContent: {
     paddingHorizontal: HORIZONTAL_PADDING,

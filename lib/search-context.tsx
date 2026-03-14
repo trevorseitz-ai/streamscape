@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Keyboard } from 'react-native';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -33,6 +33,16 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
   const [searchResult, setSearchResult] = useState<Movie | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  useEffect(() => {
+    if (query.trim() === '' && (searchResult || searchError || searchLoading)) {
+      Keyboard.dismiss();
+      setIsSearching(false);
+      setSearchResult(null);
+      setSearchError(null);
+      setSearchLoading(false);
+    }
+  }, [query, searchResult, searchError, searchLoading]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();

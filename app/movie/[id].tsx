@@ -159,17 +159,32 @@ function buildAvailabilityFromProviders(
   return availability;
 }
 
-const THEMATIC_KEYWORD_PATTERNS = [
-  /based on|novel|book|adapted from/i,
-  /remake|sequel|prequel/i,
-  /friendship|love|revenge|murder|death|violence/i,
-  /during credit|post-credit/i,
-  /flashback|dreams?|dream sequence/i,
-  /allegory|metaphor|symbolism/i,
-  /dystopia|utopia/i,
-  /time travel|alternate (history|reality|universe)/i,
-  /superhero|supervillain/i,
-];
+const FORBIDDEN_WORDS = new Set([
+  'faith', 'chaos', 'post-apocalyptic', 'bible', 'survival', 'gunfight',
+  'blind', 'brutality', 'cannibal', 'combat', 'carnage', 'allegory',
+  'dreams', 'heist', 'memory', 'subconscious', 'complex', 'dramatic', 'complicated',
+]);
+
+const KNOWN_LOCATIONS = new Set([
+  'london', 'paris', 'new york', 'new york city', 'los angeles', 'tokyo',
+  'berlin', 'rome', 'moscow', 'sydney', 'toronto', 'vancouver', 'montreal',
+  'chicago', 'boston', 'san francisco', 'las vegas', 'miami', 'new orleans',
+  'atlanta', 'seattle', 'denver', 'philadelphia', 'washington d.c.', 'houston',
+  'dallas', 'austin', 'portland', 'detroit', 'minneapolis', 'nashville',
+  'california', 'texas', 'new york', 'florida', 'nevada', 'georgia',
+  'arizona', 'new mexico', 'utah', 'colorado', 'oregon', 'washington',
+  'united kingdom', 'united states', 'france', 'germany', 'italy', 'spain',
+  'japan', 'australia', 'canada', 'mexico', 'brazil', 'india', 'china',
+  'russia', 'ireland', 'scotland', 'wales', 'netherlands', 'belgium',
+  'switzerland', 'austria', 'greece', 'portugal', 'sweden', 'norway',
+  'denmark', 'poland', 'czech republic', 'hungary', 'argentina', 'chile',
+  'desert', 'forest', 'jungle', 'mountains', 'beach', 'island', 'ocean',
+  'manhattan', 'brooklyn', 'hollywood', 'beverly hills', 'malibu',
+  'venice', 'amsterdam', 'barcelona', 'madrid', 'prague', 'budapest',
+  'vienna', 'munich', 'cologne', 'hamburg', 'edinburgh', 'dublin',
+  'hong kong', 'singapore', 'seoul', 'bangkok', 'istanbul', 'cairo',
+  'morocco', 'south africa', 'egypt', 'india',
+]);
 
 function parseFilmingLocations(
   keywords: Array<{ id: number; name: string }> | undefined,
@@ -177,21 +192,22 @@ function parseFilmingLocations(
 ): string[] {
   const normalize = (s: string) => s.trim().toLowerCase();
   const seen = new Set<string>();
-  const locationKeywords: string[] = [];
+  const cityLocations: string[] = [];
 
   for (const kw of keywords ?? []) {
     const name = kw.name?.trim();
     if (!name || name.length < 2) continue;
-    if (THEMATIC_KEYWORD_PATTERNS.some((p) => p.test(name))) continue;
     const key = normalize(name);
+    if (FORBIDDEN_WORDS.has(key)) continue;
+    if (!KNOWN_LOCATIONS.has(key)) continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    locationKeywords.push(name);
+    cityLocations.push(name);
   }
 
-  if (locationKeywords.length === 0) return [];
+  if (cityLocations.length === 0) return [];
 
-  const result = [...locationKeywords];
+  const result = [...cityLocations];
 
   for (const c of productionCountries ?? []) {
     const name = c.name?.trim();

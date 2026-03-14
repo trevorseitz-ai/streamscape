@@ -5,7 +5,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { MovieCard, type Movie } from './MovieCard';
 
 interface SearchResultsOverlayProps {
@@ -23,10 +25,21 @@ export function SearchResultsOverlay({
   onResultPress,
   onDismiss,
 }: SearchResultsOverlayProps) {
+  const handleDismiss = () => {
+    onDismiss();
+  };
+
   return (
     <View style={styles.overlay}>
-      <Pressable style={styles.backdrop} onPress={onDismiss} />
+      <Pressable style={styles.backdrop} onPress={handleDismiss} />
       <View style={styles.content}>
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={handleDismiss}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={28} color="#ffffff" />
+        </TouchableOpacity>
         {searchLoading && (
           <View style={styles.resultBox}>
             <ActivityIndicator size="large" color="#6366f1" />
@@ -65,6 +78,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     justifyContent: 'flex-start',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 11,
+    padding: 8,
   },
   resultBox: {
     backgroundColor: '#1f1f1f',
