@@ -77,9 +77,11 @@ function toFullImageUrl(path: string | null | undefined): string | null {
   return `${TMDB_IMAGE_BASE}${path}`;
 }
 
+type MonetizationType = 'flatrate' | 'rent' | 'both';
+
 async function fetchDiscoverFromTMDB(
   year: number | null,
-  streaming: boolean,
+  monetization: MonetizationType,
   page: number,
   providers: number[],
   genres: number[],
@@ -106,8 +108,10 @@ async function fetchDiscoverFromTMDB(
 
   if (providers.length > 0) {
     url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
-  } else if (streaming) {
+  } else if (monetization === 'flatrate') {
     url += `&with_watch_monetization_types=flatrate&watch_region=${watchRegion}`;
+  } else if (monetization === 'rent') {
+    url += `&with_watch_monetization_types=rent,buy&watch_region=${watchRegion}`;
   }
 
   const res = await fetch(url, {
@@ -187,7 +191,7 @@ export default function DiscoverScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [streamingOnly, setStreamingOnly] = useState(true);
+  const [monetization, setMonetization] = useState<MonetizationType>('both');
   const [providerIds, setProviderIds] = useState<number[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -222,7 +226,7 @@ export default function DiscoverScreen() {
   }, [screenWidth, numColumns]);
 
   const fetchMovies = useCallback(
-    async (year: number | null, streaming: boolean, genres: number[]) => {
+    async (year: number | null, monet: MonetizationType, genres: number[]) => {
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -235,13 +239,13 @@ export default function DiscoverScreen() {
         const freshProviders = await getSavedProviderIds();
         setProviderIds(freshProviders);
 
-        const data = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 1, selectedCountry);
+        const data = await fetchDiscoverFromTMDB(year, monet, 1, freshProviders, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
-          const data2 = await fetchDiscoverFromTMDB(year, streaming, 1, freshProviders, genres, 2, selectedCountry);
+          const data2 = await fetchDiscoverFromTMDB(year, monet, 1, freshProviders, genres, 2, selectedCountry);
           setPhase2Movies(data2.movies);
           setTotalPages(data2.total_pages);
           setPage(1);
@@ -270,7 +274,7 @@ export default function DiscoverScreen() {
 
         try {
           const data = await fetchDiscoverFromTMDB(
-            selectedYear, streamingOnly, 1, providerIds, selectedGenres, 2, selectedCountry
+            selectedYear, monetization, 1, providerIds, selectedGenres, 2, selectedCountry
           );
           const deduped = data.movies.filter(
             (m) => !phase1IdsRef.current.has(m.id)
@@ -295,7 +299,7 @@ export default function DiscoverScreen() {
 
     try {
       const data = await fetchDiscoverFromTMDB(
-        selectedYear, streamingOnly, nextPage, providerIds, selectedGenres, fetchPhase, selectedCountry
+        selectedYear, monetization, nextPage, providerIds, selectedGenres, fetchPhase, selectedCountry
       );
 
       if (fetchPhase === 1) {
@@ -314,29 +318,29 @@ export default function DiscoverScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loading, page, totalPages, fetchPhase, streamingOnly, providerIds, selectedYear, selectedGenres, selectedCountry]);
+  }, [loading, page, totalPages, fetchPhase, monetization, providerIds, selectedYear, selectedGenres, selectedCountry]);
 
   const triggerFetch = useCallback(
-    (year: number | null, streaming: boolean, genres: number[]) => {
+    (year: number | null, monet: MonetizationType, genres: number[]) => {
       setPage(1);
       setFetchPhase(1);
-      fetchMovies(year, streaming, genres);
+      fetchMovies(year, monet, genres);
     },
     [fetchMovies]
   );
 
   useEffect(() => {
-    triggerFetch(selectedYear, streamingOnly, selectedGenres);
-  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, streamingOnly]);
+    triggerFetch(selectedYear, monetization, selectedGenres);
+  }, [selectedYear, selectedGenres, selectedCountry, triggerFetch, monetization]);
 
   const handleYearSelect = (year: number) => {
     const nextYear = selectedYear === year ? null : year;
     setSelectedYear(nextYear);
-    triggerFetch(nextYear, streamingOnly, selectedGenres);
+    triggerFetch(nextYear, monetization, selectedGenres);
   };
 
-  const handleStreamingToggle = (value: boolean) => {
-    setStreamingOnly(value);
+  const handleMonetizationChange = (value: MonetizationType) => {
+    setMonetization(value);
     triggerFetch(selectedYear, value, selectedGenres);
   };
 
@@ -347,7 +351,7 @@ export default function DiscoverScreen() {
         : [...prev, genreId];
       setPage(1);
       setFetchPhase(1);
-      triggerFetch(selectedYear, streamingOnly, next);
+      triggerFetch(selectedYear, monetization, next);
       return next;
     });
   };
@@ -509,14 +513,31 @@ export default function DiscoverScreen() {
         />
       </View>
 
-      <View style={styles.toggleRow}>
-        <Text style={styles.toggleLabel}>Streaming Only</Text>
-        <Switch
-          value={streamingOnly}
-          onValueChange={handleStreamingToggle}
-          trackColor={{ false: '#2d2d2d', true: '#4f46e5' }}
-          thumbColor={streamingOnly ? '#a5b4fc' : '#6b7280'}
-        />
+      <View style={styles.monetizationRow}>
+        <Pressable
+          style={[styles.monetizationPill, monetization === 'flatrate' && styles.monetizationPillActive]}
+          onPress={() => handleMonetizationChange('flatrate')}
+        >
+          <Text style={[styles.monetizationPillText, monetization === 'flatrate' && styles.monetizationPillTextActive]}>
+            Free/Stream
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.monetizationPill, monetization === 'rent' && styles.monetizationPillActive]}
+          onPress={() => handleMonetizationChange('rent')}
+        >
+          <Text style={[styles.monetizationPillText, monetization === 'rent' && styles.monetizationPillTextActive]}>
+            Rent/Buy
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.monetizationPill, monetization === 'both' && styles.monetizationPillActive]}
+          onPress={() => handleMonetizationChange('both')}
+        >
+          <Text style={[styles.monetizationPillText, monetization === 'both' && styles.monetizationPillTextActive]}>
+            All
+          </Text>
+        </Pressable>
       </View>
 
       {!hasMovies && !loading && (
@@ -710,17 +731,33 @@ const styles = StyleSheet.create({
   chipTextSelected: {
     color: '#ffffff',
   },
-  toggleRow: {
+  monetizationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 10,
     paddingHorizontal: HORIZONTAL_PADDING,
     marginBottom: 12,
   },
-  toggleLabel: {
-    fontSize: 15,
+  monetizationPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#1f1f1f',
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  monetizationPillActive: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  monetizationPillText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#d1d5db',
+    color: '#9ca3af',
+  },
+  monetizationPillTextActive: {
+    color: '#ffffff',
   },
   emptyState: {
     flex: 1,
