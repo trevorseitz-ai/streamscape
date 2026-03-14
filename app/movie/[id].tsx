@@ -254,6 +254,7 @@ export default function MovieDetailsScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
+  const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
 
   const {
     isSearching,
@@ -530,7 +531,7 @@ export default function MovieDetailsScreen() {
   async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
       .from('media')
-      .select('id, title, synopsis, release_year, poster_url, backdrop_url, type')
+      .select('id, title, synopsis, release_year, poster_url, backdrop_url, type, tmdb_id')
       .eq('id', mediaId)
       .single();
 
@@ -632,6 +633,7 @@ export default function MovieDetailsScreen() {
     setTitle(null);
 
     async function fetchMovie() {
+      setTmdbMovieId(null);
       try {
         if (isTmdbId) {
           const tmdbId = Number(id);
@@ -640,6 +642,7 @@ export default function MovieDetailsScreen() {
           setMovie(tmdbMovie);
           setTitle(tmdbMovie.title);
           setWatchProvidersResults(providers);
+          setTmdbMovieId(tmdbId);
           if (key) setTrailerKey(key);
           await findSupabaseMediaId(
             tmdbMovie.title,
@@ -652,6 +655,7 @@ export default function MovieDetailsScreen() {
           const initial = await fetchFromSupabase(id);
           setMovie(initial);
           setTitle(initial.title);
+          if (initial.tmdb_id != null) setTmdbMovieId(initial.tmdb_id);
 
           const key = await enrichFromTMDB(id);
           if (key) setTrailerKey(key);
@@ -792,6 +796,74 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[
+              styles.actionButton,
+              isLandscape && styles.actionButtonDesktop,
+              inWatchlist && styles.actionButtonRemove,
+              watchlistLoading && styles.actionButtonDisabled,
+            ]}
+            onPress={toggleWatchlist}
+            disabled={watchlistLoading}
+          >
+            {watchlistLoading ? (
+              <ActivityIndicator
+                size="small"
+                color={inWatchlist ? '#22c55e' : '#ffffff'}
+                style={styles.watchlistSpinner}
+              />
+            ) : (
+              <Ionicons
+                name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
+                size={18}
+                color={
+                  inWatchlist ? '#22c55e' : session ? '#ffffff' : '#a5b4fc'
+                }
+              />
+            )}
+            <Text
+              style={[
+                styles.actionButtonText,
+                inWatchlist && styles.actionButtonTextRemove,
+              ]}
+              numberOfLines={1}
+            >
+              {session ? (inWatchlist ? 'On Watchlist' : 'Add to Watchlist') : 'Sign in to Add'}
+            </Text>
+          </Pressable>
+
+          {trailerKey ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                isLandscape && styles.actionButtonDesktop,
+                pressed && styles.actionButtonPressed,
+              ]}
+              onPress={() => setTrailerModalVisible(true)}
+            >
+              <Ionicons name="play-circle" size={18} color="#ffffff" />
+              <Text style={styles.actionButtonText} numberOfLines={1}>Watch Trailer</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {tmdbMovieId != null ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.watchNowButton,
+              isLandscape && styles.watchNowButtonDesktop,
+              pressed && styles.watchNowButtonPressed,
+            ]}
+            onPress={() => Linking.openURL(`https://www.themoviedb.org/movie/${tmdbMovieId}/watch`)}
+          >
+            <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>
+              Watch Now
+            </Text>
+            <Ionicons name="open-outline" size={18} color="#ffffff" />
+          </Pressable>
+        ) : null}
+
         {(() => {
           const countryData = watchProvidersResults?.[selectedCountry];
           const flatrate = countryData?.flatrate ?? [];
@@ -826,6 +898,9 @@ export default function MovieDetailsScreen() {
 
           return (
             <View style={[styles.watchProvidersSection, isLandscape && styles.watchProvidersSectionDesktop]}>
+              <Text style={[styles.whereToWatchHeader, isLandscape && styles.whereToWatchHeaderDesktop]}>
+                Where to Watch
+              </Text>
               {flatrate.length > 0 ? (
                 <View style={styles.watchProviderCategory}>
                   <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
@@ -850,79 +925,9 @@ export default function MovieDetailsScreen() {
                   {renderProviderBadges(buy)}
                 </View>
               ) : null}
-              {countryData?.link ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.watchNowButton,
-                    isLandscape && styles.watchNowButtonDesktop,
-                    pressed && styles.watchNowButtonPressed,
-                  ]}
-                  onPress={() => Linking.openURL(countryData.link)}
-                >
-                  <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>
-                    Watch Now
-                  </Text>
-                </Pressable>
-              ) : null}
             </View>
           );
         })()}
-
-        <View style={styles.buttonGroup}>
-          <View style={styles.watchlistButtonCompact}>
-            <Pressable
-              style={[
-                styles.watchlistButton,
-                isLandscape && styles.watchlistButtonDesktop,
-                inWatchlist && styles.watchlistButtonRemove,
-                watchlistLoading && styles.watchlistButtonDisabled,
-              ]}
-              onPress={toggleWatchlist}
-              disabled={watchlistLoading}
-            >
-              <View style={styles.watchlistButtonContent}>
-                {watchlistLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={inWatchlist ? '#22c55e' : '#ffffff'}
-                    style={styles.watchlistSpinner}
-                  />
-                ) : (
-                  <Ionicons
-                    name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
-                    size={20}
-                    color={
-                      inWatchlist ? '#22c55e' : session ? '#ffffff' : '#a5b4fc'
-                    }
-                  />
-                )}
-                <Text
-                  style={[
-                    styles.watchlistButtonText,
-                    inWatchlist && styles.watchlistButtonTextRemove,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {session ? (inWatchlist ? 'On Watchlist' : 'Add to Watchlist') : 'Sign in to Add'}
-                </Text>
-              </View>
-            </Pressable>
-          </View>
-
-          {trailerKey ? (
-            <Pressable
-              style={({ pressed }) => [
-                styles.watchTrailerButton,
-                isLandscape && styles.watchTrailerButtonDesktop,
-                pressed && styles.watchTrailerButtonPressed,
-              ]}
-              onPress={() => setTrailerModalVisible(true)}
-            >
-              <Ionicons name="play-circle" size={isLandscape ? 28 : 24} color="#ffffff" />
-              <Text style={[styles.watchTrailerText, isLandscape && styles.watchTrailerTextDesktop]}>Watch Trailer</Text>
-            </Pressable>
-          ) : null}
-        </View>
 
         {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
           <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
@@ -1234,13 +1239,20 @@ const styles = StyleSheet.create({
   watchTrailerTextDesktop: {
     fontSize: 18,
   },
-  watchProvidersSection: {
+  whereToWatchHeader: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
     marginTop: 20,
+    marginBottom: 10,
+  },
+  whereToWatchHeaderDesktop: {
+    fontSize: 22,
+  },
+  watchProvidersSection: {
     width: '100%',
   },
-  watchProvidersSectionDesktop: {
-    marginTop: 24,
-  },
+  watchProvidersSectionDesktop: {},
   watchProviderCategory: {
     marginBottom: 14,
   },
@@ -1336,12 +1348,39 @@ const styles = StyleSheet.create({
   },
   watchNowButton: {
     backgroundColor: '#22c55e',
-    paddingVertical: 14,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     width: '100%',
     alignSelf: 'stretch',
+    marginTop: 0,
+    marginBottom: 20,
+  },
+  watchNowLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 12,
+  },
+  watchNowLinkDesktop: {
+    marginTop: 20,
+    paddingVertical: 14,
+  },
+  watchNowLinkPressed: {
+    opacity: 0.8,
+  },
+  watchNowLinkText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#22c55e',
+  },
+  watchNowLinkTextDesktop: {
+    fontSize: 16,
   },
   watchNowButtonDesktop: {
     paddingVertical: 16,
@@ -1389,6 +1428,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#6b7280',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    marginBottom: 20,
+    width: '100%',
+  },
+  actionButton: {
+    flex: 1,
+    height: 45,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#6366f1',
+    borderRadius: 10,
+  },
+  actionButtonDesktop: {
+    height: 48,
+    borderRadius: 12,
+  },
+  actionButtonPressed: {
+    opacity: 0.8,
+  },
+  actionButtonRemove: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  actionButtonDisabled: {
+    opacity: 0.7,
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButtonTextRemove: {
+    color: '#ef4444',
   },
   buttonGroup: {
     marginTop: 20,
