@@ -109,10 +109,12 @@ async function fetchDiscoverFromTMDB(
   if (providers.length > 0) {
     url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
   } else if (monetization === 'flatrate') {
-    url += `&with_watch_monetization_types=flatrate&watch_region=${watchRegion}`;
+    url += `&with_watch_monetization_types=flatrate|free&watch_region=${watchRegion}`;
   } else if (monetization === 'rent') {
     url += `&with_watch_monetization_types=rent|buy&watch_region=${watchRegion}`;
   }
+
+  console.log('Fetching URL:', url);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
