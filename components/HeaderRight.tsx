@@ -29,18 +29,6 @@ export function HeaderRight({
 
   return (
     <View style={styles.headerRight}>
-      {showSearch && (
-        <Pressable
-          style={styles.searchIcon}
-          onPress={() => {
-            if (isSearching) Keyboard.dismiss();
-            setIsSearching(!isSearching);
-          }}
-          hitSlop={8}
-        >
-          <Ionicons name="search-outline" size={22} color="#ffffff" />
-        </Pressable>
-      )}
       <CountrySelector />
       {!compact && session ? (
         <TouchableOpacity
@@ -63,6 +51,18 @@ export function HeaderRight({
           <Text style={styles.loginText}>Log In</Text>
         </TouchableOpacity>
       ) : null}
+      {showSearch && (
+        <Pressable
+          style={styles.searchIcon}
+          onPress={() => {
+            if (isSearching) Keyboard.dismiss();
+            setIsSearching(!isSearching);
+          }}
+          hitSlop={8}
+        >
+          <Ionicons name="search-outline" size={22} color="#ffffff" />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -77,7 +77,6 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     padding: 4,
-    marginRight: 8,
   },
   headerButton: {
     flexDirection: 'row',
