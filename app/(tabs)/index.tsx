@@ -125,7 +125,7 @@ export default function HomeScreen() {
     setSearchError(null);
   };
 
-  const showSearchOverlay = isSearching && (searchResult || searchError || searchLoading);
+  const showSearchOverlay = isSearching;
 
   // Auth guard: blackout when not logged in (immediate effect on signOut)
   if (!session) {
@@ -240,6 +240,7 @@ export default function HomeScreen() {
           searchResult={searchResult}
           onResultPress={handleMoviePress}
           onDismiss={() => {
+            searchInputRef.current?.blur();
             Keyboard.dismiss();
             setIsSearching(false);
             setSearchResult(null);

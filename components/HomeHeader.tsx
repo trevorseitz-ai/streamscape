@@ -32,20 +32,19 @@ export function HomeHeader(props: HomeHeaderProps) {
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
   const inputRef = searchInputRef ?? internalInputRef;
-  const dummyInputRef = useRef<TextInput>(null);
 
   const focusSearchInput = useCallback(() => {
     inputRef.current?.focus();
   }, [inputRef]);
 
-  const handleSearchIconPress = useCallback(() => {
+  const handleCancel = useCallback(() => {
+    setQuery('');
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+    setIsSearching(false);
     setSearchResult(null);
     setSearchError(null);
-    // Focus BEFORE state change - input must be in DOM (hidden via opacity/height)
-    dummyInputRef.current?.focus();
-    inputRef.current?.focus();
-    setIsSearching(true);
-  }, [setSearchResult, setSearchError, setIsSearching, inputRef]);
+  }, [inputRef, setQuery, setIsSearching, setSearchResult, setSearchError]);
 
   const handleSearchClose = useCallback(() => {
     inputRef.current?.blur();
@@ -100,12 +99,6 @@ export function HomeHeader(props: HomeHeaderProps) {
 
   return (
     <View style={styles.headerColumn}>
-      {/* Dummy input for Safari: focus this first on tap, then real input. Must stay in DOM. */}
-      <TextInput
-        ref={dummyInputRef}
-        style={styles.dummyInput}
-        editable
-      />
       <View style={styles.headerTopRow}>
         <View style={styles.branding}>
           <Text style={styles.title}>StreamScape</Text>
@@ -121,41 +114,31 @@ export function HomeHeader(props: HomeHeaderProps) {
           />
         </View>
       </View>
+      {/* Permanent second row: user taps input directly (Safari-friendly) */}
       <View style={styles.searchRowPortrait}>
-        {!isSearching && (
-          <Pressable
-            style={styles.searchIconRow}
-            onPress={handleSearchIconPress}
-            hitSlop={8}
-          >
-            <Ionicons name="search-outline" size={22} color="#ffffff" />
-          </Pressable>
-        )}
-        <View style={[styles.inputWrapper, styles.inputWrapperPortrait, isSearching ? styles.searchInputVisible : styles.searchInputHidden]}>
-          <Pressable
-            style={styles.collapseButton}
-            onPress={handleSearchClose}
-            hitSlop={8}
-          >
-            <Ionicons name="arrow-back" size={22} color="#9ca3af" />
-          </Pressable>
+        <View style={[styles.inputWrapper, styles.inputWrapperPortrait]}>
+          {isSearching && (
+            <Pressable style={styles.cancelButton} onPress={handleCancel} hitSlop={8}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+          )}
           <TextInput
-            key="search-input-field"
             ref={inputRef}
             style={styles.input}
             placeholder="Search movies..."
             placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
+            onFocus={() => setIsSearching(true)}
+            onBlur={() => setIsSearching(false)}
             onSubmitEditing={() => {
               Keyboard.dismiss();
               handleSearch();
             }}
             returnKeyType="search"
-            editable={isSearching ? !searchLoading : true}
+            editable={!searchLoading}
             autoCapitalize="none"
             autoCorrect={false}
-            autoFocus={false}
           />
           {query.length > 0 ? (
             <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
@@ -262,17 +245,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 4,
   },
-  collapseButton: {
-    marginRight: 8,
-    padding: 4,
+  cancelButton: {
+    marginRight: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     justifyContent: 'center',
   },
-  dummyInput: {
-    position: 'absolute',
-    opacity: 0,
-    height: 0,
-    width: 1,
-    zIndex: -1,
+  cancelButtonText: {
+    fontSize: 16,
+    color: '#6366f1',
+    fontWeight: '600',
   },
   searchInputHidden: {
     height: 0,

@@ -33,11 +33,11 @@ export function SearchResultsOverlay({
   };
 
   return (
-    <View style={styles.overlay}>
+    <View style={[styles.overlay, { top: contentTopOffset }]}>
       <Pressable style={styles.backdrop} onPress={handleDismiss} />
-      <View style={[styles.content, { paddingTop: contentTopOffset }]}>
+      <View style={styles.content}>
         <TouchableOpacity
-          style={[styles.closeButton, { top: contentTopOffset }]}
+          style={styles.closeButton}
           onPress={handleDismiss}
           activeOpacity={0.7}
         >
@@ -79,10 +79,12 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+    paddingTop: 20,
     justifyContent: 'flex-start',
   },
   closeButton: {
     position: 'absolute',
+    top: 20,
     right: 20,
     zIndex: 11,
     padding: 8,
