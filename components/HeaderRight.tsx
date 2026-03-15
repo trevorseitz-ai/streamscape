@@ -15,6 +15,8 @@ interface HeaderRightProps {
   hideSearchIcon?: boolean;
   /** Called when search is opened (landscape) - use to focus input. */
   onSearchOpen?: () => void;
+  /** Called when search is closed (landscape) - use to blur input. */
+  onSearchClose?: () => void;
 }
 
 export function HeaderRight({
@@ -25,6 +27,7 @@ export function HeaderRight({
   compact = false,
   hideSearchIcon = false,
   onSearchOpen,
+  onSearchClose,
 }: HeaderRightProps) {
   const { setIsSearching, setSearchResult, setSearchError } = useSearch();
 
@@ -64,7 +67,8 @@ export function HeaderRight({
             let willOpen = false;
             setIsSearching((prev) => {
               if (prev) {
-                Keyboard.dismiss();
+                if (onSearchClose) onSearchClose();
+                else Keyboard.dismiss();
                 return false;
               }
               willOpen = true;

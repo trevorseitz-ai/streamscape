@@ -21,10 +21,12 @@ export interface HomeHeaderProps {
   searchInputRef?: RefObject<TextInput | null>;
   /** Called when search is opened from HeaderRight (landscape) - use to focus input. */
   onSearchOpen?: () => void;
+  /** Called when search is closed from HeaderRight (landscape) - use to blur input. */
+  onSearchClose?: () => void;
 }
 
 export function HomeHeader(props: HomeHeaderProps) {
-  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef, onSearchOpen } = props;
+  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef, onSearchOpen, onSearchClose } = props;
   const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading, setSearchResult, setSearchError } =
     useSearch();
   const { isLandscape } = useBreakpoint();
@@ -32,15 +34,21 @@ export function HomeHeader(props: HomeHeaderProps) {
   const inputRef = searchInputRef ?? internalInputRef;
 
   const focusSearchInput = useCallback(() => {
-    setTimeout(() => inputRef.current?.focus(), 50);
+    inputRef.current?.focus();
   }, [inputRef]);
 
   const handleSearchIconPress = useCallback(() => {
     setSearchResult(null);
     setSearchError(null);
     setIsSearching(true);
-    focusSearchInput();
-  }, [setSearchResult, setSearchError, setIsSearching, focusSearchInput]);
+    inputRef.current?.focus();
+  }, [setSearchResult, setSearchError, setIsSearching, inputRef]);
+
+  const handleSearchClose = useCallback(() => {
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+    setIsSearching(false);
+  }, [inputRef, setIsSearching]);
 
   if (isLandscape) {
     return (
@@ -50,7 +58,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             <Text style={styles.title}>StreamScape</Text>
             <Text style={styles.tagline}>Find where to stream it</Text>
           </View>
-          <View style={[styles.inputWrapper, styles.inputWrapperRow, !isSearching && styles.searchInputHidden]}>
+          <View style={[styles.inputWrapper, styles.inputWrapperRow, isSearching ? styles.searchInputVisible : styles.searchInputHidden]}>
             <TextInput
               key="search-input-field"
               ref={inputRef}
@@ -80,6 +88,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             onLogout={onLogout}
             onLogin={onLogin}
             onSearchOpen={onSearchOpen ?? focusSearchInput}
+            onSearchClose={onSearchClose ?? handleSearchClose}
           />
         </View>
       </View>
@@ -113,13 +122,10 @@ export function HomeHeader(props: HomeHeaderProps) {
             <Ionicons name="search-outline" size={22} color="#ffffff" />
           </Pressable>
         )}
-        <View style={[styles.inputWrapper, styles.inputWrapperPortrait, !isSearching && styles.searchInputHidden]}>
+        <View style={[styles.inputWrapper, styles.inputWrapperPortrait, isSearching ? styles.searchInputVisible : styles.searchInputHidden]}>
           <Pressable
             style={styles.collapseButton}
-            onPress={() => {
-              Keyboard.dismiss();
-              setIsSearching(false);
-            }}
+            onPress={handleSearchClose}
             hitSlop={8}
           >
             <Ionicons name="arrow-back" size={22} color="#9ca3af" />
@@ -253,10 +259,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   searchInputHidden: {
+    height: 0,
     opacity: 0,
-    position: 'absolute',
-    left: 0,
-    right: 0,
+    overflow: 'hidden',
     pointerEvents: 'none',
+  },
+  searchInputVisible: {
+    opacity: 1,
+    pointerEvents: 'auto',
   },
 });
