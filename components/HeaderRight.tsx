@@ -13,6 +13,8 @@ interface HeaderRightProps {
   compact?: boolean;
   /** When true, hide the search icon (e.g. when search is in a separate row). */
   hideSearchIcon?: boolean;
+  /** Called when search is opened (landscape) - use to focus input. */
+  onSearchOpen?: () => void;
 }
 
 export function HeaderRight({
@@ -22,6 +24,7 @@ export function HeaderRight({
   onLogin = () => {},
   compact = false,
   hideSearchIcon = false,
+  onSearchOpen,
 }: HeaderRightProps) {
   const { setIsSearching, setSearchResult, setSearchError } = useSearch();
 
@@ -58,15 +61,18 @@ export function HeaderRight({
         <Pressable
           style={styles.searchIcon}
           onPress={() => {
+            let willOpen = false;
             setIsSearching((prev) => {
               if (prev) {
                 Keyboard.dismiss();
                 return false;
               }
+              willOpen = true;
               setSearchResult(null);
               setSearchError(null);
               return true;
             });
+            if (willOpen) onSearchOpen?.();
           }}
           hitSlop={8}
         >

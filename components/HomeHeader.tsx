@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,64 +19,28 @@ export interface HomeHeaderProps {
   onLogin?: () => void;
   /** Ref for the search TextInput (used for auto-focus from parent). */
   searchInputRef?: RefObject<TextInput | null>;
+  /** Called when search is opened from HeaderRight (landscape) - use to focus input. */
+  onSearchOpen?: () => void;
 }
 
 export function HomeHeader(props: HomeHeaderProps) {
-  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef } = props;
+  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef, onSearchOpen } = props;
   const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading, setSearchResult, setSearchError } =
     useSearch();
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
+  const inputRef = searchInputRef ?? internalInputRef;
 
-  const handleInputLayoutFocus = useCallback(() => {
-    if (isSearching) {
-      (searchInputRef ?? internalInputRef).current?.focus();
-    }
-  }, [isSearching, searchInputRef]);
+  const focusSearchInput = useCallback(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [inputRef]);
 
-  const searchInput = (
-    <View style={[styles.inputWrapper, isLandscape ? styles.inputWrapperRow : styles.inputWrapperPortrait]}>
-      {!isLandscape && (
-        <Pressable
-          style={styles.collapseButton}
-          onPress={() => {
-            Keyboard.dismiss();
-            setIsSearching(false);
-          }}
-          hitSlop={8}
-        >
-          <Ionicons name="arrow-back" size={22} color="#9ca3af" />
-        </Pressable>
-      )}
-      <TextInput
-        key="search-input-field"
-        ref={searchInputRef ?? internalInputRef}
-        style={styles.input}
-        placeholder="Search movies..."
-        placeholderTextColor="#6b7280"
-        value={query}
-        onChangeText={setQuery}
-        onSubmitEditing={() => {
-          Keyboard.dismiss();
-          handleSearch();
-        }}
-        returnKeyType="search"
-        editable={!searchLoading}
-        autoCapitalize="none"
-        autoCorrect={false}
-        onLayout={handleInputLayoutFocus}
-      />
-      {query.length > 0 ? (
-        <Pressable
-          style={styles.clearButton}
-          onPress={() => setQuery('')}
-          hitSlop={8}
-        >
-          <Ionicons name="close-circle" size={20} color="#6b7280" />
-        </Pressable>
-      ) : null}
-    </View>
-  );
+  const handleSearchIconPress = useCallback(() => {
+    setSearchResult(null);
+    setSearchError(null);
+    setIsSearching(true);
+    focusSearchInput();
+  }, [setSearchResult, setSearchError, setIsSearching, focusSearchInput]);
 
   if (isLandscape) {
     return (
@@ -86,7 +50,28 @@ export function HomeHeader(props: HomeHeaderProps) {
             <Text style={styles.title}>StreamScape</Text>
             <Text style={styles.tagline}>Find where to stream it</Text>
           </View>
-          {isSearching && searchInput}
+          <View style={[styles.inputWrapper, styles.inputWrapperRow, !isSearching && styles.searchInputHidden]}>
+            <TextInput
+              key="search-input-field"
+              ref={inputRef}
+              style={styles.input}
+              placeholder="Search movies..."
+              placeholderTextColor="#6b7280"
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
+              returnKeyType="search"
+              editable={!searchLoading}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={false}
+            />
+            {query.length > 0 ? (
+              <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={20} color="#6b7280" />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
         <View style={styles.rightGroup}>
           <HeaderRight
@@ -94,6 +79,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             session={session}
             onLogout={onLogout}
             onLogin={onLogin}
+            onSearchOpen={onSearchOpen ?? focusSearchInput}
           />
         </View>
       </View>
@@ -118,21 +104,50 @@ export function HomeHeader(props: HomeHeaderProps) {
         </View>
       </View>
       <View style={styles.searchRowPortrait}>
-        {isSearching ? (
-          searchInput
-        ) : (
-        <Pressable
-          style={styles.searchIconRow}
-          onPress={() => {
-            setSearchResult(null);
-            setSearchError(null);
-            setIsSearching(true);
-          }}
-          hitSlop={8}
-        >
+        {!isSearching && (
+          <Pressable
+            style={styles.searchIconRow}
+            onPress={handleSearchIconPress}
+            hitSlop={8}
+          >
             <Ionicons name="search-outline" size={22} color="#ffffff" />
           </Pressable>
         )}
+        <View style={[styles.inputWrapper, styles.inputWrapperPortrait, !isSearching && styles.searchInputHidden]}>
+          <Pressable
+            style={styles.collapseButton}
+            onPress={() => {
+              Keyboard.dismiss();
+              setIsSearching(false);
+            }}
+            hitSlop={8}
+          >
+            <Ionicons name="arrow-back" size={22} color="#9ca3af" />
+          </Pressable>
+          <TextInput
+            key="search-input-field"
+            ref={inputRef}
+            style={styles.input}
+            placeholder="Search movies..."
+            placeholderTextColor="#6b7280"
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={() => {
+              Keyboard.dismiss();
+              handleSearch();
+            }}
+            returnKeyType="search"
+            editable={!searchLoading}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus={false}
+          />
+          {query.length > 0 ? (
+            <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={20} color="#6b7280" />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -236,5 +251,12 @@ const styles = StyleSheet.create({
     marginRight: 8,
     padding: 4,
     justifyContent: 'center',
+  },
+  searchInputHidden: {
+    opacity: 0,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    pointerEvents: 'none',
   },
 });
