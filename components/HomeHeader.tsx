@@ -7,6 +7,7 @@ import {
   Pressable,
   Keyboard,
 } from 'react-native';
+import type { RefObject } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -16,21 +17,23 @@ export interface HomeHeaderProps {
   session?: { user: { id: string; email?: string } } | null;
   onLogout?: () => void;
   onLogin?: () => void;
+  /** Ref for the search TextInput (used for auto-focus from parent). */
+  searchInputRef?: RefObject<TextInput | null>;
 }
 
 export function HomeHeader(props: HomeHeaderProps) {
-  const { session = null, onLogout = () => {}, onLogin = () => {} } = props;
+  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef } = props;
   const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading } =
     useSearch();
   const { isLandscape } = useBreakpoint();
-  const inputRef = useRef<TextInput>(null);
+  const internalInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    if (isSearching) {
-      const id = setTimeout(() => inputRef.current?.focus(), 100);
+    if (isSearching && !searchInputRef) {
+      const id = setTimeout(() => internalInputRef.current?.focus(), 100);
       return () => clearTimeout(id);
     }
-  }, [isSearching]);
+  }, [isSearching, searchInputRef]);
 
   const searchInput = (
     <View style={[styles.inputWrapper, isLandscape ? styles.inputWrapperRow : styles.inputWrapperPortrait]}>
@@ -47,7 +50,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         </Pressable>
       )}
       <TextInput
-        ref={inputRef}
+        ref={searchInputRef ?? internalInputRef}
         style={styles.input}
         placeholder="Search movies..."
         placeholderTextColor="#6b7280"

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
+  TextInput,
   ScrollView,
   Image,
   StyleSheet,
@@ -34,6 +35,7 @@ interface TrendingMovie extends Movie {
 export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
+  const searchInputRef = useRef<TextInput>(null);
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -69,6 +71,13 @@ export default function HomeScreen() {
     setSearchError,
   } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
+
+  useEffect(() => {
+    if (isSearching) {
+      const id = setTimeout(() => searchInputRef.current?.focus(), 100);
+      return () => clearTimeout(id);
+    }
+  }, [isSearching]);
   const [trendingLoading, setTrendingLoading] = useState(true);
 
   useEffect(() => {
@@ -146,6 +155,7 @@ export default function HomeScreen() {
           session={session}
           onLogout={handleLogout}
           onLogin={() => router.push('/login')}
+          searchInputRef={searchInputRef}
         />
       </SafeAreaView>
       <View style={styles.mainContainer}>
