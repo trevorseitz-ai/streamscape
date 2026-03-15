@@ -72,12 +72,6 @@ export default function HomeScreen() {
   } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
 
-  useEffect(() => {
-    if (isSearching) {
-      const id = setTimeout(() => searchInputRef.current?.focus(), 100);
-      return () => clearTimeout(id);
-    }
-  }, [isSearching]);
   const [trendingLoading, setTrendingLoading] = useState(true);
 
   useEffect(() => {

@@ -23,7 +23,7 @@ export function HeaderRight({
   compact = false,
   hideSearchIcon = false,
 }: HeaderRightProps) {
-  const { setIsSearching, isSearching } = useSearch();
+  const { setIsSearching, setSearchResult, setSearchError } = useSearch();
 
   const showSearch =
     routeName === 'index' ||
@@ -58,8 +58,15 @@ export function HeaderRight({
         <Pressable
           style={styles.searchIcon}
           onPress={() => {
-            if (isSearching) Keyboard.dismiss();
-            setIsSearching(!isSearching);
+            setIsSearching((prev) => {
+              if (prev) {
+                Keyboard.dismiss();
+                return false;
+              }
+              setSearchResult(null);
+              setSearchError(null);
+              return true;
+            });
           }}
           hitSlop={8}
         >

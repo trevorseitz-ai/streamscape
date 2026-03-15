@@ -14,7 +14,7 @@ export interface Movie {
 
 interface SearchContextValue {
   isSearching: boolean;
-  setIsSearching: (v: boolean) => void;
+  setIsSearching: React.Dispatch<React.SetStateAction<boolean>>;
   query: string;
   setQuery: (v: string) => void;
   searchResult: Movie | null;

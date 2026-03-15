@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -23,15 +23,14 @@ export interface HomeHeaderProps {
 
 export function HomeHeader(props: HomeHeaderProps) {
   const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef } = props;
-  const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading } =
+  const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading, setSearchResult, setSearchError } =
     useSearch();
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-    if (isSearching && !searchInputRef) {
-      const id = setTimeout(() => internalInputRef.current?.focus(), 100);
-      return () => clearTimeout(id);
+  const handleInputLayoutFocus = useCallback(() => {
+    if (isSearching) {
+      (searchInputRef ?? internalInputRef).current?.focus();
     }
   }, [isSearching, searchInputRef]);
 
@@ -50,6 +49,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         </Pressable>
       )}
       <TextInput
+        key="search-input-field"
         ref={searchInputRef ?? internalInputRef}
         style={styles.input}
         placeholder="Search movies..."
@@ -64,6 +64,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         editable={!searchLoading}
         autoCapitalize="none"
         autoCorrect={false}
+        onLayout={handleInputLayoutFocus}
       />
       {query.length > 0 ? (
         <Pressable
@@ -120,11 +121,15 @@ export function HomeHeader(props: HomeHeaderProps) {
         {isSearching ? (
           searchInput
         ) : (
-          <Pressable
-            style={styles.searchIconRow}
-            onPress={() => setIsSearching(true)}
-            hitSlop={8}
-          >
+        <Pressable
+          style={styles.searchIconRow}
+          onPress={() => {
+            setSearchResult(null);
+            setSearchError(null);
+            setIsSearching(true);
+          }}
+          hitSlop={8}
+        >
             <Ionicons name="search-outline" size={22} color="#ffffff" />
           </Pressable>
         )}
