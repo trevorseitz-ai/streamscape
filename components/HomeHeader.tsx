@@ -27,7 +27,8 @@ export function HomeHeader(props: HomeHeaderProps) {
 
   useEffect(() => {
     if (isSearching) {
-      inputRef.current?.focus();
+      const id = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(id);
     }
   }, [isSearching]);
 

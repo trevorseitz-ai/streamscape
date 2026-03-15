@@ -116,6 +116,7 @@ export default function HomeScreen() {
   const restTrending = trending.slice(1);
 
   const handleMoviePress = (movie: Movie) => {
+    Keyboard.dismiss();
     setIsSearching(false);
     setSearchResult(null);
     setSearchError(null);
