@@ -32,6 +32,7 @@ export function HomeHeader(props: HomeHeaderProps) {
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
   const inputRef = searchInputRef ?? internalInputRef;
+  const dummyInputRef = useRef<TextInput>(null);
 
   const focusSearchInput = useCallback(() => {
     inputRef.current?.focus();
@@ -40,8 +41,10 @@ export function HomeHeader(props: HomeHeaderProps) {
   const handleSearchIconPress = useCallback(() => {
     setSearchResult(null);
     setSearchError(null);
-    setIsSearching(true);
+    // Focus BEFORE state change - input must be in DOM (hidden via opacity/height)
+    dummyInputRef.current?.focus();
     inputRef.current?.focus();
+    setIsSearching(true);
   }, [setSearchResult, setSearchError, setIsSearching, inputRef]);
 
   const handleSearchClose = useCallback(() => {
@@ -97,6 +100,12 @@ export function HomeHeader(props: HomeHeaderProps) {
 
   return (
     <View style={styles.headerColumn}>
+      {/* Dummy input for Safari: focus this first on tap, then real input. Must stay in DOM. */}
+      <TextInput
+        ref={dummyInputRef}
+        style={styles.dummyInput}
+        editable
+      />
       <View style={styles.headerTopRow}>
         <View style={styles.branding}>
           <Text style={styles.title}>StreamScape</Text>
@@ -143,7 +152,7 @@ export function HomeHeader(props: HomeHeaderProps) {
               handleSearch();
             }}
             returnKeyType="search"
-            editable={!searchLoading}
+            editable={isSearching ? !searchLoading : true}
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus={false}
@@ -257,6 +266,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
     padding: 4,
     justifyContent: 'center',
+  },
+  dummyInput: {
+    position: 'absolute',
+    opacity: 0,
+    height: 0,
+    width: 1,
+    zIndex: -1,
   },
   searchInputHidden: {
     height: 0,
