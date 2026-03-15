@@ -44,7 +44,6 @@ export function HeaderRight({
           style={styles.authButton}
           onPress={onLogout}
           activeOpacity={0.8}
-          userInteractionEnabled
         >
           <Ionicons name="log-out-outline" size={20} color="#ef4444" />
           <Text style={styles.logoutText}>Log Out</Text>
@@ -54,7 +53,6 @@ export function HeaderRight({
           style={styles.authButton}
           onPress={onLogin}
           activeOpacity={0.8}
-          userInteractionEnabled
         >
           <Ionicons name="person-circle-outline" size={20} color="#6366f1" />
           <Text style={styles.loginText}>Log In</Text>
