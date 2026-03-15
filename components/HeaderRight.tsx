@@ -11,6 +11,8 @@ interface HeaderRightProps {
   onLogin?: () => void;
   /** When true, only show Search + Country (no auth). Used for movie details. */
   compact?: boolean;
+  /** When true, hide the search icon (e.g. when search is in a separate row). */
+  hideSearchIcon?: boolean;
 }
 
 export function HeaderRight({
@@ -19,6 +21,7 @@ export function HeaderRight({
   onLogout = () => {},
   onLogin = () => {},
   compact = false,
+  hideSearchIcon = false,
 }: HeaderRightProps) {
   const { setIsSearching, isSearching } = useSearch();
 
@@ -51,7 +54,7 @@ export function HeaderRight({
           <Text style={styles.loginText}>Log In</Text>
         </TouchableOpacity>
       ) : null}
-      {showSearch && (
+      {showSearch && !hideSearchIcon && (
         <Pressable
           style={styles.searchIcon}
           onPress={() => {

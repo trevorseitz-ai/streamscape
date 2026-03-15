@@ -20,7 +20,7 @@ export interface HomeHeaderProps {
 
 export function HomeHeader(props: HomeHeaderProps) {
   const { session = null, onLogout = () => {}, onLogin = () => {} } = props;
-  const { isSearching, query, setQuery, handleSearch, searchLoading } =
+  const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading } =
     useSearch();
   const { isLandscape } = useBreakpoint();
   const inputRef = useRef<TextInput>(null);
@@ -33,6 +33,18 @@ export function HomeHeader(props: HomeHeaderProps) {
 
   const searchInput = (
     <View style={[styles.inputWrapper, isLandscape ? styles.inputWrapperRow : styles.inputWrapperPortrait]}>
+      {!isLandscape && (
+        <Pressable
+          style={styles.collapseButton}
+          onPress={() => {
+            Keyboard.dismiss();
+            setIsSearching(false);
+          }}
+          hitSlop={8}
+        >
+          <Ionicons name="arrow-back" size={22} color="#9ca3af" />
+        </Pressable>
+      )}
       <TextInput
         ref={inputRef}
         style={styles.input}
@@ -96,14 +108,23 @@ export function HomeHeader(props: HomeHeaderProps) {
             session={session}
             onLogout={onLogout}
             onLogin={onLogin}
+            hideSearchIcon
           />
         </View>
       </View>
-      {isSearching && (
-        <View style={styles.searchRowPortrait}>
-          {searchInput}
-        </View>
-      )}
+      <View style={styles.searchRowPortrait}>
+        {isSearching ? (
+          searchInput
+        ) : (
+          <Pressable
+            style={styles.searchIconRow}
+            onPress={() => setIsSearching(true)}
+            hitSlop={8}
+          >
+            <Ionicons name="search-outline" size={22} color="#ffffff" />
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -135,8 +156,15 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   searchRowPortrait: {
-    paddingVertical: 10,
+    marginTop: 10,
+    paddingHorizontal: 5,
     width: '100%',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  searchIconRow: {
+    padding: 4,
+    alignSelf: 'flex-start',
   },
   leftGroup: {
     flex: 1,
@@ -194,5 +222,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     padding: 4,
+  },
+  collapseButton: {
+    marginRight: 8,
+    padding: 4,
+    justifyContent: 'center',
   },
 });

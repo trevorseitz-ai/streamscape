@@ -240,6 +240,7 @@ export default function HomeScreen() {
             setSearchResult(null);
             setSearchError(null);
           }}
+          contentTopOffset={140}
         />
       )}
     </View>

@@ -16,6 +16,8 @@ interface SearchResultsOverlayProps {
   searchResult: Movie | null;
   onResultPress: (movie: Movie) => void;
   onDismiss: () => void;
+  /** Top offset so content appears below the header (avoids covering header buttons). */
+  contentTopOffset?: number;
 }
 
 export function SearchResultsOverlay({
@@ -24,6 +26,7 @@ export function SearchResultsOverlay({
   searchResult,
   onResultPress,
   onDismiss,
+  contentTopOffset = 20,
 }: SearchResultsOverlayProps) {
   const handleDismiss = () => {
     onDismiss();
@@ -32,9 +35,9 @@ export function SearchResultsOverlay({
   return (
     <View style={styles.overlay}>
       <Pressable style={styles.backdrop} onPress={handleDismiss} />
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingTop: contentTopOffset }]}>
         <TouchableOpacity
-          style={styles.closeButton}
+          style={[styles.closeButton, { top: contentTopOffset }]}
           onPress={handleDismiss}
           activeOpacity={0.7}
         >
@@ -76,12 +79,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 20,
     justifyContent: 'flex-start',
   },
   closeButton: {
     position: 'absolute',
-    top: 20,
     right: 20,
     zIndex: 11,
     padding: 8,
