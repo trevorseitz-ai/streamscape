@@ -83,21 +83,52 @@ export function HomeHeader(props: HomeHeaderProps) {
             <Text style={styles.tagline}>Find where to stream it</Text>
           </View>
           <View style={[styles.inputWrapper, styles.inputWrapperRow, isSearching ? styles.searchInputVisible : styles.searchInputHidden]}>
-            <TextInput
-              key="search-input-field"
-              ref={inputRef}
-              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
-              placeholder="Search movies..."
-              placeholderTextColor="#6b7280"
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
-              returnKeyType="search"
-              editable={!searchLoading}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus={false}
-            />
+            {Platform.OS === 'web' ? (
+              <input
+                key="search-input-field-web"
+                ref={inputRef as any}
+                type="text"
+                placeholder="Search movies..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                onKeyDown={(e) => { if (e.key === 'Enter') { Keyboard.dismiss(); handleSearch(); } }}
+                disabled={searchLoading}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                style={{
+                  flex: 1,
+                  height: 40,
+                  fontSize: 16,
+                  padding: '8px 14px',
+                  paddingRight: 40,
+                  border: '1px solid #2d2d2d',
+                  borderRadius: 10,
+                  outline: 'none',
+                  width: '100%',
+                  backgroundColor: '#1f1f1f',
+                  color: '#ffffff',
+                }}
+              />
+            ) : (
+              <TextInput
+                key="search-input-field"
+                ref={inputRef}
+                style={[styles.input]}
+                placeholder="Search movies..."
+                placeholderTextColor="#6b7280"
+                value={query}
+                onChangeText={setQuery}
+                onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
+                returnKeyType="search"
+                editable={!searchLoading}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus={false}
+              />
+            )}
             {query.length > 0 ? (
               <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
                 <Ionicons name="close-circle" size={20} color="#6b7280" />
@@ -144,24 +175,54 @@ export function HomeHeader(props: HomeHeaderProps) {
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
           )}
-          <TextInput
-            ref={inputRef}
-            style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
-            placeholder="Search movies..."
-            placeholderTextColor="#6b7280"
-            value={query}
-            onChangeText={setQuery}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            onSubmitEditing={() => {
-              Keyboard.dismiss();
-              handleSearch();
-            }}
-            returnKeyType="search"
-            editable={!searchLoading}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {Platform.OS === 'web' ? (
+            <input
+              ref={inputRef as any}
+              type="text"
+              placeholder="Search movies..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onKeyDown={(e) => { if (e.key === 'Enter') { Keyboard.dismiss(); handleSearch(); } }}
+              disabled={searchLoading}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              style={{
+                flex: 1,
+                height: 40,
+                fontSize: 16,
+                padding: '8px 14px',
+                paddingRight: 40,
+                border: '1px solid #2d2d2d',
+                borderRadius: 10,
+                outline: 'none',
+                width: '100%',
+                backgroundColor: '#1f1f1f',
+                color: '#ffffff',
+              }}
+            />
+          ) : (
+            <TextInput
+              ref={inputRef}
+              style={[styles.input]}
+              placeholder="Search movies..."
+              placeholderTextColor="#6b7280"
+              value={query}
+              onChangeText={setQuery}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onSubmitEditing={() => {
+                Keyboard.dismiss();
+                handleSearch();
+              }}
+              returnKeyType="search"
+              editable={!searchLoading}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          )}
           {query.length > 0 ? (
             <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
               <Ionicons name="close-circle" size={20} color="#6b7280" />

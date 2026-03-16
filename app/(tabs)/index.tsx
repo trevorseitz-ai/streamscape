@@ -213,6 +213,7 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.trendingScroll}
+              keyboardShouldPersistTaps="always"
             >
               {restTrending.map((movie) => (
                 <View key={movie.id} style={styles.trendingCard}>
