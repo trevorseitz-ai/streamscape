@@ -127,17 +127,6 @@ export default function HomeScreen() {
 
   const showSearchOverlay = isSearching;
 
-  // Delay backdrop pointer events so overlay doesn't catch the tail-end of the user's tap on the input (Safari).
-  const [backdropPointerEvents, setBackdropPointerEvents] = useState<'auto' | 'none'>('none');
-  useEffect(() => {
-    if (isSearching) {
-      const id = setTimeout(() => setBackdropPointerEvents('auto'), 200);
-      return () => clearTimeout(id);
-    } else {
-      setBackdropPointerEvents('none');
-    }
-  }, [isSearching]);
-
   // Auth guard: blackout when not logged in (immediate effect on signOut)
   if (!session) {
     return (
@@ -258,7 +247,6 @@ export default function HomeScreen() {
             setSearchError(null);
           }}
           contentTopOffset={140}
-          backdropPointerEvents={backdropPointerEvents}
         />
       )}
     </View>

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -33,12 +33,21 @@ export function HomeHeader(props: HomeHeaderProps) {
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
   const inputRef = searchInputRef ?? internalInputRef;
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+  }, []);
 
   const focusSearchInput = useCallback(() => {
     inputRef.current?.focus();
   }, [inputRef]);
 
   const handleCancel = useCallback(() => {
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
     setQuery('');
     inputRef.current?.blur();
     Keyboard.dismiss();
@@ -46,6 +55,18 @@ export function HomeHeader(props: HomeHeaderProps) {
     setSearchResult(null);
     setSearchError(null);
   }, [inputRef, setQuery, setIsSearching, setSearchResult, setSearchError]);
+
+  const handleFocus = useCallback(() => {
+    focusTimeoutRef.current = setTimeout(() => setIsSearching(true), 300);
+  }, [setIsSearching]);
+
+  const handleBlur = useCallback(() => {
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
+    setIsSearching(false);
+  }, [setIsSearching]);
 
   const handleSearchClose = useCallback(() => {
     inputRef.current?.blur();
@@ -116,7 +137,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         </View>
       </View>
       {/* Permanent second row: user taps input directly (Safari-friendly) */}
-      <View style={[styles.searchRowPortrait, styles.searchInputElevated]}>
+      <View style={styles.searchRowPortrait}>
         <View style={[styles.inputWrapper, styles.inputWrapperPortrait]}>
           {isSearching && (
             <Pressable style={styles.cancelButton} onPress={handleCancel} hitSlop={8}>
@@ -130,9 +151,8 @@ export function HomeHeader(props: HomeHeaderProps) {
             placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
-            onTouchStart={() => setIsSearching(true)}
-            onFocus={() => setIsSearching(true)}
-            onBlur={() => setIsSearching(false)}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
             onSubmitEditing={() => {
               Keyboard.dismiss();
               handleSearch();
@@ -185,10 +205,6 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 44,
     justifyContent: 'center',
-  },
-  searchInputElevated: {
-    zIndex: 9999,
-    elevation: 10,
   },
   searchIconRow: {
     padding: 4,
