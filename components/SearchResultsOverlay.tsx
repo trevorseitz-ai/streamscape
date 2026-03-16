@@ -18,6 +18,8 @@ interface SearchResultsOverlayProps {
   onDismiss: () => void;
   /** Top offset so content appears below the header (avoids covering header buttons). */
   contentTopOffset?: number;
+  /** Backdrop pointer events: use 'none' initially to avoid catching tap tail, then 'auto' when fully active. */
+  backdropPointerEvents?: 'auto' | 'none';
 }
 
 export function SearchResultsOverlay({
@@ -27,15 +29,20 @@ export function SearchResultsOverlay({
   onResultPress,
   onDismiss,
   contentTopOffset = 20,
+  backdropPointerEvents = 'auto',
 }: SearchResultsOverlayProps) {
   const handleDismiss = () => {
     onDismiss();
   };
 
   return (
-    <View style={[styles.overlay, { top: contentTopOffset }]}>
-      <Pressable style={styles.backdrop} onPress={handleDismiss} />
-      <View style={styles.content}>
+    <View style={styles.overlay}>
+      <Pressable
+        style={styles.backdrop}
+        onPress={handleDismiss}
+        pointerEvents={backdropPointerEvents}
+      />
+      <View style={[styles.content, { paddingTop: contentTopOffset }]}>
         <TouchableOpacity
           style={styles.closeButton}
           onPress={handleDismiss}
@@ -69,8 +76,12 @@ export function SearchResultsOverlay({
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 100,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9998,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -79,7 +90,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 20,
     justifyContent: 'flex-start',
   },
   closeButton: {

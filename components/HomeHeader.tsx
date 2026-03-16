@@ -116,7 +116,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         </View>
       </View>
       {/* Permanent second row: user taps input directly (Safari-friendly) */}
-      <View style={styles.searchRowPortrait}>
+      <View style={[styles.searchRowPortrait, styles.searchInputElevated]}>
         <View style={[styles.inputWrapper, styles.inputWrapperPortrait]}>
           {isSearching && (
             <Pressable style={styles.cancelButton} onPress={handleCancel} hitSlop={8}>
@@ -130,6 +130,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
+            onTouchStart={() => setIsSearching(true)}
             onFocus={() => setIsSearching(true)}
             onBlur={() => setIsSearching(false)}
             onSubmitEditing={() => {
@@ -184,6 +185,10 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 44,
     justifyContent: 'center',
+  },
+  searchInputElevated: {
+    zIndex: 9999,
+    elevation: 10,
   },
   searchIconRow: {
     padding: 4,
