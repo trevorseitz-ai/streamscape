@@ -6,6 +6,7 @@ import {
   TextInput,
   Pressable,
   Keyboard,
+  Platform,
 } from 'react-native';
 import type { RefObject } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,7 +65,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             <TextInput
               key="search-input-field"
               ref={inputRef}
-              style={styles.input}
+              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               placeholder="Search movies..."
               placeholderTextColor="#6b7280"
               value={query}
@@ -124,7 +125,7 @@ export function HomeHeader(props: HomeHeaderProps) {
           )}
           <TextInput
             ref={inputRef}
-            style={styles.input}
+            style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
             placeholder="Search movies..."
             placeholderTextColor="#6b7280"
             value={query}
