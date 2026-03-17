@@ -11,6 +11,7 @@ import {
   Pressable,
   TouchableOpacity,
   Keyboard,
+  Platform,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -141,16 +142,18 @@ export default function HomeScreen() {
     );
   }
 
+  const HeaderWrapper = Platform.OS === 'web' ? View : SafeAreaView;
+
   return (
     <View style={styles.wrapper}>
-      <SafeAreaView style={styles.safeHeader}>
+      <HeaderWrapper style={styles.safeHeader}>
         <HomeHeader
           session={session}
           onLogout={handleLogout}
           onLogin={() => router.push('/login')}
           searchInputRef={searchInputRef}
         />
-      </SafeAreaView>
+      </HeaderWrapper>
       <View style={styles.mainContainer}>
         {/* Top Half: Hero #1 Trending */}
         {trendingLoading ? (
