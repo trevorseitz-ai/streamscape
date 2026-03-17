@@ -70,7 +70,6 @@ export function HomeHeader(props: HomeHeaderProps) {
               value={query}
               onChangeText={setQuery}
               onFocus={() => setIsSearching(true)}
-              onBlur={() => setIsSearching(false)}
               onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
               returnKeyType="search"
               editable={!searchLoading}
@@ -132,7 +131,6 @@ export function HomeHeader(props: HomeHeaderProps) {
             value={query}
             onChangeText={setQuery}
             onFocus={() => setIsSearching(true)}
-            onBlur={() => setIsSearching(false)}
             onSubmitEditing={() => {
               Keyboard.dismiss();
               handleSearch();
