@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   Keyboard,
-  Platform,
 } from 'react-native';
 import type { RefObject } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,21 +32,12 @@ export function HomeHeader(props: HomeHeaderProps) {
   const { isLandscape } = useBreakpoint();
   const internalInputRef = useRef<TextInput>(null);
   const inputRef = searchInputRef ?? internalInputRef;
-  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
-  }, []);
 
   const focusSearchInput = useCallback(() => {
     inputRef.current?.focus();
   }, [inputRef]);
 
   const handleCancel = useCallback(() => {
-    if (focusTimeoutRef.current) {
-      clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = null;
-    }
     setQuery('');
     inputRef.current?.blur();
     Keyboard.dismiss();
@@ -55,18 +45,6 @@ export function HomeHeader(props: HomeHeaderProps) {
     setSearchResult(null);
     setSearchError(null);
   }, [inputRef, setQuery, setIsSearching, setSearchResult, setSearchError]);
-
-  const handleFocus = useCallback(() => {
-    focusTimeoutRef.current = setTimeout(() => setIsSearching(true), 300);
-  }, [setIsSearching]);
-
-  const handleBlur = useCallback(() => {
-    if (focusTimeoutRef.current) {
-      clearTimeout(focusTimeoutRef.current);
-      focusTimeoutRef.current = null;
-    }
-    setIsSearching(false);
-  }, [setIsSearching]);
 
   const handleSearchClose = useCallback(() => {
     inputRef.current?.blur();
@@ -86,16 +64,13 @@ export function HomeHeader(props: HomeHeaderProps) {
             <TextInput
               key="search-input-field"
               ref={inputRef}
-              style={[
-                { fontSize: 16 },
-                styles.input,
-                Platform.OS === 'web' && { outlineStyle: 'none', outlineWidth: 0 } as any,
-                Platform.OS === 'web' && ({ userSelect: 'auto', WebkitUserSelect: 'auto' } as any),
-              ]}
+              style={styles.input}
               placeholder="Search movies..."
               placeholderTextColor="#6b7280"
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setIsSearching(true)}
+              onBlur={() => setIsSearching(false)}
               onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
               returnKeyType="search"
               editable={!searchLoading}
@@ -151,18 +126,13 @@ export function HomeHeader(props: HomeHeaderProps) {
           )}
           <TextInput
             ref={inputRef}
-            style={[
-              { fontSize: 16 },
-              styles.input,
-              Platform.OS === 'web' && { outlineStyle: 'none', outlineWidth: 0 } as any,
-              Platform.OS === 'web' && ({ userSelect: 'auto', WebkitUserSelect: 'auto' } as any),
-            ]}
+            style={styles.input}
             placeholder="Search movies..."
             placeholderTextColor="#6b7280"
             value={query}
             onChangeText={setQuery}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
+            onFocus={() => setIsSearching(true)}
+            onBlur={() => setIsSearching(false)}
             onSubmitEditing={() => {
               Keyboard.dismiss();
               handleSearch();

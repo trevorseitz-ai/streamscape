@@ -11,7 +11,6 @@ import {
   Pressable,
   TouchableOpacity,
   Keyboard,
-  Platform,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -213,7 +212,7 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.trendingScroll}
-              keyboardShouldPersistTaps="always"
+              keyboardShouldPersistTaps="handled"
             >
               {restTrending.map((movie) => (
                 <View key={movie.id} style={styles.trendingCard}>
