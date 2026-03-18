@@ -1,15 +1,12 @@
-import React, { useRef, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   Pressable,
-  Keyboard,
 } from 'react-native';
-import type { RefObject } from 'react';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSearch } from '../lib/search-context';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { HeaderRight } from './HeaderRight';
 
@@ -17,40 +14,16 @@ export interface HomeHeaderProps {
   session?: { user: { id: string; email?: string } } | null;
   onLogout?: () => void;
   onLogin?: () => void;
-  /** Ref for the search TextInput (used for auto-focus from parent). */
-  searchInputRef?: RefObject<TextInput | null>;
-  /** Called when search is opened from HeaderRight (landscape) - use to focus input. */
-  onSearchOpen?: () => void;
-  /** Called when search is closed from HeaderRight (landscape) - use to blur input. */
-  onSearchClose?: () => void;
 }
 
 export function HomeHeader(props: HomeHeaderProps) {
-  const { session = null, onLogout = () => {}, onLogin = () => {}, searchInputRef, onSearchOpen, onSearchClose } = props;
-  const { isSearching, setIsSearching, query, setQuery, handleSearch, searchLoading, setSearchResult, setSearchError } =
-    useSearch();
+  const { session = null, onLogout = () => {}, onLogin = () => {} } = props;
+  const router = useRouter();
   const { isLandscape } = useBreakpoint();
-  const internalInputRef = useRef<TextInput>(null);
-  const inputRef = searchInputRef ?? internalInputRef;
 
-  const focusSearchInput = useCallback(() => {
-    inputRef.current?.focus();
-  }, [inputRef]);
-
-  const handleCancel = useCallback(() => {
-    setQuery('');
-    inputRef.current?.blur();
-    Keyboard.dismiss();
-    setIsSearching(false);
-    setSearchResult(null);
-    setSearchError(null);
-  }, [inputRef, setQuery, setIsSearching, setSearchResult, setSearchError]);
-
-  const handleSearchClose = useCallback(() => {
-    inputRef.current?.blur();
-    Keyboard.dismiss();
-    setIsSearching(false);
-  }, [inputRef, setIsSearching]);
+  const handleSearchPress = () => {
+    router.push('/search');
+  };
 
   if (isLandscape) {
     return (
@@ -60,29 +33,13 @@ export function HomeHeader(props: HomeHeaderProps) {
             <Text style={styles.title}>StreamScape</Text>
             <Text style={styles.tagline}>Find where to stream it</Text>
           </View>
-          <View style={[styles.inputWrapper, styles.inputWrapperRow, isSearching ? styles.searchInputVisible : styles.searchInputHidden]}>
-            <TextInput
-              key="search-input-field"
-              ref={inputRef}
-              style={styles.input}
-              placeholder="Search movies..."
-              placeholderTextColor="#6b7280"
-              value={query}
-              onChangeText={setQuery}
-              onFocus={() => setIsSearching(true)}
-              onSubmitEditing={() => { Keyboard.dismiss(); handleSearch(); }}
-              returnKeyType="search"
-              editable={!searchLoading}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus={false}
-            />
-            {query.length > 0 ? (
-              <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
-                <Ionicons name="close-circle" size={20} color="#6b7280" />
-              </Pressable>
-            ) : null}
-          </View>
+          <Pressable
+            style={[styles.fakeInput, styles.inputWrapperRow]}
+            onPress={handleSearchPress}
+          >
+            <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+            <Text style={styles.placeholderText}>Search movies...</Text>
+          </Pressable>
         </View>
         <View style={styles.rightGroup}>
           <HeaderRight
@@ -90,8 +47,7 @@ export function HomeHeader(props: HomeHeaderProps) {
             session={session}
             onLogout={onLogout}
             onLogin={onLogin}
-            onSearchOpen={onSearchOpen ?? focusSearchInput}
-            onSearchClose={onSearchClose ?? handleSearchClose}
+            onSearchOpen={handleSearchPress}
           />
         </View>
       </View>
@@ -115,37 +71,14 @@ export function HomeHeader(props: HomeHeaderProps) {
           />
         </View>
       </View>
-      {/* Permanent second row: user taps input directly (Safari-friendly) */}
       <View style={styles.searchRowPortrait}>
-        <View style={[styles.inputWrapper, styles.inputWrapperPortrait]}>
-          {isSearching && (
-            <Pressable style={styles.cancelButton} onPress={handleCancel} hitSlop={8}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
-          )}
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            placeholder="Search movies..."
-            placeholderTextColor="#6b7280"
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => setIsSearching(true)}
-            onSubmitEditing={() => {
-              Keyboard.dismiss();
-              handleSearch();
-            }}
-            returnKeyType="search"
-            editable={!searchLoading}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {query.length > 0 ? (
-            <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={20} color="#6b7280" />
-            </Pressable>
-          ) : null}
-        </View>
+        <Pressable
+          style={[styles.fakeInput, styles.inputWrapperPortrait]}
+          onPress={handleSearchPress}
+        >
+          <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+          <Text style={styles.placeholderText}>Search movies...</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -184,10 +117,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  searchIconRow: {
-    padding: 4,
-    alignSelf: 'flex-start',
-  },
   leftGroup: {
     flex: 1,
     flexDirection: 'row',
@@ -208,11 +137,16 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 2,
   },
-  inputWrapper: {
+  fakeInput: {
     flexDirection: 'row',
-    minWidth: 0,
-    position: 'relative',
     alignItems: 'center',
+    backgroundColor: '#1f1f1f',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+    minHeight: 44,
   },
   inputWrapperRow: {
     flex: 1,
@@ -221,49 +155,15 @@ const styles = StyleSheet.create({
   inputWrapperPortrait: {
     width: '100%',
   },
+  searchIcon: {
+    marginRight: 10,
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
   rightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#1f1f1f',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    paddingRight: 40,
-    fontSize: 16,
-    color: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-  },
-  clearButton: {
-    position: 'absolute',
-    right: 12,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    padding: 4,
-  },
-  cancelButton: {
-    marginRight: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    color: '#6366f1',
-    fontWeight: '600',
-  },
-  searchInputHidden: {
-    height: 0,
-    opacity: 0,
-    overflow: 'hidden',
-    pointerEvents: 'none',
-  },
-  searchInputVisible: {
-    opacity: 1,
-    pointerEvents: 'auto',
   },
 });

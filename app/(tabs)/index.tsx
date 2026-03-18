@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
-  TextInput,
   ScrollView,
   Image,
   StyleSheet,
@@ -16,7 +15,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MovieCard, type Movie } from '../../components/MovieCard';
-import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
@@ -35,7 +33,6 @@ interface TrendingMovie extends Movie {
 export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
-  const searchInputRef = useRef<TextInput>(null);
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -61,15 +58,7 @@ export default function HomeScreen() {
   const availableHeight = screenHeight - HEADER_AND_TAB_HEIGHT;
   const halfHeight = availableHeight * 0.5;
   const { selectedCountry } = useCountry();
-  const {
-    isSearching,
-    searchResult,
-    searchError,
-    searchLoading,
-    setIsSearching,
-    setSearchResult,
-    setSearchError,
-  } = useSearch();
+  const { setSearchResult, setSearchError } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
 
   const [trendingLoading, setTrendingLoading] = useState(true);
@@ -120,12 +109,9 @@ export default function HomeScreen() {
 
   const handleMoviePress = (movie: Movie) => {
     Keyboard.dismiss();
-    setIsSearching(false);
     setSearchResult(null);
     setSearchError(null);
   };
-
-  const showSearchOverlay = isSearching;
 
   // Auth guard: blackout when not logged in (immediate effect on signOut)
   if (!session) {
@@ -151,7 +137,6 @@ export default function HomeScreen() {
           session={session}
           onLogout={handleLogout}
           onLogin={() => router.push('/login')}
-          searchInputRef={searchInputRef}
         />
       </HeaderWrapper>
       <View style={styles.mainContainer}>
@@ -236,22 +221,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {showSearchOverlay && (
-        <SearchResultsOverlay
-          searchLoading={searchLoading}
-          searchError={searchError}
-          searchResult={searchResult}
-          onResultPress={handleMoviePress}
-          onDismiss={() => {
-            searchInputRef.current?.blur();
-            Keyboard.dismiss();
-            setIsSearching(false);
-            setSearchResult(null);
-            setSearchError(null);
-          }}
-          contentTopOffset={140}
-        />
-      )}
     </View>
   );
 }
