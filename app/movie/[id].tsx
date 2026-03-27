@@ -56,6 +56,8 @@ interface MovieDetails {
   synopsis: string | null;
   release_year: number | null;
   runtime: number | null;
+  /** US MPAA-style certification from TMDB (e.g. PG-13), when available. */
+  us_certification?: string | null;
   vote_average: number | null;
   poster_url: string | null;
   backdrop_url: string | null;
@@ -104,6 +106,12 @@ interface TMDBMovieResponse {
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
   keywords?: {
     keywords?: Array<{ id: number; name: string }>;
+  };
+  release_dates?: {
+    results?: Array<{
+      iso_3166_1: string;
+      release_dates: Array<{ certification?: string; type?: number }>;
+    }>;
   };
 }
 
@@ -221,6 +229,28 @@ function parseFilmingLocations(
   return result;
 }
 
+/** US theatrical/home certification from TMDB release_dates (e.g. PG-13, R). */
+function extractUsCertification(
+  releaseDates: TMDBMovieResponse['release_dates']
+): string | null {
+  if (!releaseDates?.results?.length) return null;
+  const us = releaseDates.results.find((r) => r.iso_3166_1 === 'US');
+  if (!us?.release_dates?.length) return null;
+  const withCert = us.release_dates.find(
+    (d) => typeof d.certification === 'string' && d.certification.trim() !== ''
+  );
+  return withCert?.certification?.trim() ?? null;
+}
+
+function formatRuntimeMinutes(minutes: number): string {
+  if (minutes < 1) return '';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h <= 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   movie: MovieDetails;
   trailerKey: string | null;
@@ -229,7 +259,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos,keywords&language=en-US`;
+  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos,keywords,release_dates&language=en-US`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -276,6 +306,8 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
     (v) => v.site === 'YouTube' && v.type === 'Trailer'
   );
 
+  const usCertification = extractUsCertification(data.release_dates);
+
   return {
     movie: {
       id: String(data.id),
@@ -283,6 +315,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       synopsis: data.overview ?? null,
       release_year: releaseYear,
       runtime: data.runtime ?? null,
+      us_certification: usCertification,
       vote_average: data.vote_average ?? null,
       poster_url: toFullImageUrl(data.poster_path),
       backdrop_url: toFullImageUrl(data.backdrop_path),
@@ -668,7 +701,15 @@ export default function MovieDetailsScreen() {
       }
     );
 
-    return { ...mediaData, vote_average: null, runtime: null, cast, availability, watch_link: null };
+    return {
+      ...mediaData,
+      vote_average: null,
+      runtime: null,
+      us_certification: null,
+      cast,
+      availability,
+      watch_link: null,
+    };
   }
 
   async function enrichFromTMDB(mediaId: string): Promise<string | null> {
@@ -855,8 +896,26 @@ export default function MovieDetailsScreen() {
       <>
         <View>
           <Text style={[styles.title, isLandscape && styles.titleDesktop]}>{movie.title}</Text>
-          {movie.release_year != null ? (
-            <Text style={[styles.year, isLandscape && styles.yearDesktop]}>{movie.release_year}</Text>
+          {(movie.release_year != null ||
+            movie.us_certification ||
+            (movie.runtime != null && movie.runtime > 0)) ? (
+            <View style={[styles.metaRow, isLandscape && styles.metaRowDesktop]}>
+              {movie.release_year != null ? (
+                <Text style={[styles.year, isLandscape && styles.yearDesktop]}>
+                  {movie.release_year}
+                </Text>
+              ) : null}
+              {movie.us_certification ? (
+                <View style={styles.ratingBadge}>
+                  <Text style={styles.ratingBadgeText}>{movie.us_certification}</Text>
+                </View>
+              ) : null}
+              {movie.runtime != null && movie.runtime > 0 ? (
+                <Text style={[styles.runtimeMeta, isLandscape && styles.runtimeMetaDesktop]}>
+                  {formatRuntimeMinutes(movie.runtime)}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
 
@@ -1629,14 +1688,43 @@ const styles = StyleSheet.create({
   titleDesktop: {
     fontSize: 34,
   },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  metaRowDesktop: {
+    marginTop: 6,
+    gap: 10,
+  },
   year: {
     fontSize: 16,
     color: '#9ca3af',
-    marginTop: 4,
   },
   yearDesktop: {
     fontSize: 18,
-    marginTop: 6,
+  },
+  ratingBadge: {
+    borderWidth: 1,
+    borderColor: '#6b7280',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  ratingBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#d1d5db',
+    letterSpacing: 0.3,
+  },
+  runtimeMeta: {
+    fontSize: 16,
+    color: '#9ca3af',
+  },
+  runtimeMetaDesktop: {
+    fontSize: 18,
   },
   section: {
     marginTop: 16,
