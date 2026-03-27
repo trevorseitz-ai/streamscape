@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   Keyboard,
   Platform,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MovieCard, type Movie } from '../../components/MovieCard';
@@ -24,15 +24,18 @@ import { supabase } from '../../lib/supabase';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
-const HEADER_AND_TAB_HEIGHT = 120;
-
 interface TrendingMovie extends Movie {
   backdrop_url: string | null;
 }
 
+const MAIN_HORIZONTAL_PADDING = 20;
+const TRENDING_GAP = 10;
+
 export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
+  const { width, height } = useWindowDimensions();
+  const heroHeight = height * 0.4;
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -54,9 +57,6 @@ export default function HomeScreen() {
     );
     return () => subscription.unsubscribe();
   }, []);
-  const { height: screenHeight } = Dimensions.get('window');
-  const availableHeight = screenHeight - HEADER_AND_TAB_HEIGHT;
-  const halfHeight = availableHeight * 0.5;
   const { selectedCountry } = useCountry();
   const { setSearchResult, setSearchError } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
@@ -107,6 +107,12 @@ export default function HomeScreen() {
   const heroMovie = trending.length > 0 ? trending[0] : null;
   const restTrending = trending.slice(1);
 
+  /** Grid: 3 columns on wider viewports, 2 on narrow. */
+  const gridColumnCount = width >= 430 ? 3 : 2;
+  const trendingContentWidth = width - MAIN_HORIZONTAL_PADDING * 2;
+  const trendingCardWidth =
+    (trendingContentWidth - TRENDING_GAP * (gridColumnCount - 1)) / gridColumnCount;
+
   const handleMoviePress = (movie: Movie) => {
     Keyboard.dismiss();
     setSearchResult(null);
@@ -139,16 +145,21 @@ export default function HomeScreen() {
           onLogin={() => router.push('/login')}
         />
       </HeaderWrapper>
-      <View style={styles.mainContainer}>
-        {/* Top Half: Hero #1 Trending */}
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainContentContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero #1 Trending */}
         {trendingLoading ? (
-          <View style={[styles.heroSkeleton, { height: halfHeight }]}>
+          <View style={[styles.heroSkeleton, { height: heroHeight }]}>
             <ActivityIndicator size="large" color="#6366f1" />
             <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
           </View>
         ) : heroMovie ? (
           <TouchableOpacity
-            style={[styles.heroContainer, styles.heroTouchable, { height: halfHeight }]}
+            style={[styles.heroContainer, styles.heroTouchable, { height: heroHeight }]}
             onPress={() => {
               handleMoviePress(heroMovie);
               router.push(`/movie/${heroMovie.id}`);
@@ -190,36 +201,31 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {/* Bottom Half: Trending Now #2–#10 */}
+        {/* Trending Now #2–#10 */}
         {trendingLoading ? (
-          <View style={[styles.bottomHalf, { height: halfHeight }]} />
+          <View style={styles.bottomHalf} />
         ) : restTrending.length > 0 ? (
-          <View style={[styles.bottomHalf, { height: halfHeight }]}>
+          <View style={styles.bottomHalf}>
             <Text style={styles.sectionTitle}>Trending Now</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.trendingScroll}
-              keyboardShouldPersistTaps="handled"
-            >
+            <View style={styles.trendingGrid}>
               {restTrending.map((movie) => (
-                <View key={movie.id} style={styles.trendingCard}>
+                <View key={movie.id} style={{ width: trendingCardWidth }}>
                   <MovieCard
                     movie={movie}
                     onPress={() => handleMoviePress(movie)}
                   />
                 </View>
               ))}
-            </ScrollView>
+            </View>
           </View>
         ) : (
-          <View style={[styles.bottomHalf, { height: halfHeight }]}>
+          <View style={styles.bottomHalf}>
             <Text style={styles.trendingEmpty}>
               {trending.length === 0 ? 'Could not load trending movies' : 'No more trending'}
             </Text>
           </View>
         )}
-      </View>
+      </ScrollView>
 
     </View>
   );
@@ -254,13 +260,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f0f0f',
   },
-  mainContainer: {
+  mainScroll: {
     flex: 1,
-    paddingTop: 16,
-    paddingHorizontal: 20,
+  },
+  mainContentContainer: {
+    paddingTop: 12,
+    paddingHorizontal: MAIN_HORIZONTAL_PADDING,
+    paddingBottom: 40,
   },
   bottomHalf: {
-    paddingTop: 16,
+    flex: 1,
+    paddingTop: 12,
   },
   safeHeader: {
     backgroundColor: '#0f0f0f',
@@ -281,7 +291,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   heroSkeletonText: {
     fontSize: 14,
@@ -290,8 +300,9 @@ const styles = StyleSheet.create({
   },
   heroContainer: {
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     position: 'relative',
+    overflow: 'hidden',
   },
   heroTouchable: {
     zIndex: 10,
@@ -374,12 +385,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
-  trendingScroll: {
-    gap: 12,
-    paddingRight: 20,
-  },
-  trendingCard: {
-    width: 130,
+  trendingGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: TRENDING_GAP,
   },
   trendingEmpty: {
     fontSize: 14,
