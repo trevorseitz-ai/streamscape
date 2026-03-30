@@ -144,64 +144,70 @@ export default function WatchedScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: WatchedMovie }) => {
-      const { personal_rating, vote_average } = item;
-      const showDelta =
-        personal_rating != null && vote_average != null;
-      const delta = showDelta
-        ? personal_rating - vote_average
-        : null;
-
-      return (
-        <Pressable
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-          onPress={() => handleMoviePress(item)}
-        >
-          {item.poster_url ? (
-            <Image
-              source={{ uri: item.poster_url }}
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.thumbnailPlaceholder}>
-              <Text style={styles.thumbnailPlaceholderText}>?</Text>
-            </View>
-          )}
-          <View style={styles.movieInfo}>
-            <Text style={styles.movieTitle} numberOfLines={2}>
-              {item.title}
+    ({ item }: { item: WatchedMovie }) => (
+      <Pressable
+        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        onPress={() => handleMoviePress(item)}
+      >
+        {item.poster_url ? (
+          <Image
+            source={{ uri: item.poster_url }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.thumbnailPlaceholder}>
+            <Text style={styles.thumbnailPlaceholderText}>?</Text>
+          </View>
+        )}
+        <View style={styles.movieInfo}>
+          <Text style={styles.movieTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.watchedDate}>
+            Watched on {formatWatchedDate(item.watched_at)}
+          </Text>
+          <View
+            style={{
+              marginTop: 8,
+              backgroundColor: '#2d2d2d',
+              padding: 8,
+              borderRadius: 6,
+            }}
+          >
+            <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: 'bold' }}>
+              You:{' '}
+              {item.personal_rating != null
+                ? `${item.personal_rating}/10`
+                : 'Unrated'}
             </Text>
-            <Text style={styles.watchedDate}>
-              Watched on {formatWatchedDate(item.watched_at)}
+            <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 4 }}>
+              TMDB:{' '}
+              {item.vote_average != null
+                ? `${item.vote_average.toFixed(1)}/10`
+                : 'N/A'}
             </Text>
-            {(personal_rating != null || vote_average != null) && (
-              <View style={styles.scoresRow}>
-                {personal_rating != null ? (
-                  <Text style={styles.scoreLine}>
-                    You: {personal_rating.toFixed(1)} / 10
-                  </Text>
-                ) : null}
-                {personal_rating != null && vote_average != null ? (
-                  <Text style={styles.scoreSep}> · </Text>
-                ) : null}
-                {vote_average != null ? (
-                  <Text style={styles.scoreLine}>
-                    TMDB: {vote_average.toFixed(1)} / 10
-                  </Text>
-                ) : null}
-              </View>
-            )}
-            {delta != null && (
-              <Text style={styles.deltaText}>
-                Taste delta: {delta >= 0 ? '+' : ''}
-                {delta.toFixed(1)}
+            {item.personal_rating != null && item.vote_average != null && (
+              <Text
+                style={{
+                  color:
+                    item.personal_rating - item.vote_average >= 0
+                      ? '#10b981'
+                      : '#ef4444',
+                  fontSize: 12,
+                  marginTop: 4,
+                  fontWeight: '600',
+                }}
+              >
+                Taste Delta:{' '}
+                {item.personal_rating - item.vote_average >= 0 ? '+' : ''}
+                {(item.personal_rating - item.vote_average).toFixed(1)}
               </Text>
             )}
           </View>
-        </Pressable>
-      );
-    },
+        </View>
+      </Pressable>
+    ),
     [handleMoviePress]
   );
 
@@ -337,26 +343,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9ca3af',
     marginTop: 4,
-  },
-  scoresRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  scoreLine: {
-    fontSize: 12,
-    color: '#d1d5db',
-    fontWeight: '500',
-  },
-  scoreSep: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  deltaText: {
-    fontSize: 12,
-    color: '#a5b4fc',
-    marginTop: 4,
-    fontWeight: '600',
   },
 });
