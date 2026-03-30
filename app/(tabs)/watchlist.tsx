@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
+import { RatingModal } from '../../components/RatingModal';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -53,6 +54,11 @@ export default function WatchlistScreen() {
   const [orderSaving, setOrderSaving] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [isRatingModalVisible, setRatingModalVisible] = useState(false);
+  const [pendingWatched, setPendingWatched] = useState<{
+    watchlistId: string;
+    movie: WatchlistMovie;
+  } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -206,9 +212,11 @@ export default function WatchlistScreen() {
     [movies, updateDatabaseOrder]
   );
 
-  const handleWatched = useCallback(
-    async (watchlistId: string, movie: WatchlistMovie) => {
-      if (!session) return;
+  const handleConfirmWatched = useCallback(
+    async (rating: number | null) => {
+      if (!session || !pendingWatched) return;
+
+      const { watchlistId, movie } = pendingWatched;
 
       setMovies((prev) => prev.filter((m) => m.watchlistId !== watchlistId));
 
@@ -224,6 +232,7 @@ export default function WatchlistScreen() {
             tmdb_id: movie.tmdb_id,
             title: movie.title,
             poster_url: movie.poster_url ?? null,
+            personal_rating: rating,
           });
 
         if (insertError) throw insertError;
@@ -242,9 +251,12 @@ export default function WatchlistScreen() {
           'Could not mark as watched',
           'Failed to save. Please try again.'
         );
+      } finally {
+        setRatingModalVisible(false);
+        setPendingWatched(null);
       }
     },
-    [session]
+    [session, pendingWatched]
   );
 
   const filteredMovies = useMemo(() => {
@@ -409,7 +421,11 @@ export default function WatchlistScreen() {
                   style={styles.actionButton}
                   onPress={(e) => {
                     e.stopPropagation();
-                    handleWatched(movie.watchlistId, movie);
+                    setPendingWatched({
+                      watchlistId: movie.watchlistId,
+                      movie,
+                    });
+                    setRatingModalVisible(true);
                   }}
                   hitSlop={8}
                 >
@@ -480,6 +496,17 @@ export default function WatchlistScreen() {
           }}
         />
       )}
+
+      <RatingModal
+        visible={isRatingModalVisible}
+        movieTitle={pendingWatched?.movie.title ?? ''}
+        onSubmit={(rating) => {
+          void handleConfirmWatched(rating);
+        }}
+        onSkip={() => {
+          void handleConfirmWatched(null);
+        }}
+      />
     </View>
   );
 }

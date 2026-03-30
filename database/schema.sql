@@ -104,6 +104,7 @@ CREATE TABLE watched_history (
     tmdb_id INTEGER NOT NULL,
     title VARCHAR(500) NOT NULL,
     poster_url TEXT,
+    personal_rating INTEGER,
     watched_at TIMESTAMPTZ DEFAULT NOW()
 );
 
