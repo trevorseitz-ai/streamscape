@@ -4,10 +4,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Pressable,
+  TouchableOpacity,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 export interface RatingModalProps {
   visible: boolean;
@@ -16,8 +15,12 @@ export interface RatingModalProps {
   onSkip: () => void;
 }
 
-const STAR_SIZE = 40;
-const GOLD = '#f5c518';
+const BUTTON_SIZE = 44;
+const GRID_GAP = 10;
+/** Five buttons per row: 5×44 + 4×10 */
+const GRID_WIDTH = 5 * BUTTON_SIZE + 4 * GRID_GAP;
+
+const ACCENT = '#6366f1';
 
 export function RatingModal({
   visible,
@@ -25,20 +28,18 @@ export function RatingModal({
   onSubmit,
   onSkip,
 }: RatingModalProps) {
-  const [hoveredStar, setHoveredStar] = useState<number | null>(null);
-  const [pressedStar, setPressedStar] = useState<number | null>(null);
-
-  const displayFillUpTo = Math.max(
-    hoveredStar ?? 0,
-    pressedStar ?? 0,
-  );
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
 
   useEffect(() => {
     if (!visible) {
-      setHoveredStar(null);
-      setPressedStar(null);
+      setSelectedRating(null);
     }
   }, [visible]);
+
+  const handleSubmitRating = () => {
+    if (selectedRating == null) return;
+    onSubmit(selectedRating);
+  };
 
   return (
     <Modal
@@ -52,45 +53,59 @@ export function RatingModal({
           <View style={styles.card}>
             <Text style={styles.title}>Rate {movieTitle}</Text>
 
-            <View style={styles.starsRow}>
-              {[1, 2, 3, 4, 5].map((value) => {
-                const filled = value <= displayFillUpTo;
+            <View style={styles.grid}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => {
+                const selected = selectedRating === value;
                 return (
-                  <Pressable
+                  <TouchableOpacity
                     key={value}
-                    onPress={() => onSubmit(value)}
-                    onPressIn={() => setPressedStar(value)}
-                    onPressOut={() => setPressedStar(null)}
-                    onHoverIn={() => setHoveredStar(value)}
-                    onHoverOut={() => setHoveredStar(null)}
-                    style={({ pressed }) => [
-                      styles.starHit,
-                      pressed && styles.starPressed,
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedRating(value)}
+                    style={[
+                      styles.numberButton,
+                      selected ? styles.numberButtonSelected : styles.numberButtonIdle,
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel={`Rate ${value} out of 5`}
+                    accessibilityLabel={`Select rating ${value} out of 10`}
+                    accessibilityState={{ selected }}
                   >
-                    <Ionicons
-                      name={filled ? 'star' : 'star-outline'}
-                      size={STAR_SIZE}
-                      color={filled ? GOLD : '#9ca3af'}
-                    />
-                  </Pressable>
+                    <Text
+                      style={[
+                        styles.numberText,
+                        selected ? styles.numberTextSelected : styles.numberTextIdle,
+                      ]}
+                    >
+                      {value}
+                    </Text>
+                  </TouchableOpacity>
                 );
               })}
             </View>
 
-            <Pressable
-              onPress={onSkip}
-              style={({ pressed }) => [
-                styles.skipButton,
-                pressed && styles.skipPressed,
+            <TouchableOpacity
+              onPress={handleSubmitRating}
+              disabled={selectedRating == null}
+              activeOpacity={0.9}
+              style={[
+                styles.submitButton,
+                selectedRating == null && styles.submitButtonDisabled,
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Submit rating"
+              accessibilityState={{ disabled: selectedRating == null }}
+            >
+              <Text style={styles.submitButtonText}>Submit Rating</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onSkip}
+              activeOpacity={0.7}
+              style={styles.skipButton}
               accessibilityRole="button"
               accessibilityLabel="Skip rating"
             >
               <Text style={styles.skipText}>Skip</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -135,26 +150,58 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
   },
-  starsRow: {
+  grid: {
+    width: GRID_WIDTH,
+    alignSelf: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+    gap: GRID_GAP,
     marginBottom: 20,
   },
-  starHit: {
-    padding: 4,
+  numberButton: {
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE,
+    borderRadius: BUTTON_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  starPressed: {
-    opacity: 0.85,
+  numberButtonIdle: {
+    backgroundColor: '#2d2d2d',
+  },
+  numberButtonSelected: {
+    backgroundColor: ACCENT,
+  },
+  numberText: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  numberTextIdle: {
+    color: '#9ca3af',
+  },
+  numberTextSelected: {
+    color: '#ffffff',
+  },
+  submitButton: {
+    alignSelf: 'stretch',
+    backgroundColor: ACCENT,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  submitButtonDisabled: {
+    opacity: 0.35,
+  },
+  submitButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   skipButton: {
     alignSelf: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
-  },
-  skipPressed: {
-    opacity: 0.6,
   },
   skipText: {
     color: '#6b7280',
