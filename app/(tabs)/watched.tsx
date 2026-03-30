@@ -167,36 +167,42 @@ export default function WatchedScreen() {
           <Text style={styles.watchedDate}>
             Watched on {formatWatchedDate(item.watched_at)}
           </Text>
-          <View
-            style={{
-              marginTop: 8,
-              backgroundColor: '#2d2d2d',
-              padding: 8,
-              borderRadius: 6,
-            }}
-          >
-            <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: 'bold' }}>
-              You:{' '}
-              {item.personal_rating != null
-                ? `${item.personal_rating}/10`
-                : 'Unrated'}
-            </Text>
-            <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 4 }}>
-              TMDB:{' '}
-              {item.vote_average != null
-                ? `${item.vote_average.toFixed(1)}/10`
-                : 'N/A'}
-            </Text>
+          <View style={{ marginTop: 8, gap: 4 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Text style={{ fontSize: 13, color: '#e5e7eb', fontWeight: '500' }}>
+                You:{' '}
+                <Text style={{ color: '#818cf8', fontWeight: 'bold' }}>
+                  {item.personal_rating != null
+                    ? `${item.personal_rating}/10`
+                    : '—'}
+                </Text>
+              </Text>
+              <Text style={{ fontSize: 13, color: '#6b7280', marginHorizontal: 8 }}>
+                •
+              </Text>
+              <Text style={{ fontSize: 13, color: '#9ca3af' }}>
+                TMDB:{' '}
+                {item.vote_average != null
+                  ? `${item.vote_average.toFixed(1)}/10`
+                  : '—'}
+              </Text>
+            </View>
+
             {item.personal_rating != null && item.vote_average != null && (
               <Text
                 style={{
+                  fontSize: 12,
+                  fontWeight: '600',
                   color:
                     item.personal_rating - item.vote_average >= 0
                       ? '#10b981'
                       : '#ef4444',
-                  fontSize: 12,
-                  marginTop: 4,
-                  fontWeight: '600',
                 }}
               >
                 Taste Delta:{' '}
