@@ -1157,7 +1157,20 @@ export default function MovieDetailsScreen() {
               {movie.cast
                 .filter((p) => p.role_type === 'actor')
                 .map((person, idx) => (
-                  <View key={`${person.id}-${idx}`} style={[styles.castCard, isLandscape && styles.castCardDesktop]}>
+                  <Pressable
+                    key={`${person.id}-${idx}`}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/person/[id]',
+                        params: { id: person.id },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.castCard,
+                      isLandscape && styles.castCardDesktop,
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
                     {person.headshot_url ? (
                       <Image
                         source={{ uri: person.headshot_url }}
@@ -1177,7 +1190,7 @@ export default function MovieDetailsScreen() {
                         {person.character}
                       </Text>
                     ) : null}
-                  </View>
+                  </Pressable>
                 ))}
             </ScrollView>
           </View>
@@ -1199,12 +1212,25 @@ export default function MovieDetailsScreen() {
               {movie.cast
                 .filter((p) => p.role_type !== 'actor')
                 .map((person, idx) => (
-                  <View key={`${person.id}-crew-${idx}`} style={[styles.crewItem, isLandscape && styles.crewItemDesktop]}>
+                  <Pressable
+                    key={`${person.id}-crew-${idx}`}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/person/[id]',
+                        params: { id: person.id },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.crewItem,
+                      isLandscape && styles.crewItemDesktop,
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
                     <Text style={[styles.crewRole, isLandscape && styles.crewRoleDesktop]}>
                       {person.job ?? person.role_type}
                     </Text>
                     <Text style={[styles.crewName, isLandscape && styles.crewNameDesktop]}>{person.name}</Text>
-                  </View>
+                  </Pressable>
                 ))}
             </View>
           </View>
