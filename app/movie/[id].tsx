@@ -13,6 +13,7 @@ import {
   Keyboard,
   Modal,
   Dimensions,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,6 +68,12 @@ interface MovieDetails {
   watch_link: string | null;
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
   filming_locations?: string[];
+}
+
+interface TMDBRecommendation {
+  id: number;
+  title: string;
+  poster_path: string | null;
 }
 
 interface TMDBMovieResponse {
@@ -335,7 +342,10 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 }
 
 export default function MovieDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fromWatched } = useLocalSearchParams<{
+    id: string;
+    fromWatched?: string | string[];
+  }>();
   const router = useRouter();
   const navigation = useNavigation();
 
@@ -358,6 +368,9 @@ export default function MovieDetailsScreen() {
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
   const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
+  const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
+    []
+  );
 
   const {
     isSearching,
@@ -788,6 +801,43 @@ export default function MovieDetailsScreen() {
   }, [id, setTitle]);
 
   useEffect(() => {
+    if (tmdbMovieId == null) {
+      setRecommendations([]);
+      return;
+    }
+
+    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    if (!apiKey) {
+      setRecommendations([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `${TMDB_BASE}/movie/${tmdbMovieId}/recommendations?language=en-US&page=1`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        if (!res.ok) {
+          if (!cancelled) setRecommendations([]);
+          return;
+        }
+        const data = (await res.json()) as { results?: TMDBRecommendation[] };
+        const list = (data.results ?? []).slice(0, 12);
+        if (!cancelled) setRecommendations(list);
+      } catch {
+        if (!cancelled) setRecommendations([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tmdbMovieId]);
+
+  useEffect(() => {
     if (!watchProvidersResults) return;
     if (prevCountryRef.current === selectedCountry) return;
     prevCountryRef.current = selectedCountry;
@@ -822,6 +872,12 @@ export default function MovieDetailsScreen() {
   const displayWatchLink = watchProvidersResults
     ? watchProvidersResults[selectedCountry]?.link ?? null
     : movie?.watch_link ?? null;
+
+  const fromWatchedParam = Array.isArray(fromWatched)
+    ? fromWatched[0]
+    : fromWatched;
+  const shouldShowRecommendations =
+    fromWatchedParam === 'true' || displayAvailability.length === 0;
 
   function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
     return [...providers].sort((a, b) => {
@@ -1119,6 +1175,54 @@ export default function MovieDetailsScreen() {
                   </View>
                 ))}
             </View>
+          </View>
+        ) : null}
+
+        {shouldShowRecommendations && recommendations.length > 0 ? (
+          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
+            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>
+              You May Also Like
+            </Text>
+            <FlatList
+              horizontal
+              data={recommendations}
+              keyExtractor={(rec) => String(rec.id)}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recommendationsScrollContent}
+              renderItem={({ item: rec }) => (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.recommendationCard,
+                    pressed && styles.recommendationCardPressed,
+                  ]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/movie/[id]',
+                      params: { id: String(rec.id) },
+                    })
+                  }
+                >
+                  {rec.poster_path ? (
+                    <Image
+                      source={{
+                        uri: `https://image.tmdb.org/t/p/w342${rec.poster_path}`,
+                      }}
+                      style={styles.recommendationPoster}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.recommendationPosterPlaceholder}>
+                      <Text style={styles.recommendationPosterInitial}>
+                        {rec.title.charAt(0)}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.recommendationTitle} numberOfLines={2}>
+                    {rec.title}
+                  </Text>
+                </Pressable>
+              )}
+            />
           </View>
         ) : null}
       </>
@@ -1751,6 +1855,41 @@ const styles = StyleSheet.create({
   },
   castScroll: {
     paddingRight: 20,
+  },
+  recommendationsScrollContent: {
+    paddingRight: 20,
+  },
+  recommendationCard: {
+    width: 120,
+    marginRight: 12,
+  },
+  recommendationCardPressed: {
+    opacity: 0.85,
+  },
+  recommendationPoster: {
+    width: 120,
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: '#1a1a1a',
+  },
+  recommendationPosterPlaceholder: {
+    width: 120,
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recommendationPosterInitial: {
+    fontSize: 32,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  recommendationTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#e5e7eb',
+    marginTop: 8,
   },
   castCard: {
     width: 90,
