@@ -144,76 +144,53 @@ export default function WatchedScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: WatchedMovie }) => (
-      <Pressable
-        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-        onPress={() => handleMoviePress(item)}
-      >
-        {item.poster_url ? (
-          <Image
-            source={{ uri: item.poster_url }}
-            style={styles.thumbnail}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.thumbnailPlaceholder}>
-            <Text style={styles.thumbnailPlaceholderText}>?</Text>
-          </View>
-        )}
-        <View style={styles.movieInfo}>
-          <Text style={styles.movieTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <Text style={styles.watchedDate}>
-            Watched on {formatWatchedDate(item.watched_at)}
-          </Text>
-          <View style={{ marginTop: 8, gap: 4 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-              }}
-            >
-              <Text style={{ fontSize: 13, color: '#e5e7eb', fontWeight: '500' }}>
-                You:{' '}
-                <Text style={{ color: '#818cf8', fontWeight: 'bold' }}>
-                  {item.personal_rating != null
-                    ? `${item.personal_rating}/10`
-                    : '—'}
-                </Text>
-              </Text>
-              <Text style={{ fontSize: 13, color: '#6b7280', marginHorizontal: 8 }}>
-                •
-              </Text>
-              <Text style={{ fontSize: 13, color: '#9ca3af' }}>
-                TMDB:{' '}
-                {item.vote_average != null
-                  ? `${item.vote_average.toFixed(1)}/10`
-                  : '—'}
-              </Text>
-            </View>
+    ({ item }: { item: WatchedMovie }) => {
+      const { personal_rating, vote_average } = item;
 
-            {item.personal_rating != null && item.vote_average != null && (
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: '600',
-                  color:
-                    item.personal_rating - item.vote_average >= 0
-                      ? '#10b981'
-                      : '#ef4444',
-                }}
-              >
-                Taste Delta:{' '}
-                {item.personal_rating - item.vote_average >= 0 ? '+' : ''}
-                {(item.personal_rating - item.vote_average).toFixed(1)}
-              </Text>
-            )}
+      return (
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          onPress={() => handleMoviePress(item)}
+        >
+          {/* Poster Column */}
+          {item.poster_url ? (
+            <Image
+              source={{ uri: item.poster_url }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.thumbnailPlaceholder}>
+              <Text style={styles.thumbnailPlaceholderText}>?</Text>
+            </View>
+          )}
+
+          {/* Details Column (Left-Aligned) */}
+          <View style={[styles.movieInfo, { flex: 1, marginRight: 16 }]}>
+            <Text style={styles.movieTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text style={styles.watchedDate}>
+              Watched on {formatWatchedDate(item.watched_at)}
+            </Text>
           </View>
-        </View>
-      </Pressable>
-    ),
+
+          {/* Ratings Column (Right-Aligned, Stacked) */}
+          <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 13, color: '#e5e7eb', fontWeight: '500' }}>
+              You:{' '}
+              <Text style={{ color: '#818cf8', fontWeight: 'bold' }}>
+                {personal_rating != null ? `${personal_rating}/10` : '—'}
+              </Text>
+            </Text>
+            <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 4 }}>
+              TMDB:{' '}
+              {vote_average != null ? `${vote_average.toFixed(1)}/10` : '—'}
+            </Text>
+          </View>
+        </Pressable>
+      );
+    },
     [handleMoviePress]
   );
 
