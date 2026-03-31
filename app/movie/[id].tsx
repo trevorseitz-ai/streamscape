@@ -1083,7 +1083,15 @@ export default function MovieDetailsScreen() {
           const buy = countryData?.buy ?? [];
           const hasAny = flatrate.length > 0 || rent.length > 0 || buy.length > 0;
 
-          if (!watchProvidersResults || !hasAny) return null;
+          if (!watchProvidersResults) return null;
+
+          if (!hasAny) {
+            return (
+              <Text style={styles.streamingEmptyMessage}>
+                No streaming services currently configured are offering this movie.
+              </Text>
+            );
+          }
 
           const renderProviderBadges = (
             providers: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>
@@ -1512,6 +1520,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   watchProvidersSectionDesktop: {},
+  streamingEmptyMessage: {
+    fontSize: 14,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
   watchProviderCategory: {
     marginBottom: 14,
   },
