@@ -164,7 +164,7 @@ function dedupeWatchProvidersById(
   return Array.from(new Map(combined.map((item) => [item.provider_id, item])).values());
 }
 
-/** Merge subscription (flatrate), free, and ad-supported tiers; dedupe by provider_id. */
+/** Merge subscription, free, ads, rent, and buy; dedupe by provider_id (first occurrence wins). */
 function normalizeWatchProvidersCountries(
   results: Record<string, WatchProviderCountry> | null
 ): Record<string, WatchProviderCountry> | null {
@@ -174,7 +174,9 @@ function normalizeWatchProvidersCountries(
       const mergedStream = dedupeWatchProvidersById(
         country.flatrate,
         country.free,
-        country.ads
+        country.ads,
+        country.rent,
+        country.buy
       );
       return [
         code,
@@ -183,10 +185,21 @@ function normalizeWatchProvidersCountries(
           flatrate: mergedStream,
           free: undefined,
           ads: undefined,
+          rent: undefined,
+          buy: undefined,
         },
       ];
     })
   );
+}
+
+/** When the user has chosen enabled services, only show those providers; otherwise show all. */
+function filterWatchProvidersByEnabled(
+  providers: WatchProviderEntry[],
+  enabledIds: Set<number>
+): WatchProviderEntry[] {
+  if (enabledIds.size === 0) return providers;
+  return providers.filter((p) => enabledIds.has(p.provider_id));
 }
 
 function buildAvailabilityFromProviders(
@@ -211,8 +224,6 @@ function buildAvailabilityFromProviders(
     }
   };
   addProviders(countryData?.flatrate, 'subscription');
-  addProviders(countryData?.rent, 'rent');
-  addProviders(countryData?.buy, 'buy');
   return availability;
 }
 
@@ -1127,17 +1138,26 @@ export default function MovieDetailsScreen() {
 
         {(() => {
           const countryData = watchProvidersResults?.[selectedCountry];
-          const flatrate = countryData?.flatrate ?? [];
-          const rent = countryData?.rent ?? [];
-          const buy = countryData?.buy ?? [];
-          const hasAny = flatrate.length > 0 || rent.length > 0 || buy.length > 0;
+          const mergedProviders = countryData?.flatrate ?? [];
+          const displayProviders = filterWatchProvidersByEnabled(
+            mergedProviders,
+            enabledServiceIds
+          );
 
           if (!watchProvidersResults) return null;
 
-          if (!hasAny) {
+          if (mergedProviders.length === 0) {
             return (
               <Text style={styles.streamingEmptyMessage}>
                 No streaming services currently configured are offering this movie.
+              </Text>
+            );
+          }
+
+          if (displayProviders.length === 0) {
+            return (
+              <Text style={styles.streamingEmptyMessage}>
+                None of your selected streaming services are offering this title.
               </Text>
             );
           }
@@ -1170,30 +1190,12 @@ export default function MovieDetailsScreen() {
               <Text style={[styles.whereToWatchHeader, isLandscape && styles.whereToWatchHeaderDesktop]}>
                 Where to Watch
               </Text>
-              {flatrate.length > 0 ? (
-                <View style={styles.watchProviderCategory}>
-                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                    Stream (subscription, free & ad-supported)
-                  </Text>
-                  {renderProviderBadges(flatrate)}
-                </View>
-              ) : null}
-              {rent.length > 0 ? (
-                <View style={styles.watchProviderCategory}>
-                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                    Available for Rent
-                  </Text>
-                  {renderProviderBadges(rent)}
-                </View>
-              ) : null}
-              {buy.length > 0 ? (
-                <View style={styles.watchProviderCategory}>
-                  <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                    Available to Buy
-                  </Text>
-                  {renderProviderBadges(buy)}
-                </View>
-              ) : null}
+              <View style={styles.watchProviderCategory}>
+                <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
+                  Stream, rent & buy
+                </Text>
+                {renderProviderBadges(displayProviders)}
+              </View>
             </View>
           );
         })()}
