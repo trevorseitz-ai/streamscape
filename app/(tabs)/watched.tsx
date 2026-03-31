@@ -138,7 +138,10 @@ export default function WatchedScreen() {
 
   const handleMoviePress = useCallback(
     (item: WatchedMovie) => {
-      router.push(`/movie/${item.tmdb_id}`);
+      router.push({
+        pathname: '/movie/[id]',
+        params: { id: String(item.tmdb_id), fromWatched: 'true' },
+      });
     },
     [router]
   );
