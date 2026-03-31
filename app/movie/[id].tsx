@@ -103,6 +103,8 @@ interface TMDBMovieResponse {
     results?: Record<string, {
       link?: string;
       flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+      free?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+      ads?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
       rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
       buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
     }>;
@@ -140,12 +142,52 @@ function toFullImageUrl(path: string | null | undefined): string | null {
   return `${TMDB_IMAGE_BASE}${path}`;
 }
 
+type WatchProviderEntry = {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+};
+
 type WatchProviderCountry = {
   link?: string;
-  flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-  rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-  buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
+  flatrate?: WatchProviderEntry[];
+  free?: WatchProviderEntry[];
+  ads?: WatchProviderEntry[];
+  rent?: WatchProviderEntry[];
+  buy?: WatchProviderEntry[];
 };
+
+function dedupeWatchProvidersById(
+  ...lists: Array<WatchProviderEntry[] | undefined>
+): WatchProviderEntry[] {
+  const combined = lists.flatMap((l) => l ?? []);
+  return Array.from(new Map(combined.map((item) => [item.provider_id, item])).values());
+}
+
+/** Merge subscription (flatrate), free, and ad-supported tiers; dedupe by provider_id. */
+function normalizeWatchProvidersCountries(
+  results: Record<string, WatchProviderCountry> | null
+): Record<string, WatchProviderCountry> | null {
+  if (!results) return null;
+  return Object.fromEntries(
+    Object.entries(results).map(([code, country]) => {
+      const mergedStream = dedupeWatchProvidersById(
+        country.flatrate,
+        country.free,
+        country.ads
+      );
+      return [
+        code,
+        {
+          ...country,
+          flatrate: mergedStream,
+          free: undefined,
+          ads: undefined,
+        },
+      ];
+    })
+  );
+}
 
 function buildAvailabilityFromProviders(
   countryData: WatchProviderCountry | undefined
@@ -153,7 +195,7 @@ function buildAvailabilityFromProviders(
   const watchLink = countryData?.link ?? null;
   const availability: PlatformAvailability[] = [];
   const addProviders = (
-    list: Array<{ provider_id: number; provider_name: string; logo_path: string | null }> | undefined,
+    list: WatchProviderEntry[] | undefined,
     accessType: string
   ) => {
     for (const p of list ?? []) {
@@ -305,7 +347,8 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
     });
   }
 
-  const watchProvidersResults = data['watch/providers']?.results ?? null;
+  const rawWatchProviders = data['watch/providers']?.results ?? null;
+  const watchProvidersResults = normalizeWatchProvidersCountries(rawWatchProviders);
   const us = watchProvidersResults?.US;
   const availability = buildAvailabilityFromProviders(us);
 
@@ -1130,7 +1173,7 @@ export default function MovieDetailsScreen() {
               {flatrate.length > 0 ? (
                 <View style={styles.watchProviderCategory}>
                   <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                    Stream for Free
+                    Stream (subscription, free & ad-supported)
                   </Text>
                   {renderProviderBadges(flatrate)}
                 </View>
