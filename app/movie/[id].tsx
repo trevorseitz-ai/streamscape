@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -371,6 +371,11 @@ export default function MovieDetailsScreen() {
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
     []
   );
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const scrollToRecommendations = useCallback(() => {
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+  }, []);
 
   const {
     isSearching,
@@ -982,55 +987,77 @@ export default function MovieDetailsScreen() {
         ) : null}
 
         <View style={styles.actionRow}>
-          <Pressable
-            style={[
-              styles.actionButton,
-              isLandscape && styles.actionButtonDesktop,
-              inWatchlist && styles.actionButtonRemove,
-              watchlistLoading && styles.actionButtonDisabled,
-            ]}
-            onPress={toggleWatchlist}
-            disabled={watchlistLoading}
-          >
-            {watchlistLoading ? (
-              <ActivityIndicator
-                size="small"
-                color={inWatchlist ? '#22c55e' : '#ffffff'}
-                style={styles.watchlistSpinner}
-              />
-            ) : (
-              <Ionicons
-                name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
-                size={18}
-                color={
-                  inWatchlist ? '#22c55e' : session ? '#ffffff' : '#a5b4fc'
-                }
-              />
-            )}
-            <Text
-              style={[
-                styles.actionButtonText,
-                inWatchlist && styles.actionButtonTextRemove,
-              ]}
-              numberOfLines={1}
-            >
-              {session ? (inWatchlist ? 'On Watchlist' : 'Add to Watchlist') : 'Sign in to Add'}
-            </Text>
-          </Pressable>
-
-          {trailerKey ? (
+          {fromWatchedParam === 'true' && recommendations.length > 0 ? (
             <Pressable
               style={({ pressed }) => [
-                styles.actionButton,
-                isLandscape && styles.actionButtonDesktop,
-                pressed && styles.actionButtonPressed,
+                styles.viewSimilarButton,
+                isLandscape && styles.viewSimilarButtonDesktop,
+                pressed && styles.viewSimilarButtonPressed,
               ]}
-              onPress={() => setTrailerModalVisible(true)}
+              onPress={scrollToRecommendations}
             >
-              <Ionicons name="play-circle" size={18} color="#ffffff" />
-              <Text style={styles.actionButtonText} numberOfLines={1}>Watch Trailer</Text>
+              <Text style={styles.viewSimilarButtonText} numberOfLines={1}>
+                View Similar Movies
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#ffffff" />
             </Pressable>
-          ) : null}
+          ) : fromWatchedParam === 'true' ? (
+            <View style={styles.watchedBadgeStatic}>
+              <Text style={styles.watchedBadgeStaticText}>✓ Watched</Text>
+            </View>
+          ) : (
+            <>
+              <Pressable
+                style={[
+                  styles.actionButton,
+                  isLandscape && styles.actionButtonDesktop,
+                  inWatchlist && styles.actionButtonRemove,
+                  watchlistLoading && styles.actionButtonDisabled,
+                ]}
+                onPress={toggleWatchlist}
+                disabled={watchlistLoading}
+              >
+                {watchlistLoading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={inWatchlist ? '#22c55e' : '#ffffff'}
+                    style={styles.watchlistSpinner}
+                  />
+                ) : (
+                  <Ionicons
+                    name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
+                    size={18}
+                    color={
+                      inWatchlist ? '#22c55e' : session ? '#ffffff' : '#a5b4fc'
+                    }
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.actionButtonText,
+                    inWatchlist && styles.actionButtonTextRemove,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {session ? (inWatchlist ? 'On Watchlist' : 'Add to Watchlist') : 'Sign in to Add'}
+                </Text>
+              </Pressable>
+
+              {trailerKey ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    isLandscape && styles.actionButtonDesktop,
+                    pressed && styles.actionButtonPressed,
+                  ]}
+                  onPress={() => setTrailerModalVisible(true)}
+                >
+                  <Ionicons name="play-circle" size={18} color="#ffffff" />
+                  <Text style={styles.actionButtonText} numberOfLines={1}>Watch Trailer</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
         </View>
 
         {tmdbMovieId != null ? (
@@ -1269,6 +1296,7 @@ export default function MovieDetailsScreen() {
             </View>
             <View style={styles.detailsSection}>
               <ScrollView
+                ref={scrollViewRef}
                 style={styles.detailsScroll}
                 contentContainerStyle={styles.detailsScrollContent}
                 showsVerticalScrollIndicator={false}
@@ -1280,6 +1308,7 @@ export default function MovieDetailsScreen() {
         ) : (
           /* Portrait: ScrollView wraps poster + details */
           <ScrollView
+            ref={scrollViewRef}
             style={styles.mainScroll}
             contentContainerStyle={styles.mainScrollContent}
             showsVerticalScrollIndicator={false}
@@ -1698,6 +1727,43 @@ const styles = StyleSheet.create({
   },
   actionButtonTextRemove: {
     color: '#ef4444',
+  },
+  viewSimilarButton: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#6366f1',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
+  viewSimilarButtonDesktop: {
+    minHeight: 52,
+  },
+  viewSimilarButtonPressed: {
+    opacity: 0.9,
+  },
+  viewSimilarButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  watchedBadgeStatic: {
+    flex: 1,
+    minHeight: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  watchedBadgeStaticText: {
+    color: '#9ca3af',
+    fontSize: 14,
+    fontWeight: '600',
   },
   buttonGroup: {
     marginTop: 20,
