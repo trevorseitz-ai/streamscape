@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
   Text,
+  TextInput,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
@@ -35,6 +36,7 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -179,6 +181,11 @@ export default function SettingsScreen() {
     );
   }
 
+  const q = searchQuery.trim().toLowerCase();
+  const filteredProviders = providers.filter((p) =>
+    p.name.toLowerCase().includes(q)
+  );
+
   return (
     <ScrollView
       style={styles.container}
@@ -202,8 +209,19 @@ export default function SettingsScreen() {
             <Text style={styles.errorText}>{fetchError}</Text>
           </View>
         ) : (
-          <View style={styles.providerGrid}>
-            {[...providers]
+          <>
+            <TextInput
+              style={styles.servicesSearchInput}
+              placeholder="Search services..."
+              placeholderTextColor="#6b7280"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              clearButtonMode="while-editing"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.providerGrid}>
+            {[...filteredProviders]
               .sort(
                 (a, b) =>
                   (selectedIds.has(b.id) ? 1 : 0) - (selectedIds.has(a.id) ? 1 : 0) ||
@@ -247,6 +265,7 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          </>
         )}
       </View>
 
@@ -335,6 +354,16 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     lineHeight: 20,
     marginBottom: 20,
+  },
+  servicesSearchInput: {
+    backgroundColor: '#1a1a1a',
+    color: '#ffffff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+    fontSize: 16,
   },
   providerGrid: {
     flexDirection: 'row',
