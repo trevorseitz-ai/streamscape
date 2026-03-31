@@ -21,6 +21,12 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
+import {
+  type WatchProviderCountry,
+  type WatchProviderEntry,
+  normalizeWatchProvidersCountries,
+  filterWatchProvidersByEnabled,
+} from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { useMovie } from '../../lib/movie-context';
@@ -140,66 +146,6 @@ const CREW_ROLE_MAP: Record<string, string> = {
 function toFullImageUrl(path: string | null | undefined): string | null {
   if (!path || !path.startsWith('/')) return null;
   return `${TMDB_IMAGE_BASE}${path}`;
-}
-
-type WatchProviderEntry = {
-  provider_id: number;
-  provider_name: string;
-  logo_path: string | null;
-};
-
-type WatchProviderCountry = {
-  link?: string;
-  flatrate?: WatchProviderEntry[];
-  free?: WatchProviderEntry[];
-  ads?: WatchProviderEntry[];
-  rent?: WatchProviderEntry[];
-  buy?: WatchProviderEntry[];
-};
-
-function dedupeWatchProvidersById(
-  ...lists: Array<WatchProviderEntry[] | undefined>
-): WatchProviderEntry[] {
-  const combined = lists.flatMap((l) => l ?? []);
-  return Array.from(new Map(combined.map((item) => [item.provider_id, item])).values());
-}
-
-/** Merge subscription, free, ads, rent, and buy; dedupe by provider_id (first occurrence wins). */
-function normalizeWatchProvidersCountries(
-  results: Record<string, WatchProviderCountry> | null
-): Record<string, WatchProviderCountry> | null {
-  if (!results) return null;
-  return Object.fromEntries(
-    Object.entries(results).map(([code, country]) => {
-      const mergedStream = dedupeWatchProvidersById(
-        country.flatrate,
-        country.free,
-        country.ads,
-        country.rent,
-        country.buy
-      );
-      return [
-        code,
-        {
-          ...country,
-          flatrate: mergedStream,
-          free: undefined,
-          ads: undefined,
-          rent: undefined,
-          buy: undefined,
-        },
-      ];
-    })
-  );
-}
-
-/** When the user has chosen enabled services, only show those providers; otherwise show all. */
-function filterWatchProvidersByEnabled(
-  providers: WatchProviderEntry[],
-  enabledIds: Set<number>
-): WatchProviderEntry[] {
-  if (enabledIds.size === 0) return providers;
-  return providers.filter((p) => enabledIds.has(p.provider_id));
 }
 
 function buildAvailabilityFromProviders(

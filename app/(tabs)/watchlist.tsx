@@ -13,6 +13,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { getSavedProviderIds } from '../../lib/provider-preferences';
+import {
+  mergeWatchProviderCountryBuckets,
+  filterWatchProvidersByEnabled,
+  type WatchProviderCountry,
+} from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
@@ -54,6 +60,7 @@ export default function WatchlistScreen() {
   const [orderSaving, setOrderSaving] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [isRatingModalVisible, setRatingModalVisible] = useState(false);
   const [pendingWatched, setPendingWatched] = useState<{
     watchlistId: string;
@@ -85,6 +92,27 @@ export default function WatchlistScreen() {
   }, []);
 
   useEffect(() => {
+    async function loadEnabledServices() {
+      if (session) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('enabled_services')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.enabled_services) {
+          setEnabledServiceIds(new Set(profile.enabled_services as number[]));
+          return;
+        }
+      }
+      const localIds = await getSavedProviderIds();
+      setEnabledServiceIds(new Set(localIds));
+    }
+
+    loadEnabledServices();
+  }, [session]);
+
+  useEffect(() => {
     const tmdbIds = movies
       .map((m) => m.tmdb_id)
       .filter((id): id is number => id != null);
@@ -113,16 +141,18 @@ export default function WatchlistScreen() {
           );
           if (!res.ok) return;
           const data = await res.json();
-          const countryData = data.results?.[selectedCountry];
-          const flatrate = countryData?.flatrate ?? [];
-          const list: ProviderLogo[] = flatrate.map(
-            (p: { provider_id: number; logo_path: string | null }) => ({
-              provider_id: p.provider_id,
-              logo_url: p.logo_path
-                ? `${TMDB_IMAGE_BASE}${p.logo_path}`
-                : '',
-            })
+          const countryData = data.results?.[selectedCountry] as
+            | WatchProviderCountry
+            | undefined;
+          const merged = mergeWatchProviderCountryBuckets(countryData);
+          const filtered = filterWatchProvidersByEnabled(
+            merged,
+            enabledServiceIds
           );
+          const list: ProviderLogo[] = filtered.map((p) => ({
+            provider_id: p.provider_id,
+            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
+          }));
           logos[tmdbId] = list.filter((p) => p.logo_url);
         } catch {
           logos[tmdbId] = [];
@@ -135,7 +165,7 @@ export default function WatchlistScreen() {
     return () => {
       cancelled = true;
     };
-  }, [movies, selectedCountry]);
+  }, [movies, selectedCountry, enabledServiceIds]);
 
   async function fetchWatchlist(userId: string) {
     setLoading(true);
