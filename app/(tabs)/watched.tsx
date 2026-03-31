@@ -13,8 +13,16 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { getSavedProviderIds } from '../../lib/provider-preferences';
+import {
+  mergeWatchProviderCountryBuckets,
+  filterWatchProvidersByEnabled,
+  type WatchProviderCountry,
+} from '../../lib/tmdb-watch-providers';
+import { useCountry } from '../../lib/country-context';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
 interface WatchedMovie {
   id: string;
@@ -24,6 +32,11 @@ interface WatchedMovie {
   watched_at: string;
   personal_rating: number | null;
   vote_average: number | null;
+}
+
+interface ProviderLogo {
+  provider_id: number;
+  logo_url: string;
 }
 
 function formatWatchedDate(iso: string): string {
@@ -37,10 +50,13 @@ function formatWatchedDate(iso: string): string {
 
 export default function WatchedScreen() {
   const router = useRouter();
+  const { selectedCountry } = useCountry();
   const [movies, setMovies] = useState<WatchedMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+  const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const hasFetchedOnce = useRef(false);
 
   const enrichWithTmdbVotes = useCallback(async (rows: WatchedMovie[]): Promise<WatchedMovie[]> => {
@@ -96,6 +112,82 @@ export default function WatchedScreen() {
     const enriched = await enrichWithTmdbVotes(base);
     setMovies(enriched);
   }, [enrichWithTmdbVotes]);
+
+  useEffect(() => {
+    async function loadEnabledServices() {
+      if (session) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('enabled_services')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.enabled_services) {
+          setEnabledServiceIds(new Set(profile.enabled_services as number[]));
+          return;
+        }
+      }
+      const localIds = await getSavedProviderIds();
+      setEnabledServiceIds(new Set(localIds));
+    }
+
+    loadEnabledServices();
+  }, [session]);
+
+  useEffect(() => {
+    const tmdbIds = movies
+      .map((m) => m.tmdb_id)
+      .filter((id): id is number => id != null);
+
+    if (tmdbIds.length === 0) {
+      setProviderLogos({});
+      return;
+    }
+
+    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    if (!apiKey) {
+      setProviderLogos({});
+      return;
+    }
+
+    let cancelled = false;
+    const logos: Record<number, ProviderLogo[]> = {};
+
+    Promise.all(
+      tmdbIds.map(async (tmdbId) => {
+        if (cancelled) return;
+        try {
+          const res = await fetch(
+            `${TMDB_BASE}/movie/${tmdbId}/watch/providers`,
+            { headers: { Authorization: `Bearer ${apiKey}` } }
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          const countryData = data.results?.[selectedCountry] as
+            | WatchProviderCountry
+            | undefined;
+          const merged = mergeWatchProviderCountryBuckets(countryData);
+          const filtered = filterWatchProvidersByEnabled(
+            merged,
+            enabledServiceIds
+          );
+          const list: ProviderLogo[] = filtered.map((p) => ({
+            provider_id: p.provider_id,
+            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
+          }));
+          logos[tmdbId] = list.filter((p) => p.logo_url);
+        } catch {
+          logos[tmdbId] = [];
+        }
+      })
+    ).then(() => {
+      if (!cancelled) setProviderLogos(logos);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [movies, selectedCountry, enabledServiceIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,13 +261,26 @@ export default function WatchedScreen() {
           )}
 
           {/* Details Column (Left-Aligned) */}
-          <View style={[styles.movieInfo, { flex: 1, marginRight: 16 }]}>
+          <View style={[styles.movieInfo, { flex: 1, marginRight: 8 }]}>
             <Text style={styles.movieTitle} numberOfLines={2}>
               {item.title}
             </Text>
             <Text style={styles.watchedDate}>
               Watched on {formatWatchedDate(item.watched_at)}
             </Text>
+          </View>
+
+          <View style={styles.providerIcons}>
+            {(providerLogos[item.tmdb_id] ?? []).length > 0
+              ? (providerLogos[item.tmdb_id] ?? []).map((p) => (
+                  <Image
+                    key={p.provider_id}
+                    source={{ uri: p.logo_url }}
+                    style={styles.providerIcon}
+                    resizeMode="cover"
+                  />
+                ))
+              : null}
           </View>
 
           {/* Ratings Column (Right-Aligned, Stacked) */}
@@ -194,7 +299,7 @@ export default function WatchedScreen() {
         </Pressable>
       );
     },
-    [handleMoviePress]
+    [handleMoviePress, providerLogos]
   );
 
   const ListEmptyComponent = useCallback(
@@ -318,7 +423,24 @@ const styles = StyleSheet.create({
   movieInfo: {
     flex: 1,
     marginLeft: 12,
+    marginRight: 4,
     minWidth: 0,
+  },
+  providerIcons: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 4,
+    maxWidth: 96,
+    minHeight: 25,
+    justifyContent: 'flex-end',
+  },
+  providerIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 6,
+    backgroundColor: '#2d2d2d',
   },
   movieTitle: {
     fontSize: 15,
