@@ -1005,6 +1005,12 @@ export default function MovieDetailsScreen() {
             <View style={styles.watchedBadgeStatic}>
               <Text style={styles.watchedBadgeStaticText}>✓ Watched</Text>
             </View>
+          ) : shouldShowRecommendations &&
+            recommendations.length === 0 &&
+            fromWatchedParam !== 'true' ? (
+            <View style={styles.watchedBadgeStatic}>
+              <Text style={styles.watchedBadgeStaticText}>✓ Movie Info</Text>
+            </View>
           ) : (
             <>
               <Pressable
@@ -1214,7 +1220,16 @@ export default function MovieDetailsScreen() {
         ) : null}
 
         {shouldShowRecommendations && recommendations.length > 0 ? (
-          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
+          <View
+            style={[
+              styles.section,
+              isLandscape && styles.sectionDesktop,
+              displayAvailability.length === 0 && styles.recommendationsSectionTightTop,
+              displayAvailability.length === 0 &&
+                isLandscape &&
+                styles.recommendationsSectionTightTopDesktop,
+            ]}
+          >
             <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>
               You May Also Like
             </Text>
@@ -1918,6 +1933,12 @@ const styles = StyleSheet.create({
   sectionDesktop: {
     marginTop: 20,
     marginBottom: 28,
+  },
+  recommendationsSectionTightTop: {
+    marginTop: 4,
+  },
+  recommendationsSectionTightTopDesktop: {
+    marginTop: 8,
   },
   sectionTitle: {
     fontSize: 18,
