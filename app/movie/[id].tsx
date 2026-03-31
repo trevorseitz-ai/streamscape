@@ -987,7 +987,7 @@ export default function MovieDetailsScreen() {
         ) : null}
 
         <View style={styles.actionRow}>
-          {fromWatchedParam === 'true' && recommendations.length > 0 ? (
+          {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
               style={({ pressed }) => [
                 styles.viewSimilarButton,
@@ -997,7 +997,7 @@ export default function MovieDetailsScreen() {
               onPress={scrollToRecommendations}
             >
               <Text style={styles.viewSimilarButtonText} numberOfLines={1}>
-                View Similar Movies
+                Discover More Like This
               </Text>
               <Ionicons name="chevron-down" size={20} color="#ffffff" />
             </Pressable>
