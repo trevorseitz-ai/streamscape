@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
@@ -37,6 +37,56 @@ export default function SettingsScreen() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [watchedRows, setWatchedRows] = useState<
+    { personal_rating: number | null }[]
+  >([]);
+
+  useEffect(() => {
+    if (!session) {
+      setWatchedRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('watched_history')
+        .select('personal_rating')
+        .eq('user_id', session.user.id);
+      if (cancelled) return;
+      if (error) {
+        console.warn('watched_history stats:', error.message);
+        setWatchedRows([]);
+        return;
+      }
+      setWatchedRows(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const { totalWatched, averageRating, ratingDistribution } = useMemo(() => {
+    const total = watchedRows.length;
+    const nonNull = watchedRows
+      .map((r) => r.personal_rating)
+      .filter((r): r is number => r != null);
+    const average =
+      nonNull.length === 0
+        ? null
+        : Math.round(
+            (nonNull.reduce((sum, n) => sum + n, 0) / nonNull.length) * 10
+          ) / 10;
+    const counts = Array.from({ length: 10 }, () => 0);
+    for (const row of watchedRows) {
+      const v = row.personal_rating;
+      if (v != null && v >= 1 && v <= 10) counts[v - 1] += 1;
+    }
+    return {
+      totalWatched: total,
+      averageRating: average,
+      ratingDistribution: counts,
+    };
+  }, [watchedRows]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,6 +242,46 @@ export default function SettingsScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      <View style={styles.cinematicSection}>
+        <Text style={styles.cinematicSectionTitle}>Your Cinematic Profile</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statCardLabel}>Movies Watched</Text>
+            <Text style={styles.statCardValue}>{totalWatched}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statCardLabel}>Average Rating</Text>
+            <Text style={styles.statCardValue}>
+              {averageRating != null ? averageRating : '—'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.chartBlock}>
+          <Text style={styles.chartLabel}>Rating distribution</Text>
+          <View style={styles.chartRow}>
+            {ratingDistribution.map((count, index) => {
+              const rating = index + 1;
+              const maxCount = Math.max(...ratingDistribution, 0);
+              const barHeight =
+                maxCount === 0 ? 0 : (count / maxCount) * 60;
+              return (
+                <View key={rating} style={styles.chartColumn}>
+                  <View style={styles.chartBarTrack}>
+                    <View
+                      style={[
+                        styles.chartBarFill,
+                        { height: barHeight },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.chartAxisLabel}>{rating}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
         <Text style={styles.subtitle}>Manage your streaming preferences</Text>
@@ -319,6 +409,84 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 80,
     flexGrow: 1,
+  },
+  cinematicSection: {
+    marginBottom: 28,
+  },
+  cinematicSectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  statCardLabel: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  statCardValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#6366f1',
+    letterSpacing: -0.5,
+  },
+  chartBlock: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  chartLabel: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginBottom: 12,
+    fontWeight: '500',
+  },
+  chartRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 4,
+    minHeight: 72,
+  },
+  chartColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chartBarTrack: {
+    width: '100%',
+    height: 60,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  chartBarFill: {
+    width: '100%',
+    maxWidth: 28,
+    backgroundColor: '#6366f1',
+    borderRadius: 4,
+    minHeight: 0,
+  },
+  chartAxisLabel: {
+    marginTop: 6,
+    fontSize: 10,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   center: {
     flex: 1,
