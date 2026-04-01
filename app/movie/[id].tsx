@@ -956,7 +956,40 @@ export default function MovieDetailsScreen() {
     return (
       <>
         <View>
-          <Text style={[styles.title, isLandscape && styles.titleDesktop]}>{movie.title}</Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 8,
+            }}
+          >
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: '#2d2d2d',
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="chevron-back" size={20} color="white" />
+            </Pressable>
+            <Text
+              style={[
+                styles.title,
+                isLandscape && styles.titleDesktop,
+                { flex: 1 },
+              ]}
+            >
+              {movie.title}
+            </Text>
+          </View>
           {(movie.release_year != null ||
             movie.us_certification ||
             (movie.runtime != null && movie.runtime > 0)) ? (
@@ -1313,23 +1346,6 @@ export default function MovieDetailsScreen() {
         style={styles.safeAreaWrapper}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
       >
-        <Pressable
-          onPress={() => router.back()}
-          style={{
-            position: 'absolute',
-            top: 45,
-            left: 20,
-            zIndex: 50,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="chevron-back" size={24} color="white" />
-        </Pressable>
         <View style={styles.wrapper}>
           <SafeAreaView style={styles.safeHeader}>
             <MovieDetailsHeader hideBackButton />
