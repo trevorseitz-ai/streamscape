@@ -38,7 +38,7 @@ export default function SettingsScreen() {
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [watchedRows, setWatchedRows] = useState<
-    { personal_rating: number | null }[]
+    { personal_rating: number | null; title: string | null }[]
   >([]);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function SettingsScreen() {
     (async () => {
       const { data, error } = await supabase
         .from('watched_history')
-        .select('personal_rating')
+        .select('personal_rating, title')
         .eq('user_id', session.user.id);
       if (cancelled) return;
       if (error) {
@@ -65,7 +65,12 @@ export default function SettingsScreen() {
     };
   }, [session]);
 
-  const { totalWatched, averageRating, ratingDistribution } = useMemo(() => {
+  const {
+    totalWatched,
+    averageRating,
+    ratingDistribution,
+    favoriteMovieTitle,
+  } = useMemo(() => {
     const total = watchedRows.length;
     const nonNull = watchedRows
       .map((r) => r.personal_rating)
@@ -81,10 +86,21 @@ export default function SettingsScreen() {
       const v = row.personal_rating;
       if (v != null && v >= 1 && v <= 10) counts[v - 1] += 1;
     }
+
+    const withRatings = watchedRows.filter((r) => r.personal_rating != null);
+    const sortedMovies = [...withRatings].sort(
+      (a, b) => (b.personal_rating ?? 0) - (a.personal_rating ?? 0)
+    );
+    const favoriteMovieTitle =
+      sortedMovies.length > 0
+        ? sortedMovies[0].title?.trim() || 'Untitled'
+        : 'None yet';
+
     return {
       totalWatched: total,
       averageRating: average,
       ratingDistribution: counts,
+      favoriteMovieTitle,
     };
   }, [watchedRows]);
 
@@ -253,6 +269,26 @@ export default function SettingsScreen() {
             <Text style={styles.statCardLabel}>Average Rating</Text>
             <Text style={styles.statCardValue}>
               {averageRating != null ? averageRating : '—'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statCardLabel}>Favorite Movie</Text>
+            <Text
+              style={styles.statCardStringValue}
+              numberOfLines={2}
+            >
+              {favoriteMovieTitle}
+            </Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statCardLabel}>Top Genre</Text>
+            <Text
+              style={styles.statCardStringValue}
+              numberOfLines={2}
+            >
+              Update DB
             </Text>
           </View>
         </View>
@@ -444,6 +480,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6366f1',
     letterSpacing: -0.5,
+  },
+  statCardStringValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#6366f1',
+    letterSpacing: -0.2,
   },
   chartBlock: {
     backgroundColor: '#1a1a1a',
