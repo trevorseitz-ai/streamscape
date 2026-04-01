@@ -60,7 +60,10 @@ export function WatchlistStatusProvider({
     const watchlistIds = new Set<number>();
     if (watchlistRes.data) {
       for (const row of watchlistRes.data) {
-        const media = row.media as { tmdb_id: number | null } | null;
+        const raw = row.media;
+        const media = Array.isArray(raw)
+          ? (raw[0] as { tmdb_id: number | null } | undefined)
+          : (raw as { tmdb_id: number | null } | null);
         if (media?.tmdb_id != null) {
           watchlistIds.add(media.tmdb_id);
         }

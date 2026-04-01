@@ -32,6 +32,10 @@ interface MovieCredit {
   popularity: number;
 }
 
+interface MovieCastCredit extends MovieCredit {
+  character: string | null;
+}
+
 function sortAndDedupeCredits(cast: MovieCredit[]): MovieCredit[] {
   const sorted = [...cast].sort((a, b) => {
     const popDiff = (b.popularity ?? 0) - (a.popularity ?? 0);
@@ -51,16 +55,47 @@ function sortAndDedupeCredits(cast: MovieCredit[]): MovieCredit[] {
   return unique;
 }
 
+/** Filter to dated credits, sort newest first, dedupe by movie id. */
+function buildFullFilmographyByReleaseDate(cast: MovieCastCredit[]): MovieCastCredit[] {
+  const withDate = cast.filter(
+    (c) => c.release_date != null && String(c.release_date).trim().length >= 4
+  );
+  const sorted = [...withDate].sort((a, b) =>
+    (b.release_date ?? '').localeCompare(a.release_date ?? '')
+  );
+  const seen = new Set<number>();
+  const unique: MovieCastCredit[] = [];
+  for (const m of sorted) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    unique.push(m);
+  }
+  return unique;
+}
+
 const POSTER_WIDTH = (Dimensions.get('window').width - 48) / 3;
 
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [person, setPerson] = useState<PersonDetails | null>(null);
-  const [movies, setMovies] = useState<MovieCredit[]>([]);
+  const [allCastCredits, setAllCastCredits] = useState<MovieCastCredit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [bioExpanded, setBioExpanded] = useState(false);
+  const [showFullFilmography, setShowFullFilmography] = useState(false);
+
+  const knownForMovies = useMemo(() => {
+    const creditsOnly: MovieCredit[] = allCastCredits.map(
+      ({ character: _ch, ...rest }) => rest
+    );
+    return sortAndDedupeCredits(creditsOnly);
+  }, [allCastCredits]);
+
+  const fullFilmographySorted = useMemo(
+    () => buildFullFilmographyByReleaseDate(allCastCredits),
+    [allCastCredits]
+  );
 
   useEffect(() => {
     if (!id || !/^\d+$/.test(id)) {
@@ -101,7 +136,7 @@ export default function PersonScreen() {
           cast?: Record<string, unknown>[];
         };
 
-        const rawCast: MovieCredit[] = (creditsData.cast ?? []).map((c) => {
+        const rawCast: MovieCastCredit[] = (creditsData.cast ?? []).map((c) => {
           const title =
             (typeof c.title === 'string' && c.title) ||
             (typeof c.original_title === 'string' && c.original_title) ||
@@ -113,14 +148,16 @@ export default function PersonScreen() {
             release_date: (c.release_date as string | null) ?? null,
             popularity:
               typeof c.popularity === 'number' ? c.popularity : 0,
+            character:
+              typeof c.character === 'string' && c.character.trim()
+                ? c.character
+                : null,
           };
         });
 
-        const sorted = sortAndDedupeCredits(rawCast);
-
         if (!cancelled) {
           setPerson(personData);
-          setMovies(sorted);
+          setAllCastCredits(rawCast);
         }
       } catch (e) {
         if (!cancelled) {
@@ -257,11 +294,11 @@ export default function PersonScreen() {
           <Text style={styles.noBio}>No biography available.</Text>
         )}
 
-        {movies.length > 0 ? (
+        {knownForMovies.length > 0 ? (
           <View style={styles.knownSection}>
             <Text style={styles.sectionTitle}>Known For</Text>
             <FlatList
-              data={movies}
+              data={knownForMovies}
               keyExtractor={(item) => String(item.id)}
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -269,6 +306,69 @@ export default function PersonScreen() {
               renderItem={renderMovie}
               nestedScrollEnabled
             />
+          </View>
+        ) : null}
+
+        {fullFilmographySorted.length > 0 ? (
+          <View style={styles.filmographyToggleSection}>
+            <Pressable
+              onPress={() => setShowFullFilmography((v) => !v)}
+              style={({ pressed }) => [
+                styles.filmographyToggleButton,
+                pressed && styles.filmographyToggleButtonPressed,
+              ]}
+            >
+              <Text style={styles.filmographyToggleText}>
+                {showFullFilmography ? 'Hide Filmography' : 'View Full Filmography'}
+              </Text>
+            </Pressable>
+
+            {showFullFilmography ? (
+              <View style={styles.filmographyList}>
+                {fullFilmographySorted.map((movie) => (
+                  <Pressable
+                    key={movie.id}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/movie/[id]',
+                        params: { id: String(movie.id) },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.filmographyRow,
+                      pressed && styles.filmographyRowPressed,
+                    ]}
+                  >
+                    {movie.poster_path ? (
+                      <Image
+                        source={{ uri: `${TMDB_IMAGE_BASE}/w92${movie.poster_path}` }}
+                        style={styles.filmographyThumb}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.filmographyThumbPlaceholder}>
+                        <Text style={styles.filmographyThumbPlaceholderText}>?</Text>
+                      </View>
+                    )}
+                    <View style={styles.filmographyRowText}>
+                      <Text style={styles.filmographyMovieTitle} numberOfLines={2}>
+                        {movie.title}
+                      </Text>
+                      <Text style={styles.filmographyYear}>
+                        {movie.release_date && movie.release_date.length >= 4
+                          ? movie.release_date.slice(0, 4)
+                          : ''}
+                      </Text>
+                      {movie.character ? (
+                        <Text style={styles.filmographyCharacter} numberOfLines={2}>
+                          {movie.character}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -425,5 +525,83 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#e5e7eb',
+  },
+  filmographyToggleSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  filmographyToggleButton: {
+    width: '100%',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filmographyToggleButtonPressed: {
+    opacity: 0.85,
+  },
+  filmographyToggleText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#e5e7eb',
+  },
+  filmographyList: {
+    marginTop: 12,
+    gap: 8,
+  },
+  filmographyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#141414',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+    padding: 10,
+    minHeight: 72,
+  },
+  filmographyRowPressed: {
+    opacity: 0.75,
+  },
+  filmographyThumb: {
+    width: 44,
+    height: 56,
+    borderRadius: 6,
+    backgroundColor: '#1a1a1a',
+  },
+  filmographyThumbPlaceholder: {
+    width: 44,
+    height: 56,
+    borderRadius: 6,
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filmographyThumbPlaceholderText: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  filmographyRowText: {
+    flex: 1,
+    marginLeft: 12,
+    minWidth: 0,
+  },
+  filmographyMovieTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  filmographyYear: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d1d5db',
+    marginTop: 2,
+  },
+  filmographyCharacter: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
   },
 });
