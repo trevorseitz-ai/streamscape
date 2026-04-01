@@ -278,7 +278,15 @@ export default function SettingsScreen() {
         </View>
         {favoriteMovie ? (
           <Pressable
-            onPress={() => router.push(`/movie/${favoriteMovie.tmdb_id}`)}
+            onPress={() =>
+              router.push({
+                pathname: '/movie/[id]',
+                params: {
+                  id: String(favoriteMovie.tmdb_id),
+                  fromWatched: 'true',
+                },
+              })
+            }
             style={({ pressed }) => [
               styles.favoriteMoviePressable,
               { opacity: pressed ? 0.7 : 1 },
