@@ -1313,6 +1313,23 @@ export default function MovieDetailsScreen() {
         style={styles.safeAreaWrapper}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
       >
+        <Pressable
+          onPress={() => router.back()}
+          style={{
+            position: 'absolute',
+            top: 45,
+            left: 20,
+            zIndex: 50,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="chevron-back" size={24} color="white" />
+        </Pressable>
         <View style={styles.wrapper}>
           <SafeAreaView style={styles.safeHeader}>
             <MovieDetailsHeader hideBackButton />
