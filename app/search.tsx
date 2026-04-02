@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   View,
@@ -8,11 +8,22 @@ import {
   Keyboard,
   Pressable,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { MovieCard, type Movie } from '../components/MovieCard';
 import { useSearch } from '../lib/search-context';
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_POSTER_W92 = 'https://image.tmdb.org/t/p/w92';
+
+interface SuggestionMovie {
+  id: number;
+  title: string;
+  poster_path: string | null;
+  release_date?: string;
+}
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -27,6 +38,54 @@ export default function SearchScreen() {
     setSearchResult,
     setSearchError,
   } = useSearch();
+
+  const [suggestions, setSuggestions] = useState<SuggestionMovie[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const suggestionRequestId = useRef(0);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      suggestionRequestId.current += 1;
+      setSuggestions([]);
+      setIsTyping(false);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+      if (!apiKey) {
+        setSuggestions([]);
+        setIsTyping(false);
+        return;
+      }
+
+      const id = ++suggestionRequestId.current;
+      setIsTyping(true);
+
+      try {
+        const url = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(trimmed)}&language=en-US&page=1`;
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!res.ok) {
+          if (id === suggestionRequestId.current) setSuggestions([]);
+          return;
+        }
+        const data = (await res.json()) as {
+          results?: SuggestionMovie[];
+        };
+        if (id !== suggestionRequestId.current) return;
+        setSuggestions(data.results ?? []);
+      } catch {
+        if (id === suggestionRequestId.current) setSuggestions([]);
+      } finally {
+        if (id === suggestionRequestId.current) setIsTyping(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(t);
+  }, [query]);
 
   const handleMoviePress = (movie: Movie) => {
     Keyboard.dismiss();
@@ -71,6 +130,63 @@ export default function SearchScreen() {
           ) : null}
         </View>
       </View>
+
+      {query.trim().length >= 3 && isTyping && suggestions.length === 0 ? (
+        <View style={styles.suggestionsLoadingRow}>
+          <ActivityIndicator size="small" color="#6366f1" />
+        </View>
+      ) : null}
+
+      {query.trim().length >= 3 && suggestions.length > 0 && (
+        <View style={styles.suggestionsDropdown}>
+          {suggestions.slice(0, 5).map((suggestion, index) => {
+            const year =
+              suggestion.release_date?.length >= 4
+                ? suggestion.release_date.slice(0, 4)
+                : '';
+            const isLast = index === Math.min(suggestions.length, 5) - 1;
+            return (
+              <Pressable
+                key={suggestion.id}
+                style={({ pressed }) => [
+                  styles.suggestionRow,
+                  isLast && styles.suggestionRowLast,
+                  pressed && styles.suggestionRowPressed,
+                ]}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setSearchResult(null);
+                  setSearchError(null);
+                  router.push(`/movie/${suggestion.id}`);
+                }}
+              >
+                {suggestion.poster_path ? (
+                  <Image
+                    source={{
+                      uri: `${TMDB_POSTER_W92}${suggestion.poster_path}`,
+                    }}
+                    style={styles.suggestionThumb}
+                  />
+                ) : (
+                  <View style={styles.suggestionThumbPlaceholder}>
+                    <Text style={styles.suggestionThumbInitial}>
+                      {suggestion.title.charAt(0)}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.suggestionTextCol}>
+                  <Text style={styles.suggestionTitle} numberOfLines={2}>
+                    {suggestion.title}
+                  </Text>
+                  {year ? (
+                    <Text style={styles.suggestionYear}>{year}</Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <View style={styles.content}>
         {searchLoading && (
@@ -143,6 +259,74 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     padding: 4,
+  },
+  suggestionsLoadingRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  suggestionsDropdown: {
+    marginHorizontal: 16,
+    marginTop: 0,
+    marginBottom: 8,
+    backgroundColor: '#2d2d2d',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#3f3f46',
+  },
+  suggestionRowLast: {
+    borderBottomWidth: 0,
+  },
+  suggestionRowPressed: {
+    backgroundColor: '#3f3f46',
+  },
+  suggestionThumb: {
+    width: 40,
+    height: 56,
+    borderRadius: 6,
+    backgroundColor: '#1f1f1f',
+  },
+  suggestionThumbPlaceholder: {
+    width: 40,
+    height: 56,
+    borderRadius: 6,
+    backgroundColor: '#1f1f1f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionThumbInitial: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#6b7280',
+  },
+  suggestionTextCol: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  suggestionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  suggestionYear: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
   },
   content: {
     flex: 1,
