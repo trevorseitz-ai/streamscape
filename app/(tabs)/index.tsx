@@ -123,7 +123,7 @@ export default function HomeScreen() {
   if (!session) {
     return (
       <View style={styles.blackout}>
-        <Text style={styles.blackoutBrand}>StreamScape</Text>
+        <Text style={styles.blackoutBrand}>ReelDive</Text>
         <Pressable
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}

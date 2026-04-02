@@ -1,4 +1,4 @@
--- StreamScape RLS Policies
+-- ReelDive RLS Policies
 -- PostgreSQL / Supabase
 -- Run this AFTER schema.sql. Safe to re-run (drops existing policies first).
 

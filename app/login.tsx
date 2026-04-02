@@ -44,7 +44,7 @@ export default function LoginScreen() {
     >
       <View style={styles.content}>
         <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Sign in to your StreamScape account</Text>
+        <Text style={styles.subtitle}>Sign in to your ReelDive account</Text>
 
         <TextInput
           style={styles.input}

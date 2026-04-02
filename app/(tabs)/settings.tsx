@@ -231,7 +231,7 @@ export default function SettingsScreen() {
   if (!session) {
     return (
       <View style={styles.blackout}>
-        <Text style={styles.blackoutBrand}>StreamScape</Text>
+        <Text style={styles.blackoutBrand}>ReelDive</Text>
         <Text style={styles.blackoutHint}>Sign in to manage your settings</Text>
         <Pressable
           style={styles.blackoutButton}

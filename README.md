@@ -1,4 +1,4 @@
-# StreamScape
+# ReelDive
 
 **Product Manager:** [Your Name]  
 **Platform:** Cross-Platform (Web, iOS, Android, tvOS, Android TV)  

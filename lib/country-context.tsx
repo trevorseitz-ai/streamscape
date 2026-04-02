@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = 'streamscape_selected_country';
+const STORAGE_KEY = 'reeldive_country';
+const LEGACY_STORAGE_KEY = 'streamscape_selected_country';
 
 export type CountryCode = 'US' | 'CA';
 
@@ -12,13 +13,29 @@ interface CountryContextValue {
 
 const CountryContext = createContext<CountryContextValue | null>(null);
 
+async function loadAndMigrateCountry(): Promise<CountryCode | null> {
+  const stored = await AsyncStorage.getItem(STORAGE_KEY);
+  if (stored === 'US' || stored === 'CA') {
+    return stored;
+  }
+
+  const legacy = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy === 'US' || legacy === 'CA') {
+    await AsyncStorage.setItem(STORAGE_KEY, legacy);
+    await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+    return legacy;
+  }
+
+  return null;
+}
+
 export function CountryProvider({ children }: { children: React.ReactNode }) {
   const [selectedCountry, setSelectedCountryState] = useState<CountryCode>('US');
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (stored === 'US' || stored === 'CA') {
-        setSelectedCountryState(stored);
+    loadAndMigrateCountry().then((country) => {
+      if (country) {
+        setSelectedCountryState(country);
       }
     });
   }, []);

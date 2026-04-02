@@ -37,7 +37,7 @@ export default function LandingScreen() {
       <View style={styles.hero}>
         <View style={styles.iconRow}>
           <Ionicons name="film-outline" size={28} color="#6366f1" />
-          <Text style={styles.brand}>StreamScape</Text>
+          <Text style={styles.brand}>ReelDive</Text>
         </View>
 
         <Text style={styles.headline}>

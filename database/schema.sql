@@ -1,4 +1,4 @@
--- StreamScape Database Schema
+-- ReelDive Database Schema
 -- PostgreSQL / Supabase
 -- Run this in your Supabase SQL Editor to initialize the database
 

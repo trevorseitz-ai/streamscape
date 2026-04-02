@@ -30,8 +30,8 @@ export function HomeHeader(props: HomeHeaderProps) {
       <View style={styles.headerRow}>
         <View style={styles.leftGroup}>
           <View style={styles.branding}>
-            <Text style={styles.title}>StreamScape</Text>
-            <Text style={styles.tagline}>Find where to stream it</Text>
+            <Text style={styles.title}>ReelDive</Text>
+            <Text style={styles.tagline}>Welcome to ReelDive</Text>
           </View>
           <Pressable
             style={[styles.fakeInput, styles.inputWrapperRow]}
@@ -58,8 +58,8 @@ export function HomeHeader(props: HomeHeaderProps) {
     <View style={styles.headerColumn}>
       <View style={styles.headerTopRow}>
         <View style={styles.branding}>
-          <Text style={styles.title}>StreamScape</Text>
-          <Text style={styles.tagline}>Find where to stream it</Text>
+          <Text style={styles.title}>ReelDive</Text>
+          <Text style={styles.tagline}>Welcome to ReelDive</Text>
         </View>
         <View style={styles.rightGroup}>
           <HeaderRight

@@ -48,7 +48,7 @@ export default function SignupScreen() {
     >
       <View style={styles.content}>
         <Text style={styles.title}>Create account</Text>
-        <Text style={styles.subtitle}>Join StreamScape to save your watchlist</Text>
+        <Text style={styles.subtitle}>Join ReelDive to save your watchlist</Text>
 
         <TextInput
           style={styles.input}

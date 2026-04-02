@@ -24,7 +24,7 @@ export function HeaderTitle() {
   return (
     <View style={styles.container}>
       <Text style={styles.title} numberOfLines={1}>
-        StreamScape
+        ReelDive
       </Text>
       {isSearching && (
         <View style={styles.inputWrapper}>

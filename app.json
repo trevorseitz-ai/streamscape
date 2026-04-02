@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "StreamScape",
-    "slug": "StreamScape",
+    "name": "ReelDive",
+    "slug": "reeldive",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "streamscape",
+    "scheme": "reeldive",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
