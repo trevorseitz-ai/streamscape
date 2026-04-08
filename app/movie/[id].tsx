@@ -24,7 +24,6 @@ import {
   getDirectStreamingLinks,
   type StreamingOption,
 } from '../../lib/streaming';
-import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { useMovie } from '../../lib/movie-context';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
@@ -310,7 +309,6 @@ export default function MovieDetailsScreen() {
     const state = navigation.getState();
     console.log('[MovieDetails] navigation.getState() on mount:', JSON.stringify(state, null, 2));
   }, [navigation]);
-  const { selectedCountry } = useCountry();
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -696,6 +694,7 @@ export default function MovieDetailsScreen() {
 
     async function fetchMovie() {
       setTmdbMovieId(null);
+      setStreamingLinks([]);
       try {
         if (isTmdbId) {
           const tmdbId = Number(id);
@@ -710,12 +709,32 @@ export default function MovieDetailsScreen() {
             tmdbMovie.release_year,
             tmdbId
           );
+          console.log(
+            'Component is attempting to fetch streaming links for ID:',
+            tmdbId
+          );
+          const links = await getDirectStreamingLinks(tmdbId, 'movie', 'us');
+          setStreamingLinks(links);
         } else {
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
           setMovie(initial);
           setTitle(initial.title);
-          if (initial.tmdb_id != null) setTmdbMovieId(initial.tmdb_id);
+          if (initial.tmdb_id != null) {
+            setTmdbMovieId(initial.tmdb_id);
+            console.log(
+              'Component is attempting to fetch streaming links for ID:',
+              initial.tmdb_id
+            );
+            const links = await getDirectStreamingLinks(
+              initial.tmdb_id,
+              'movie',
+              'us'
+            );
+            setStreamingLinks(links);
+          } else {
+            setStreamingLinks([]);
+          }
 
           const key = await enrichFromTMDB(id);
           if (key) setTrailerKey(key);
@@ -728,6 +747,7 @@ export default function MovieDetailsScreen() {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
         setTitle(null);
+        setStreamingLinks([]);
       } finally {
         setLoading(false);
       }
@@ -772,25 +792,6 @@ export default function MovieDetailsScreen() {
       cancelled = true;
     };
   }, [tmdbMovieId]);
-
-  useEffect(() => {
-    if (tmdbMovieId == null) {
-      setStreamingLinks([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const links = await getDirectStreamingLinks(
-        tmdbMovieId,
-        'movie',
-        selectedCountry.toLowerCase()
-      );
-      if (!cancelled) setStreamingLinks(links);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tmdbMovieId, selectedCountry]);
 
   if (loading) {
     return (
