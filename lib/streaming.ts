@@ -58,6 +58,10 @@ export async function getDirectStreamingLinks(
   itemType: MediaType,
   country: string = 'us'
 ): Promise<StreamingOption[]> {
+  console.log('--- STREAMING API DEBUG ---');
+  console.log('API Key exists:', !!process.env.EXPO_PUBLIC_RAPIDAPI_KEY);
+  console.log('Fetching for ID:', tmdbId);
+
   const apiKey = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
   if (!apiKey) {
     return [];
@@ -67,7 +71,7 @@ export async function getDirectStreamingLinks(
   const url = `https://streaming-availability.p.rapidapi.com/shows/${itemType}/${tmdbId}`;
 
   try {
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'X-RapidAPI-Key': apiKey,
@@ -75,13 +79,16 @@ export async function getDirectStreamingLinks(
       },
     });
 
-    if (!res.ok) {
+    console.log('API Response Status:', response.status);
+
+    const data = (await response.json()) as Record<string, unknown>;
+
+    console.log('API Raw Data Keys:', Object.keys(data));
+    if (data.message) console.log('API Message:', data.message);
+
+    if (!response.ok) {
       return [];
     }
-
-    const data = (await res.json()) as {
-      streamingOptions?: Record<string, unknown[]>;
-    };
 
     const byCountry = data.streamingOptions;
     if (!byCountry || typeof byCountry !== 'object') {
@@ -89,21 +96,24 @@ export async function getDirectStreamingLinks(
     }
 
     const list =
-      byCountry[countryKey] ??
-      byCountry[country] ??
-      byCountry[country.toUpperCase()];
+      (byCountry as Record<string, unknown>)[countryKey] ??
+      (byCountry as Record<string, unknown>)[country] ??
+      (byCountry as Record<string, unknown>)[country.toUpperCase()];
 
     if (!Array.isArray(list)) {
       return [];
     }
 
-    const out: StreamingOption[] = [];
+    const options: StreamingOption[] = [];
     for (const item of list) {
       const mapped = mapRawOption(item);
-      if (mapped) out.push(mapped);
+      if (mapped) options.push(mapped);
     }
-    return out;
-  } catch {
+
+    console.log('Extracted Options Count:', options.length);
+    return options;
+  } catch (error) {
+    console.error('STREAMING FETCH ERROR:', error);
     return [];
   }
 }
