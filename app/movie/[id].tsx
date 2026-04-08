@@ -990,20 +990,34 @@ export default function MovieDetailsScreen() {
               <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
                 Stream, rent & buy
               </Text>
-              <View style={styles.streamingPillsRow}>
-                {streamingLinks.map((provider, idx) => (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  marginTop: 16,
+                }}
+              >
+                {streamingLinks.map((provider, index) => (
                   <Pressable
-                    key={`stream-opt-${idx}-${provider.serviceId}`}
+                    key={`${provider.serviceId}-${index}`}
                     style={({ pressed }) => [
-                      styles.streamingPill,
-                      pressed && { opacity: 0.85 },
+                      {
+                        backgroundColor: '#2d2d2d',
+                        paddingHorizontal: 18,
+                        paddingVertical: 12,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: '#404040',
+                        opacity: pressed ? 0.7 : 1,
+                      },
                     ]}
-                    onPress={() => {
-                      void handleOpenLink(provider.link, provider.serviceName);
-                    }}
+                    onPress={() => handleOpenLink(provider.link, provider.serviceName)}
                   >
-                    <Text style={styles.streamingPillText} numberOfLines={1}>
-                      {provider.serviceName}
+                    <Text
+                      style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}
+                    >
+                      {provider.serviceName || 'Watch'}
                     </Text>
                   </Pressable>
                 ))}
