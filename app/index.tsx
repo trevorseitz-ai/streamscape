@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,11 +63,11 @@ export default function LandingScreen() {
 
         <Pressable
           style={styles.secondaryLink}
-          onPress={() => router.push('/signup')}
+          onPress={() => Linking.openURL('https://getreeldive.com')}
         >
           <Text style={styles.secondaryText}>
-            New here?{' '}
-            <Text style={styles.secondaryBold}>Create an account</Text>
+            Want to join the beta?{' '}
+            <Text style={styles.secondaryBold}>Join the Waitlist</Text>
           </Text>
         </Pressable>
       </View>
