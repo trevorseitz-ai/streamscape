@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -67,17 +68,13 @@ export default function LoginScreen() {
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-
         <Pressable
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
+          style={styles.link}
+          onPress={() => Linking.openURL('https://getreeldive.com')}
         >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
+          <Text style={styles.linkText}>
+            Want to join the beta? <Text style={styles.linkBold}>Join the Waitlist</Text>
+          </Text>
         </Pressable>
 
         <Pressable
