@@ -58,10 +58,6 @@ export async function getDirectStreamingLinks(
   itemType: MediaType,
   country: string = 'us'
 ): Promise<StreamingOption[]> {
-  console.log('--- STREAMING API DEBUG ---');
-  console.log('API Key exists:', !!process.env.EXPO_PUBLIC_RAPIDAPI_KEY);
-  console.log('Fetching for ID:', tmdbId);
-
   const apiKey = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
   if (!apiKey) {
     return [];
@@ -79,12 +75,7 @@ export async function getDirectStreamingLinks(
       },
     });
 
-    console.log('API Response Status:', response.status);
-
     const data = (await response.json()) as Record<string, unknown>;
-
-    console.log('API Raw Data Keys:', Object.keys(data));
-    if (data.message) console.log('API Message:', data.message);
 
     if (!response.ok) {
       return [];
@@ -110,10 +101,11 @@ export async function getDirectStreamingLinks(
       if (mapped) options.push(mapped);
     }
 
-    console.log('Extracted Options Count:', options.length);
     return options;
   } catch (error) {
-    console.error('STREAMING FETCH ERROR:', error);
+    if (__DEV__) {
+      console.error('getDirectStreamingLinks:', error);
+    }
     return [];
   }
 }

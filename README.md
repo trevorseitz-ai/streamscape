@@ -66,6 +66,7 @@ Copy `.env.example` to `.env` (or create `.env`) and fill in:
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` – From Supabase Dashboard
 - `SUPABASE_SERVICE_ROLE_KEY` – **Required for scrape API.** From Supabase Dashboard > Project Settings > API > `service_role` (secret)
 - `TMDB_API_KEY` – From [TMDB API Settings](https://www.themoviedb.org/settings/api) (server-side only, never exposed to frontend)
+- `EXPO_PUBLIC_RAPIDAPI_KEY` – From [RapidAPI](https://rapidapi.com/) for the [Streaming Availability API](https://rapidapi.com/movie-of-the-night-movie-of-the-night-default/api/streaming-availability) (direct deep links to streaming apps; embedded in the bundle—use RapidAPI app restrictions and quotas to limit abuse)
 
 ### 2. Run the App
 
