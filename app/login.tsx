@@ -69,20 +69,22 @@ export default function LoginScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.buttonText}>Log in</Text>
+          )}
+        </Pressable>
+        <Pressable
           style={styles.link}
           onPress={() => Linking.openURL('https://getreeldive.com')}
         >
           <Text style={styles.linkText}>
             Want to join the beta? <Text style={styles.linkBold}>Join the Waitlist</Text>
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.link}
-          onPress={() => router.push('/signup')}
-        >
-          <Text style={styles.linkText}>
-            Don't have an account? <Text style={styles.linkBold}>Sign up</Text>
           </Text>
         </Pressable>
 
@@ -133,6 +135,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   button: {
+    marginTop: 24,
     backgroundColor: '#6366f1',
     borderRadius: 12,
     paddingVertical: 16,
