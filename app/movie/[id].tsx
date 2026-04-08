@@ -829,6 +829,28 @@ export default function MovieDetailsScreen() {
     setSearchError(null);
   };
 
+  const handleOpenLink = async (url: string, serviceName: string) => {
+    if (!url) {
+      Alert.alert(
+        'Link Unavailable',
+        `Sorry, we don't have a direct link for ${serviceName} right now.`
+      );
+      return;
+    }
+
+    try {
+      // Directly attempt to open the URL, bypassing canOpenURL whitelist requirements
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error(`Failed to open link for ${serviceName}:`, error);
+      // If it fails, it usually means the native app isn't installed and there is no web fallback
+      Alert.alert(
+        'App Not Found',
+        `We couldn't open ${serviceName}. You may need to install the app or log in.`
+      );
+    }
+  };
+
   function renderDetailsContent() {
     return (
       <>
@@ -976,7 +998,9 @@ export default function MovieDetailsScreen() {
                       styles.streamingPill,
                       pressed && { opacity: 0.85 },
                     ]}
-                    onPress={() => Linking.openURL(provider.link)}
+                    onPress={() => {
+                      void handleOpenLink(provider.link, provider.serviceName);
+                    }}
                   >
                     <Text style={styles.streamingPillText} numberOfLines={1}>
                       {provider.serviceName}
