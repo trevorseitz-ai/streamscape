@@ -20,13 +20,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
-import { getSavedProviderIds } from '../../lib/provider-preferences';
 import {
-  type WatchProviderCountry,
-  type WatchProviderEntry,
-  normalizeWatchProvidersCountries,
-  filterWatchProvidersByEnabled,
-} from '../../lib/tmdb-watch-providers';
+  getDirectStreamingLinks,
+  type StreamingOption,
+} from '../../lib/streaming';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { useMovie } from '../../lib/movie-context';
@@ -105,16 +102,6 @@ interface TMDBMovieResponse {
       profile_path: string | null;
     }>;
   };
-  'watch/providers'?: {
-    results?: Record<string, {
-      link?: string;
-      flatrate?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-      free?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-      ads?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-      rent?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-      buy?: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>;
-    }>;
-  };
   videos?: {
     results?: Array<{ key: string; site: string; type: string }>;
   };
@@ -146,31 +133,6 @@ const CREW_ROLE_MAP: Record<string, string> = {
 function toFullImageUrl(path: string | null | undefined): string | null {
   if (!path || !path.startsWith('/')) return null;
   return `${TMDB_IMAGE_BASE}${path}`;
-}
-
-function buildAvailabilityFromProviders(
-  countryData: WatchProviderCountry | undefined
-): PlatformAvailability[] {
-  const watchLink = countryData?.link ?? null;
-  const availability: PlatformAvailability[] = [];
-  const addProviders = (
-    list: WatchProviderEntry[] | undefined,
-    accessType: string
-  ) => {
-    for (const p of list ?? []) {
-      availability.push({
-        id: `${accessType}-${p.provider_name}`,
-        provider_id: p.provider_id,
-        platform_name: p.provider_name,
-        access_type: accessType,
-        price: null,
-        direct_url: watchLink,
-        logo_url: toFullImageUrl(p.logo_path),
-      });
-    }
-  };
-  addProviders(countryData?.flatrate, 'subscription');
-  return availability;
 }
 
 const FORBIDDEN_WORDS = new Set([
@@ -260,12 +222,11 @@ function formatRuntimeMinutes(minutes: number): string {
 async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   movie: MovieDetails;
   trailerKey: string | null;
-  watchProvidersResults: Record<string, WatchProviderCountry> | null;
 }> {
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,watch/providers,videos,keywords,release_dates&language=en-US`;
+  const url = `${TMDB_BASE}/movie/${tmdbId}?append_to_response=credits,videos,keywords,release_dates&language=en-US`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -304,10 +265,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
     });
   }
 
-  const rawWatchProviders = data['watch/providers']?.results ?? null;
-  const watchProvidersResults = normalizeWatchProvidersCountries(rawWatchProviders);
-  const us = watchProvidersResults?.US;
-  const availability = buildAvailabilityFromProviders(us);
+  const availability: PlatformAvailability[] = [];
 
   const trailer = (data.videos?.results ?? []).find(
     (v) => v.site === 'YouTube' && v.type === 'Trailer'
@@ -329,7 +287,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       type: 'movie',
       cast: [...actors, ...crew],
       availability,
-      watch_link: us?.link ?? null,
+      watch_link: null,
       production_countries: data.production_countries ?? undefined,
       filming_locations: parseFilmingLocations(
         data.keywords?.keywords,
@@ -337,7 +295,6 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       ),
     },
     trailerKey: trailer?.key ?? null,
-    watchProvidersResults,
   };
 }
 
@@ -354,8 +311,6 @@ export default function MovieDetailsScreen() {
     console.log('[MovieDetails] navigation.getState() on mount:', JSON.stringify(state, null, 2));
   }, [navigation]);
   const { selectedCountry } = useCountry();
-  const [isUpdatingProviders, setIsUpdatingProviders] = useState(false);
-  const prevCountryRef = useRef(selectedCountry);
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -364,8 +319,7 @@ export default function MovieDetailsScreen() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
-  const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
-  const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
+  const [streamingLinks, setStreamingLinks] = useState<StreamingOption[]>([]);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
   const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
@@ -408,27 +362,6 @@ export default function MovieDetailsScreen() {
     );
     return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    async function loadEnabledServices() {
-      if (session) {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('enabled_services')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (profile?.enabled_services) {
-          setEnabledServiceIds(new Set(profile.enabled_services as number[]));
-          return;
-        }
-      }
-      const localIds = await getSavedProviderIds();
-      setEnabledServiceIds(new Set(localIds));
-    }
-
-    loadEnabledServices();
-  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -766,11 +699,10 @@ export default function MovieDetailsScreen() {
       try {
         if (isTmdbId) {
           const tmdbId = Number(id);
-          const { movie: tmdbMovie, trailerKey: key, watchProvidersResults: providers } =
+          const { movie: tmdbMovie, trailerKey: key } =
             await fetchMovieFromTMDB(tmdbId);
           setMovie(tmdbMovie);
           setTitle(tmdbMovie.title);
-          setWatchProvidersResults(providers);
           setTmdbMovieId(tmdbId);
           if (key) setTrailerKey(key);
           await findSupabaseMediaId(
@@ -779,7 +711,6 @@ export default function MovieDetailsScreen() {
             tmdbId
           );
         } else {
-          setWatchProvidersResults(null);
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
           setMovie(initial);
@@ -843,13 +774,23 @@ export default function MovieDetailsScreen() {
   }, [tmdbMovieId]);
 
   useEffect(() => {
-    if (!watchProvidersResults) return;
-    if (prevCountryRef.current === selectedCountry) return;
-    prevCountryRef.current = selectedCountry;
-    setIsUpdatingProviders(true);
-    const t = setTimeout(() => setIsUpdatingProviders(false), 400);
-    return () => clearTimeout(t);
-  }, [selectedCountry, watchProvidersResults]);
+    if (tmdbMovieId == null) {
+      setStreamingLinks([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const links = await getDirectStreamingLinks(
+        tmdbMovieId,
+        'movie',
+        selectedCountry.toLowerCase()
+      );
+      if (!cancelled) setStreamingLinks(links);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tmdbMovieId, selectedCountry]);
 
   if (loading) {
     return (
@@ -870,78 +811,13 @@ export default function MovieDetailsScreen() {
     );
   }
 
-  const displayAvailability = watchProvidersResults
-    ? buildAvailabilityFromProviders(watchProvidersResults[selectedCountry])
-    : (movie?.availability ?? []);
-
-  const displayWatchLink = watchProvidersResults
-    ? watchProvidersResults[selectedCountry]?.link ?? null
-    : movie?.watch_link ?? null;
-
   const fromWatchedParam = Array.isArray(fromWatched)
     ? fromWatched[0]
     : fromWatched;
+  const streamingOrLegacyCount =
+    streamingLinks.length + (movie?.availability?.length ?? 0);
   const shouldShowRecommendations =
-    fromWatchedParam === 'true' || displayAvailability.length === 0;
-
-  function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
-    return [...providers].sort((a, b) => {
-      const scoreA = enabledServiceIds.has(a.provider_id) ? 0 : 1;
-      const scoreB = enabledServiceIds.has(b.provider_id) ? 0 : 1;
-      return scoreA - scoreB;
-    });
-  }
-
-  function renderProviderGroup(providers: PlatformAvailability[], label: string) {
-    if (providers.length === 0) return null;
-    const sorted = sortByEnabled(providers);
-    return (
-      <View style={styles.providerGroup}>
-        <Text style={styles.providerGroupLabel}>{label}</Text>
-        <View style={styles.providerIconRow}>
-          {sorted.map((avail) => {
-            const isMember = enabledServiceIds.has(avail.provider_id);
-            return (
-              <Pressable
-                key={avail.id}
-                style={({ pressed }) => [
-                  styles.providerIcon,
-                  pressed && styles.providerIconPressed,
-                ]}
-                onPress={() => {
-                  if (avail.direct_url) Linking.openURL(avail.direct_url);
-                }}
-              >
-                <View style={isMember ? styles.providerLogoMember : undefined}>
-                  {avail.logo_url ? (
-                    <Image
-                      source={{ uri: avail.logo_url }}
-                      style={styles.providerLogo}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.providerLogoPlaceholder}>
-                      <Text style={styles.providerLogoInitial}>
-                        {avail.platform_name.charAt(0)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                {isMember ? (
-                  <View style={styles.memberBadge}>
-                    <Text style={styles.memberBadgeText}>Member</Text>
-                  </View>
-                ) : null}
-                <Text style={styles.providerName} numberOfLines={1}>
-                  {avail.platform_name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-    );
-  }
+    fromWatchedParam === 'true' || streamingOrLegacyCount === 0;
 
   const showSearchOverlay =
     isSearching && (searchResult || searchError || searchLoading);
@@ -1082,69 +958,46 @@ export default function MovieDetailsScreen() {
           </Pressable>
         ) : null}
 
-        {(() => {
-          const countryData = watchProvidersResults?.[selectedCountry];
-          const mergedProviders = countryData?.flatrate ?? [];
-          const displayProviders = filterWatchProvidersByEnabled(
-            mergedProviders,
-            enabledServiceIds
-          );
-
-          if (!watchProvidersResults) return null;
-
-          if (mergedProviders.length === 0) {
-            return (
-              <Text style={styles.streamingEmptyMessage}>
-                No streaming services currently configured are offering this movie.
+        {streamingLinks.length > 0 ? (
+          <View style={[styles.watchProvidersSection, isLandscape && styles.watchProvidersSectionDesktop]}>
+            <Text style={[styles.whereToWatchHeader, isLandscape && styles.whereToWatchHeaderDesktop]}>
+              Where to Watch
+            </Text>
+            <View style={styles.watchProviderCategory}>
+              <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
+                Stream, rent & buy
               </Text>
-            );
-          }
-
-          if (displayProviders.length === 0) {
-            return (
-              <Text style={styles.streamingEmptyMessage}>
-                None of your selected streaming services are offering this title.
-              </Text>
-            );
-          }
-
-          const renderProviderBadges = (
-            providers: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>
-          ) => (
-            <View style={styles.providerBadgesRow}>
-              {providers.map((p) => (
-                <View key={p.provider_id} style={styles.providerBadge}>
-                  {p.logo_path ? (
-                    <Image
-                      source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
-                      style={styles.providerBadgeImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
+              <View style={styles.providerBadgesRow}>
+                {streamingLinks.map((provider, idx) => (
+                  <Pressable
+                    key={`stream-opt-${idx}-${provider.serviceId}`}
+                    style={({ pressed }) => [
+                      styles.providerBadge,
+                      pressed && { opacity: 0.85 },
+                    ]}
+                    onPress={() => Linking.openURL(provider.link)}
+                  >
                     <View style={styles.providerBadgePlaceholder}>
-                      <Text style={styles.providerBadgeInitial}>{p.provider_name.charAt(0)}</Text>
+                      <Text style={styles.providerBadgeInitial}>
+                        {provider.serviceName.charAt(0)}
+                      </Text>
                     </View>
-                  )}
-                  <Text style={styles.providerBadgeName} numberOfLines={1}>{p.provider_name}</Text>
-                </View>
-              ))}
-            </View>
-          );
-
-          return (
-            <View style={[styles.watchProvidersSection, isLandscape && styles.watchProvidersSectionDesktop]}>
-              <Text style={[styles.whereToWatchHeader, isLandscape && styles.whereToWatchHeaderDesktop]}>
-                Where to Watch
-              </Text>
-              <View style={styles.watchProviderCategory}>
-                <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                  Stream, rent & buy
-                </Text>
-                {renderProviderBadges(displayProviders)}
+                    <View style={styles.providerBadgeTextCol}>
+                      <Text style={styles.providerBadgeName} numberOfLines={2}>
+                        {provider.serviceName}
+                      </Text>
+                      {provider.type ? (
+                        <Text style={styles.streamingOptionType} numberOfLines={1}>
+                          {provider.type}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                ))}
               </View>
             </View>
-          );
-        })()}
+          </View>
+        ) : null}
 
         {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
           <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
@@ -1241,8 +1094,8 @@ export default function MovieDetailsScreen() {
             style={[
               styles.section,
               isLandscape && styles.sectionDesktop,
-              displayAvailability.length === 0 && styles.recommendationsSectionTightTop,
-              displayAvailability.length === 0 &&
+              streamingOrLegacyCount === 0 && styles.recommendationsSectionTightTop,
+              streamingOrLegacyCount === 0 &&
                 isLandscape &&
                 styles.recommendationsSectionTightTopDesktop,
             ]}
@@ -1639,50 +1492,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6b7280',
   },
+  providerBadgeTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
   providerBadgeName: {
     fontSize: 13,
     color: '#e5e7eb',
-    flex: 1,
   },
-  streamingSection: {
-    marginTop: 24,
-  },
-  streamingSectionDesktop: {
-    marginTop: 28,
-  },
-  noStreamingText: {
-    fontSize: 13,
+  streamingOptionType: {
+    fontSize: 11,
     color: '#6b7280',
-    marginBottom: 12,
-  },
-  streamingIconsRowCompact: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 12,
-  },
-  streamingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#1f1f1f',
-  },
-  streamingIconImage: {
-    width: '100%',
-    height: '100%',
-  },
-  streamingIconPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#2d2d2d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streamingIconInitial: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#6b7280',
+    marginTop: 2,
+    textTransform: 'capitalize',
   },
   watchNowButton: {
     backgroundColor: '#22c55e',
@@ -1734,38 +1556,6 @@ const styles = StyleSheet.create({
   },
   watchNowButtonTextDesktop: {
     fontSize: 18,
-  },
-  streamingIconsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
-  },
-  streamingIconCompact: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  streamingIconCompactPressed: {
-    opacity: 0.8,
-  },
-  streamingLogoCompact: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1f1f1f',
-  },
-  streamingLogoPlaceholderCompact: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#2d2d2d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streamingLogoInitialCompact: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#6b7280',
   },
   actionRow: {
     flexDirection: 'row',
@@ -2139,136 +1929,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#ffffff',
     lineHeight: 22,
-  },
-  streamSection: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-  },
-  streamSectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 16,
-    letterSpacing: -0.3,
-  },
-  updatingProviders: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 16,
-  },
-  updatingProvidersText: {
-    fontSize: 14,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  providerGroup: {
-    marginBottom: 20,
-  },
-  providerGroupLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 12,
-  },
-  providerIconRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    overflow: 'visible',
-  },
-  providerIcon: {
-    alignItems: 'center',
-    width: 68,
-  },
-  providerIconPressed: {
-    transform: [{ scale: 0.92 }],
-    opacity: 0.8,
-  },
-  providerLogo: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: '#1f1f1f',
-  },
-  providerLogoMember: {
-    borderWidth: 2,
-    borderColor: '#6366f1',
-    borderRadius: 14,
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  memberBadge: {
-    backgroundColor: '#6366f1',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 4,
-  },
-  memberBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#ffffff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  providerLogoPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: '#2d2d2d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerLogoInitial: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  providerName: {
-    fontSize: 11,
-    color: '#d1d5db',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  moreInfoButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    marginBottom: 4,
-  },
-  moreInfoButtonPressed: {
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-  },
-  moreInfoText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
-  noStreaming: {
-    fontSize: 15,
-    color: '#9ca3af',
-    marginBottom: 8,
-  },
-  justWatchAttribution: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#2d2d2d',
-    alignItems: 'center',
-  },
-  justWatchText: {
-    fontSize: 11,
-    color: '#6b7280',
   },
 });
