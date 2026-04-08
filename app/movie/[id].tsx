@@ -967,39 +967,19 @@ export default function MovieDetailsScreen() {
               <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
                 Stream, rent & buy
               </Text>
-              <View style={styles.providerBadgesRow}>
+              <View style={styles.streamingPillsRow}>
                 {streamingLinks.map((provider, idx) => (
                   <Pressable
                     key={`stream-opt-${idx}-${provider.serviceId}`}
                     style={({ pressed }) => [
-                      styles.providerBadge,
+                      styles.streamingPill,
                       pressed && { opacity: 0.85 },
                     ]}
                     onPress={() => Linking.openURL(provider.link)}
                   >
-                    {provider.logoUrl ? (
-                      <Image
-                        source={{ uri: provider.logoUrl }}
-                        style={styles.providerBadgeImage}
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <View style={styles.providerBadgePlaceholder}>
-                        <Text style={styles.providerBadgeInitial}>
-                          {provider.serviceName.charAt(0)}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={styles.providerBadgeTextCol}>
-                      <Text style={styles.providerBadgeName} numberOfLines={2}>
-                        {provider.serviceName}
-                      </Text>
-                      {provider.type ? (
-                        <Text style={styles.streamingOptionType} numberOfLines={1}>
-                          {provider.type}
-                        </Text>
-                      ) : null}
-                    </View>
+                    <Text style={styles.streamingPillText} numberOfLines={1}>
+                      {provider.serviceName}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
@@ -1466,53 +1446,25 @@ const styles = StyleSheet.create({
   watchProviderLabelDesktop: {
     fontSize: 14,
   },
-  providerBadgesRow: {
+  streamingPillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-  },
-  providerBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f1f1f',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    maxWidth: 140,
   },
-  providerBadgeImage: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  providerBadgePlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    marginRight: 8,
+  streamingPill: {
     backgroundColor: '#2d2d2d',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginRight: 8,
+    marginBottom: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  providerBadgeInitial: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  providerBadgeTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
-  providerBadgeName: {
-    fontSize: 13,
-    color: '#e5e7eb',
-  },
-  streamingOptionType: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-    textTransform: 'capitalize',
+  streamingPillText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   watchNowButton: {
     backgroundColor: '#22c55e',
