@@ -3,9 +3,30 @@ export interface StreamingOption {
   serviceName: string;
   link: string;
   type: string;
+  /** Service logo URL from RapidAPI `service.imageSet` (see serviceImageSet in API schema). */
+  logoUrl: string;
 }
 
 export type MediaType = 'movie' | 'show';
+
+/**
+ * Extracts a logo URL from `service.imageSet` (Streaming Availability API `serviceImageSet`).
+ * @see https://github.com/movieofthenight/streaming-availability-api — components/schemas/serviceImageSet
+ */
+function logoUrlFromServiceImageSet(service: Record<string, unknown>): string {
+  const imageSet = service.imageSet;
+  if (!imageSet || typeof imageSet !== 'object') return '';
+  const is = imageSet as Record<string, unknown>;
+  const candidates = [
+    is.darkThemeImage,
+    is.lightThemeImage,
+    is.whiteImage,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) return c.trim();
+  }
+  return '';
+}
 
 function mapRawOption(raw: unknown): StreamingOption | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -21,11 +42,14 @@ function mapRawOption(raw: unknown): StreamingOption | null {
 
   if (link == null || typeof link !== 'string') return null;
 
+  const logoUrl = logoUrlFromServiceImageSet(s);
+
   return {
     serviceId: id != null ? String(id) : '',
     serviceName: typeof name === 'string' ? name : '',
     link,
     type: typeof type === 'string' ? type : '',
+    logoUrl,
   };
 }
 

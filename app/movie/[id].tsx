@@ -977,11 +977,19 @@ export default function MovieDetailsScreen() {
                     ]}
                     onPress={() => Linking.openURL(provider.link)}
                   >
-                    <View style={styles.providerBadgePlaceholder}>
-                      <Text style={styles.providerBadgeInitial}>
-                        {provider.serviceName.charAt(0)}
-                      </Text>
-                    </View>
+                    {provider.logoUrl ? (
+                      <Image
+                        source={{ uri: provider.logoUrl }}
+                        style={styles.providerBadgeImage}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View style={styles.providerBadgePlaceholder}>
+                        <Text style={styles.providerBadgeInitial}>
+                          {provider.serviceName.charAt(0)}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.providerBadgeTextCol}>
                       <Text style={styles.providerBadgeName} numberOfLines={2}>
                         {provider.serviceName}
