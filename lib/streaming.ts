@@ -58,7 +58,10 @@ export async function getDirectStreamingLinks(
   itemType: MediaType,
   country: string = 'us'
 ): Promise<StreamingOption[]> {
-  const apiKey = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
+  // const RAPID_API_KEY = process.env.EXPO_PUBLIC_RAPIDAPI_KEY;
+  const RAPID_API_KEY = ''; // PASTE KEY HERE FOR TESTING
+  console.log('RAPID_API_KEY (first 5 chars):', RAPID_API_KEY.slice(0, 5));
+  const apiKey = RAPID_API_KEY.trim();
   if (!apiKey) {
     return [];
   }
