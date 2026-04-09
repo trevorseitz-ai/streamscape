@@ -298,10 +298,17 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 }
 
 export default function MovieDetailsScreen() {
-  const { id, fromWatched } = useLocalSearchParams<{
-    id: string;
+  const routeParams = useLocalSearchParams<{
+    id: string | string[];
     fromWatched?: string | string[];
   }>();
+  const id =
+    routeParams.id == null
+      ? undefined
+      : Array.isArray(routeParams.id)
+        ? routeParams.id[0]
+        : routeParams.id;
+  const fromWatched = routeParams.fromWatched;
   const router = useRouter();
   const navigation = useNavigation();
 
@@ -690,10 +697,14 @@ export default function MovieDetailsScreen() {
       return;
     }
 
+    setLoading(true);
+    setError(null);
     setTitle(null);
+    setTrailerKey(null);
 
     async function fetchMovie() {
       setTmdbMovieId(null);
+      setSupabaseMediaId(null);
       setStreamingLinks([]);
       try {
         if (isTmdbId) {
@@ -754,7 +765,7 @@ export default function MovieDetailsScreen() {
     }
 
     fetchMovie();
-  }, [id, setTitle]);
+  }, [id]);
 
   useEffect(() => {
     if (tmdbMovieId == null) {
