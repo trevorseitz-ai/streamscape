@@ -309,6 +309,8 @@ function movieIdFromPathname(pathname: string | null): string | undefined {
   return m?.[1] ? decodeURIComponent(m[1]) : undefined;
 }
 
+console.log('!!! MOVIE DETAILS FILE LOADED !!!');
+
 export default function MovieDetailsScreen() {
   const pathname = usePathname();
   const routeParams = useLocalSearchParams<{
@@ -1243,6 +1245,11 @@ export default function MovieDetailsScreen() {
         style={styles.safeAreaWrapper}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
       >
+        <View style={{ backgroundColor: 'yellow', padding: 20, marginTop: 40 }}>
+          <Text style={{ color: 'black', fontWeight: 'bold', textAlign: 'center' }}>
+            🚀 IF YOU SEE THIS, WE ARE IN THE RIGHT FILE!
+          </Text>
+        </View>
         <Pressable
           onPress={() => {
             if (router.canGoBack()) {
