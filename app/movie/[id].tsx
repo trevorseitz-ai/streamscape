@@ -17,7 +17,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import {
+  useLocalSearchParams,
+  usePathname,
+  useRouter,
+  Stack,
+} from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import {
@@ -297,17 +302,26 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   };
 }
 
+/** Prefer pathname so stack navigations always pick up the new segment when params lag. */
+function movieIdFromPathname(pathname: string | null): string | undefined {
+  if (pathname == null || typeof pathname !== 'string') return undefined;
+  const m = pathname.match(/\/movie\/([^/?#]+)/);
+  return m?.[1] ? decodeURIComponent(m[1]) : undefined;
+}
+
 export default function MovieDetailsScreen() {
+  const pathname = usePathname();
   const routeParams = useLocalSearchParams<{
     id: string | string[];
     fromWatched?: string | string[];
   }>();
-  const id =
+  const idParam =
     routeParams.id == null
       ? undefined
       : Array.isArray(routeParams.id)
         ? routeParams.id[0]
         : routeParams.id;
+  const id = movieIdFromPathname(pathname) ?? idParam;
   const fromWatched = routeParams.fromWatched;
   const router = useRouter();
   const navigation = useNavigation();
@@ -705,7 +719,6 @@ export default function MovieDetailsScreen() {
     async function fetchMovie() {
       setTmdbMovieId(null);
       setSupabaseMediaId(null);
-      setStreamingLinks([]);
       try {
         if (isTmdbId) {
           const tmdbId = Number(id);
@@ -720,12 +733,6 @@ export default function MovieDetailsScreen() {
             tmdbMovie.release_year,
             tmdbId
           );
-          console.log(
-            'Component is attempting to fetch streaming links for ID:',
-            tmdbId
-          );
-          const links = await getDirectStreamingLinks(tmdbId, 'movie', 'us');
-          setStreamingLinks(links);
         } else {
           setSupabaseMediaId(id);
           const initial = await fetchFromSupabase(id);
@@ -733,18 +740,6 @@ export default function MovieDetailsScreen() {
           setTitle(initial.title);
           if (initial.tmdb_id != null) {
             setTmdbMovieId(initial.tmdb_id);
-            console.log(
-              'Component is attempting to fetch streaming links for ID:',
-              initial.tmdb_id
-            );
-            const links = await getDirectStreamingLinks(
-              initial.tmdb_id,
-              'movie',
-              'us'
-            );
-            setStreamingLinks(links);
-          } else {
-            setStreamingLinks([]);
           }
 
           const key = await enrichFromTMDB(id);
@@ -758,7 +753,6 @@ export default function MovieDetailsScreen() {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
         setTitle(null);
-        setStreamingLinks([]);
       } finally {
         setLoading(false);
       }
@@ -766,6 +760,51 @@ export default function MovieDetailsScreen() {
 
     fetchMovie();
   }, [id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStreaming = async () => {
+      if (!id) return;
+
+      const fromRoute =
+        typeof id === 'string' && /^\d+$/.test(id.trim())
+          ? parseInt(id, 10)
+          : typeof id === 'number'
+            ? id
+            : NaN;
+      const numericId = Number.isFinite(fromRoute)
+        ? fromRoute
+        : tmdbMovieId != null && Number.isFinite(tmdbMovieId)
+          ? tmdbMovieId
+          : null;
+
+      if (numericId == null) {
+        if (isMounted) setStreamingLinks([]);
+        return;
+      }
+
+      console.log('--- DEDICATED STREAMING FETCH TRIGGERED ---');
+      console.log('Fetching for ID:', id);
+
+      try {
+        const links = await getDirectStreamingLinks(numericId, 'movie', 'us');
+        if (isMounted) {
+          setStreamingLinks(links);
+          console.log('Streaming Links saved to state, count:', links.length);
+        }
+      } catch (error) {
+        console.error('Dedicated fetch failed:', error);
+        if (isMounted) setStreamingLinks([]);
+      }
+    };
+
+    loadStreaming();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, tmdbMovieId]);
 
   useEffect(() => {
     if (tmdbMovieId == null) {
