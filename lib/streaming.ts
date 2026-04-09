@@ -53,50 +53,65 @@ function mapRawOption(raw: unknown): StreamingOption | null {
   };
 }
 
+export type GetDirectStreamingLinksResult = {
+  links: StreamingOption[];
+  /** Full parsed JSON body from the Streaming Availability API (diagnostic). */
+  raw: Record<string, unknown>;
+};
+
 export async function getDirectStreamingLinks(
   tmdbId: number,
   itemType: MediaType,
   country: string = 'us'
-): Promise<StreamingOption[]> {
-  // const RAPID_API_KEY = process.env.EXPO_PUBLIC_RAPIDAPI_KEY;
-  const RAPID_API_KEY = ''; // PASTE KEY HERE FOR TESTING
-  console.log('RAPID_API_KEY (first 5 chars):', RAPID_API_KEY.slice(0, 5));
-  const apiKey = RAPID_API_KEY.trim();
+): Promise<GetDirectStreamingLinksResult> {
+  const apiKey = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim() ?? '';
   if (!apiKey) {
-    return [];
+    return { links: [], raw: {} };
   }
 
   const countryKey = country.toLowerCase();
-  const url = `https://streaming-availability.p.rapidapi.com/shows/${itemType}/${tmdbId}`;
+  // Manually fill path params: /shows/{type}/{id} — raw slash between type and id (do not encode whole path).
+  const type = itemType === 'movie' ? 'movie' : 'show';
+  const cleanId = String(tmdbId).replace('movie/', '');
+  const url = `https://streaming-availability.p.rapidapi.com/shows/${type}/${cleanId}?country=${countryKey}&output_language=en`;
+  console.log('Streaming Availability request URL:', url);
+
+  const options: RequestInit = {
+    method: 'GET',
+    headers: {
+      'x-rapidapi-key': apiKey,
+      'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
+      'Content-Type': 'application/json',
+    },
+  };
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-RapidAPI-Key': apiKey,
-        'X-RapidAPI-Host': 'streaming-availability.p.rapidapi.com',
-      },
-    });
-
-    const data = (await response.json()) as Record<string, unknown>;
+    const response = await fetch(url, options);
 
     if (!response.ok) {
-      return [];
+      const errorText = await response.text();
+      throw new Error(
+        `Streaming API HTTP ${response.status}: ${errorText || '(empty body)'}`
+      );
     }
 
-    const byCountry = data.streamingOptions;
-    if (!byCountry || typeof byCountry !== 'object') {
-      return [];
+    const data = (await response.json()) as Record<string, unknown>;
+    console.log('API Response:', data);
+
+    const streamingOpts = data.streamingOptions;
+    if (!streamingOpts || typeof streamingOpts !== 'object') {
+      return { links: [], raw: data };
     }
 
-    const list =
-      (byCountry as Record<string, unknown>)[countryKey] ??
-      (byCountry as Record<string, unknown>)[country] ??
-      (byCountry as Record<string, unknown>)[country.toUpperCase()];
-
-    if (!Array.isArray(list)) {
-      return [];
-    }
+    const bucket = streamingOpts as Record<string, unknown>;
+    const primary = bucket.us;
+    const list: unknown[] = Array.isArray(primary)
+      ? primary
+      : Array.isArray(bucket[countryKey])
+        ? bucket[countryKey]
+        : Array.isArray(bucket[country])
+          ? bucket[country]
+          : [];
 
     const options: StreamingOption[] = [];
     for (const item of list) {
@@ -104,11 +119,13 @@ export async function getDirectStreamingLinks(
       if (mapped) options.push(mapped);
     }
 
-    return options;
+    return { links: options, raw: data };
   } catch (error) {
     if (__DEV__) {
       console.error('getDirectStreamingLinks:', error);
     }
-    return [];
+    throw error instanceof Error
+      ? error
+      : new Error(String(error));
   }
 }

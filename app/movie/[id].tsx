@@ -341,6 +341,8 @@ export default function MovieDetailsScreen() {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
   const [streamingLinks, setStreamingLinks] = useState<StreamingOption[]>([]);
+  const [debugError, setDebugError] = useState('');
+  const [rawJson, setRawJson] = useState('No data yet');
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
   const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
@@ -767,7 +769,14 @@ export default function MovieDetailsScreen() {
     let isMounted = true;
 
     const loadStreaming = async () => {
-      if (!id) return;
+      if (!id) {
+        if (isMounted) {
+          setStreamingLinks([]);
+          setDebugError('');
+          setRawJson('No data yet');
+        }
+        return;
+      }
 
       const fromRoute =
         typeof id === 'string' && /^\d+$/.test(id.trim())
@@ -782,22 +791,47 @@ export default function MovieDetailsScreen() {
           : null;
 
       if (numericId == null) {
-        if (isMounted) setStreamingLinks([]);
+        if (isMounted) {
+          setStreamingLinks([]);
+          setDebugError('');
+          setRawJson('No data yet');
+        }
         return;
       }
+
+      if (isMounted) setDebugError('');
 
       console.log('--- DEDICATED STREAMING FETCH TRIGGERED ---');
       console.log('Fetching for ID:', id);
 
       try {
-        const links = await getDirectStreamingLinks(numericId, 'movie', 'us');
+        const { links, raw } = await getDirectStreamingLinks(
+          numericId,
+          'movie',
+          'us'
+        );
         if (isMounted) {
           setStreamingLinks(links);
+          setDebugError('');
+          const rawRec = raw as {
+            streamingOptions?: { us?: unknown };
+          };
+          setRawJson(
+            JSON.stringify(Object.keys(raw || {})) +
+              ' | ' +
+              JSON.stringify(rawRec?.streamingOptions?.us ?? []).substring(0, 300)
+          );
           console.log('Streaming Links saved to state, count:', links.length);
         }
       } catch (error) {
         console.error('Dedicated fetch failed:', error);
-        if (isMounted) setStreamingLinks([]);
+        const message =
+          error instanceof Error ? error.message : String(error);
+        if (isMounted) {
+          setStreamingLinks([]);
+          setDebugError(message);
+          setRawJson('No data yet');
+        }
       }
     };
 
@@ -1245,9 +1279,37 @@ export default function MovieDetailsScreen() {
         style={styles.safeAreaWrapper}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
       >
-        <View style={{ backgroundColor: 'yellow', padding: 20, marginTop: 40 }}>
-          <Text style={{ color: 'black', fontWeight: 'bold', textAlign: 'center' }}>
-            🚀 IF YOU SEE THIS, WE ARE IN THE RIGHT FILE!
+        <View
+          style={{
+            backgroundColor: 'yellow',
+            padding: 15,
+            marginTop: 40,
+            borderBottomWidth: 2,
+            borderColor: 'orange',
+          }}
+        >
+          <Text style={{ color: 'black', fontWeight: 'bold' }}>
+            DEBUG CONTROL CENTER
+          </Text>
+          <Text style={{ color: 'black' }}>Movie ID: {id || 'MISSING'}</Text>
+          <Text style={{ color: 'black' }}>
+            API Key Loaded:{' '}
+            {process.env.EXPO_PUBLIC_RAPIDAPI_KEY
+              ? 'YES (Starts with ' +
+                process.env.EXPO_PUBLIC_RAPIDAPI_KEY.substring(0, 4) +
+                ')'
+              : 'NO'}
+          </Text>
+          <Text style={{ color: 'black' }}>
+            Providers Array Length: {streamingLinks?.length ?? 0}
+          </Text>
+          <Text style={{ color: 'red', fontWeight: 'bold' }}>
+            Error: {debugError || 'None'}
+          </Text>
+          <Text
+            style={{ color: 'blue', fontSize: 10, fontFamily: 'monospace' }}
+          >
+            RAW: {rawJson}
           </Text>
         </View>
         <Pressable
