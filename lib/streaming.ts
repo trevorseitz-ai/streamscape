@@ -1,60 +1,20 @@
 // BYPASS (temporary): Supabase cache disabled — uncomment to restore.
 // import { supabase } from './supabase';
 
+import { Platform } from 'react-native';
+import {
+  type StreamingOption,
+  RAPIDAPI_HOST,
+  normalizeRapidApiKey,
+  fetchLiveStreamingOptions,
+} from './streaming-rapid';
+
 /**
  * Only for local debugging when env does not load. Must stay empty in git — use EXPO_PUBLIC_RAPIDAPI_KEY in .env.
  */
 const RAPIDAPI_KEY_DEBUG_OVERRIDE = '';
 
-const RAPIDAPI_HOST = 'streaming-availability.p.rapidapi.com';
-
-/** RapidAPI app keys are a single token (~50 chars). Strip quotes/whitespace and accidental header prefixes from .env pastes. */
-function normalizeRapidApiKey(raw: string | undefined): string {
-  if (raw == null || raw === '') return '';
-  let s = String(raw).trim();
-  if (
-    (s.startsWith('"') && s.endsWith('"')) ||
-    (s.startsWith("'") && s.endsWith("'"))
-  ) {
-    s = s.slice(1, -1).trim();
-  }
-  s = s.replace(/^x-rapidapi-key\s*:\s*/i, '').trim();
-  return s.replace(/\s+/g, '');
-}
-
-export interface StreamingOption {
-  serviceId: string;
-  serviceName: string;
-  link: string;
-  type: string;
-}
-
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** Stored in `streaming_cache.platforms` for new rows (country-aware). */
-type CachedPlatformsPayload = {
-  country: string;
-  options: StreamingOption[];
-};
-
-/** RapidAPI: options under `streamingOptions[country]` with nested `service`. */
-function mapLiveStreamingItem(raw: unknown): StreamingOption | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const opt = raw as Record<string, unknown>;
-  const link = opt.link ?? opt.videoLink;
-  if (typeof link !== 'string') return null;
-  const type = typeof opt.type === 'string' ? opt.type : '';
-  const service = opt.service;
-  let serviceId = 'unknown';
-  let serviceName = 'Unknown Service';
-  if (service && typeof service === 'object') {
-    const s = service as Record<string, unknown>;
-    serviceId = s.id != null ? String(s.id) : 'unknown';
-    serviceName =
-      typeof s.name === 'string' && s.name ? s.name : 'Unknown Service';
-  }
-  return { link, type, serviceId, serviceName };
-}
+export type { StreamingOption };
 
 /**
  * Strips `movie/` or `show/` prefixes, keeps digits only, returns a positive TMDB id or null.
@@ -70,6 +30,14 @@ export function normalizeTmdbIdForStreaming(id: unknown): number | null {
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
 }
+
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Stored in `streaming_cache.platforms` for new rows (country-aware). */
+type CachedPlatformsPayload = {
+  country: string;
+  options: StreamingOption[];
+};
 
 function isCacheFresh(updatedAt: string | null | undefined): boolean {
   if (updatedAt == null || updatedAt === '') return false;
@@ -130,122 +98,24 @@ function parseCachedPlatforms(
   return null;
 }
 
-/** v4-style paths: streamingOptions[cc] | result.streamingOptions[cc] | data[cc] */
-function extractRapidApiProviderList(
-  data: Record<string, unknown>,
-  countryCode: string
-): unknown[] {
-  const c = (countryCode || 'us').toLowerCase();
-
-  const streamingOptions = data.streamingOptions;
-  const fromStreaming =
-    streamingOptions &&
-    typeof streamingOptions === 'object' &&
-    !Array.isArray(streamingOptions)
-      ? (streamingOptions as Record<string, unknown>)[c]
-      : undefined;
-
-  const result = data.result;
-  const nestedSo =
-    result &&
-    typeof result === 'object' &&
-    !Array.isArray(result)
-      ? (result as Record<string, unknown>).streamingOptions
-      : undefined;
-  const fromResult =
-    nestedSo &&
-    typeof nestedSo === 'object' &&
-    !Array.isArray(nestedSo)
-      ? (nestedSo as Record<string, unknown>)[c]
-      : undefined;
-
-  const fromRoot = data[c];
-
-  const raw =
-    (Array.isArray(fromStreaming) ? fromStreaming : null) ??
-    (Array.isArray(fromResult) ? fromResult : null) ??
-    (Array.isArray(fromRoot) ? fromRoot : null) ??
-    [];
-
-  return Array.isArray(raw) ? raw : [];
-}
-
-async function fetchLiveStreamingOptions(
-  numericId: number,
+/** Production web (e.g. Vercel): same-origin /api/streaming avoids CORS and uses server env. Local Expo web has no root /api → returns null and we fall back to direct RapidAPI. */
+async function tryFetchStreamingViaDeployProxy(
+  tmdbId: number,
   pathType: 'movie' | 'show',
-  countryParam: string,
-  apiKey: string
-): Promise<StreamingOption[]> {
+  countryParam: string
+): Promise<StreamingOption[] | null> {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
   try {
-    const safeCountry = (countryParam || 'us').toLowerCase();
-    const path = `https://${RAPIDAPI_HOST}/shows/${pathType}/${numericId}`;
-    const url = `${path}?country=${encodeURIComponent(safeCountry)}&output_language=en`;
-
-    if (__DEV__) {
-      console.log('[streaming] full RapidAPI URL (before fetch):', url);
-    }
-
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': apiKey,
-        'x-rapidapi-host': RAPIDAPI_HOST,
-      },
-    });
-
-    const status = res.status;
-    if (__DEV__) {
-      console.log('[streaming] response.status', status);
-    }
-
-    let data: Record<string, unknown>;
-    try {
-      data = (await res.json()) as Record<string, unknown>;
-    } catch {
-      console.warn('[streaming] RapidAPI response was not valid JSON');
-      return [];
-    }
-
-    if (__DEV__) {
-      console.log('[streaming] RAPIDAPI RAW DATA (truncated):', JSON.stringify(data).slice(0, 2000));
-    }
-
-    if (!res.ok) {
-      const msg = typeof data.message === 'string' ? data.message : '';
-      if (status === 403) {
-        console.warn(
-          '[streaming] RapidAPI 403 — "not subscribed" usually means: (1) open rapidapi.com → Streaming Availability API → Subscribe on the same account as your key, or (2) EXPO_PUBLIC_RAPIDAPI_KEY is not the default application key from that account (no extra quotes/spaces; restart with npx expo start -c).',
-          { url, message: msg }
-        );
-      } else if (status === 429) {
-        console.warn(
-          '[streaming] RapidAPI 429 — rate limited. Wait and avoid duplicate requests (e.g. double useEffect).',
-          { url, message: msg }
-        );
-      } else {
-        console.warn('[streaming] RapidAPI non-OK status', { status, url, message: msg });
-      }
-      return [];
-    }
-
-    const countryOpts = extractRapidApiProviderList(data, safeCountry);
-
-    if (__DEV__) {
-      console.log('[streaming] extracted provider rows', {
-        country: safeCountry,
-        extractedLength: countryOpts.length,
-      });
-    }
-
-    const out: StreamingOption[] = [];
-    for (const item of countryOpts) {
-      const mapped = mapLiveStreamingItem(item);
-      if (mapped) out.push(mapped);
-    }
-    return out;
-  } catch (err) {
-    console.warn('[streaming] fetchLiveStreamingOptions error:', err);
-    return [];
+    const u = new URL('/api/streaming', window.location.origin);
+    u.searchParams.set('tmdbId', String(tmdbId));
+    u.searchParams.set('type', pathType);
+    u.searchParams.set('country', countryParam);
+    const res = await fetch(u.toString(), { method: 'GET' });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { options?: StreamingOption[] };
+    return Array.isArray(data.options) ? data.options : null;
+  } catch {
+    return null;
   }
 }
 
@@ -301,6 +171,14 @@ export async function getDirectStreamingLinks(
    * }
    */
 
+  const proxied = await tryFetchStreamingViaDeployProxy(tmdbId, pathType, countryParam);
+  if (proxied !== null) {
+    if (__DEV__) {
+      console.log('[streaming] getDirectStreamingLinks via /api/streaming proxy:', proxied.length);
+    }
+    return proxied;
+  }
+
   const apiKey =
     normalizeRapidApiKey(RAPIDAPI_KEY_DEBUG_OVERRIDE) ||
     normalizeRapidApiKey(process.env.EXPO_PUBLIC_RAPIDAPI_KEY) ||
@@ -315,7 +193,7 @@ export async function getDirectStreamingLinks(
   if (!apiKey) {
     if (__DEV__) {
       console.warn(
-        '[streaming] No RapidAPI key: set EXPO_PUBLIC_RAPIDAPI_KEY in .env or RAPIDAPI_KEY_DEBUG_OVERRIDE for a local test. Restart Expo (npx expo start -c).'
+        '[streaming] No RapidAPI key: set EXPO_PUBLIC_RAPIDAPI_KEY in .env or RAPIDAPI_KEY_DEBUG_OVERRIDE for a local test. Restart Expo (npx expo start -c). On Vercel, set RAPIDAPI_KEY or EXPO_PUBLIC_RAPIDAPI_KEY for /api/streaming.'
       );
     }
     return [];
