@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,14 @@ import {
   ActivityIndicator,
   Pressable,
   Platform,
-  Linking,
   Alert,
   Keyboard,
   Modal,
   Dimensions,
   FlatList,
+  TouchableOpacity,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -22,10 +23,14 @@ import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import {
+  getDirectStreamingLinks,
+  normalizeTmdbIdForStreaming,
+  type StreamingOption,
+} from '../../lib/streaming';
+import {
   type WatchProviderCountry,
   type WatchProviderEntry,
   normalizeWatchProvidersCountries,
-  filterWatchProvidersByEnabled,
 } from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
@@ -34,8 +39,10 @@ import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
+import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
+const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 interface Person {
@@ -74,6 +81,8 @@ interface MovieDetails {
   watch_link: string | null;
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
   filming_locations?: string[];
+  /** TMDB external id (e.g. tt0111161); drives OMDb lookups. */
+  imdb_id?: string | null;
 }
 
 interface TMDBRecommendation {
@@ -128,6 +137,8 @@ interface TMDBMovieResponse {
       release_dates: Array<{ certification?: string; type?: number }>;
     }>;
   };
+  /** Present on movie details response when available. */
+  imdb_id?: string | null;
 }
 
 const CREW_JOBS = new Set([
@@ -257,6 +268,19 @@ function formatRuntimeMinutes(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
+function parseMetascoreNumber(raw: string | null | undefined): number | null {
+  if (raw == null || raw.trim() === '' || raw === 'N/A') return null;
+  const n = parseInt(raw.replace(/\D/g, ''), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Metacritic-style tier colors: green 61+, yellow 40–60, red under 40 */
+function metascoreSquareColor(score: number): string {
+  if (score >= 61) return '#66cc33';
+  if (score >= 40) return '#ffcc33';
+  return '#cc0000';
+}
+
 async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   movie: MovieDetails;
   trailerKey: string | null;
@@ -315,6 +339,11 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 
   const usCertification = extractUsCertification(data.release_dates);
 
+  const imdbFromTmdb =
+    typeof data.imdb_id === 'string' && data.imdb_id.trim() !== ''
+      ? data.imdb_id.trim()
+      : null;
+
   return {
     movie: {
       id: String(data.id),
@@ -335,6 +364,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
         data.keywords?.keywords,
         data.production_countries
       ),
+      imdb_id: imdbFromTmdb,
     },
     trailerKey: trailer?.key ?? null,
     watchProvidersResults,
@@ -342,10 +372,17 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
 }
 
 export default function MovieDetailsScreen() {
-  const { id, fromWatched } = useLocalSearchParams<{
-    id: string;
+  const routeParams = useLocalSearchParams<{
+    id: string | string[];
     fromWatched?: string | string[];
   }>();
+  const id =
+    routeParams.id == null
+      ? undefined
+      : Array.isArray(routeParams.id)
+        ? routeParams.id[0]
+        : routeParams.id;
+  const fromWatched = routeParams.fromWatched;
   const router = useRouter();
   const navigation = useNavigation();
 
@@ -371,11 +408,92 @@ export default function MovieDetailsScreen() {
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
     []
   );
+  /** RapidAPI Streaming Availability deep links (not TMDB watch providers). */
+  const [streamingProviders, setStreamingProviders] = useState<
+    StreamingOption[]
+  >([]);
+  /** OMDb / DB cached scores for title row (RT %, Metascore string). */
+  const [omdbRatingsDisplay, setOmdbRatingsDisplay] = useState<{
+    rt_score: string | null;
+    metascore: string | null;
+    imdb_rating: string | null;
+  } | null>(null);
+  const [omdbRatingsLoading, setOmdbRatingsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  /** Stable numeric TMDB id for streaming when it does not change across re-renders (avoids duplicate RapidAPI calls). */
+  const resolvedStreamingTmdbId = useMemo((): number | null => {
+    if (!id || id === 'undefined' || String(id).trim() === '') return null;
+    const normalized = normalizeTmdbIdForStreaming(id);
+    if (normalized != null) return normalized;
+    if (tmdbMovieId != null && Number.isFinite(tmdbMovieId)) return tmdbMovieId;
+    return null;
+  }, [id, tmdbMovieId]);
+
+  const loadDirectStreamingLinks = useCallback(
+    async (signal?: AbortSignal): Promise<StreamingOption[]> => {
+      const currentMovieId = resolvedStreamingTmdbId;
+      const normalizedFromRoute = normalizeTmdbIdForStreaming(id);
+
+      console.log('[MovieDetails] streaming pipeline — pre-fetch', {
+        routeParamId: id,
+        normalizedTmdbIdFromRoute: normalizedFromRoute,
+        tmdbMovieIdState: tmdbMovieId,
+        resolvedNumericIdForApi: currentMovieId,
+      });
+
+      if (currentMovieId == null) {
+        setStreamingProviders([]);
+        return [];
+      }
+
+      try {
+        const result = await getDirectStreamingLinks(
+          currentMovieId,
+          'movie',
+          'us'
+        );
+        if (signal?.aborted) return [];
+        const list = Array.isArray(result) ? result : [];
+        setStreamingProviders(list);
+        return list;
+      } catch {
+        if (signal?.aborted) return [];
+        setStreamingProviders([]);
+        return [];
+      }
+    },
+    [resolvedStreamingTmdbId, id]
+  );
 
   const scrollToRecommendations = useCallback(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, []);
+
+  async function handleStreamingPress(url: string) {
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const w = window.open(url, '_blank');
+        if (w) w.opener = null;
+        else if (__DEV__) {
+          console.warn('[MovieDetails] New window blocked for streaming URL:', url);
+        }
+        return;
+      }
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        if (__DEV__) {
+          console.warn('[MovieDetails] Cannot open streaming URL:', url);
+        }
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[MovieDetails] Failed to open streaming link:', e);
+      }
+    }
+  }
 
   const {
     isSearching,
@@ -493,154 +611,146 @@ export default function MovieDetailsScreen() {
     }
   }
 
-  async function toggleWatchlist() {
-    if (!session) {
-      router.push('/login');
-      return;
+  /**
+   * Resolves `media.id` for watchlist operations. When `allowCreate` is true and the route
+   * is TMDB-based with no row yet, silently upserts `media` (onConflict `tmdb_id`) first.
+   */
+  async function resolveMediaRowId(allowCreate: boolean): Promise<string | null> {
+    if (supabaseMediaId) return supabaseMediaId;
+
+    if (!isTmdbId && id && id !== 'undefined') {
+      return String(id);
     }
 
-    const nextInWatchlist = !inWatchlist;
-    setInWatchlist(nextInWatchlist);
-    setWatchlistLoading(true);
+    const tmdbNum = isTmdbId && id ? Number(id) : NaN;
+    if (!Number.isFinite(tmdbNum)) return null;
 
-    const tmdbId = isTmdbId ? Number(id) : null;
+    const { data: existing } = await supabase
+      .from('media')
+      .select('id')
+      .eq('tmdb_id', tmdbNum)
+      .maybeSingle();
+    if (existing?.id) {
+      setSupabaseMediaId(existing.id);
+      return existing.id;
+    }
 
-    const resolveMediaId = async (): Promise<string | null> => {
-      if (supabaseMediaId) return supabaseMediaId;
-      if (tmdbId != null) {
-        const { data } = await supabase
+    if (!allowCreate || !movie) return null;
+
+    const { data: upserted, error } = await supabase
+      .from('media')
+      .upsert(
+        {
+          tmdb_id: tmdbNum,
+          type: 'movie' as const,
+          title: movie.title,
+          poster_url: movie.poster_url ?? null,
+          backdrop_url: movie.backdrop_url ?? null,
+          release_year: movie.release_year ?? null,
+        },
+        { onConflict: 'tmdb_id' }
+      )
+      .select('id')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        const { data: row } = await supabase
           .from('media')
           .select('id')
-          .eq('tmdb_id', tmdbId)
+          .eq('tmdb_id', tmdbNum)
           .maybeSingle();
-        return data?.id ?? null;
+        if (row?.id) {
+          setSupabaseMediaId(row.id);
+          return row.id;
+        }
       }
-      return null;
-    };
+      throw error;
+    }
+    const mid = upserted?.id ?? null;
+    if (mid) setSupabaseMediaId(mid);
+    return mid;
+  }
 
-    const syncCheck = async (mediaId: string) => {
+  async function toggleWatchlist() {
+    if (!session || watchlistLoading) return;
+
+    const userId = session.user.id;
+    const adding = !inWatchlist;
+    setWatchlistLoading(true);
+
+    const syncMembership = async (mediaRowId: string) => {
       const { data } = await supabase
         .from('watchlist')
         .select('id')
-        .eq('user_id', session.user.id)
-        .eq('media_id', mediaId)
+        .eq('user_id', userId)
+        .eq('media_id', mediaRowId)
         .maybeSingle();
       setInWatchlist(!!data);
     };
 
     try {
-      const mediaId = await resolveMediaId();
-
-      if (nextInWatchlist) {
-        if (!mediaId && movie && tmdbId != null) {
-          const numericTmdbId = Number(id);
-          const mediaPayload = {
-            tmdb_id: numericTmdbId,
-            type: 'movie' as const,
-            title: movie.title,
-            poster_url: movie.poster_url ?? null,
-            backdrop_url: movie.backdrop_url ?? null,
-            release_year: movie.release_year ?? null,
-          };
-
-          const { data: inserted, error } = await supabase
-            .from('media')
-            .insert(mediaPayload)
-            .select('id')
-            .single();
-
-          if (error) {
-            if (error.code === '23505') {
-              const { data: existing } = await supabase
-                .from('media')
-                .select('id')
-                .eq('tmdb_id', numericTmdbId)
-                .maybeSingle();
-              const resolvedId = existing?.id ?? null;
-              if (resolvedId) {
-                setSupabaseMediaId(resolvedId);
-                const { count } = await supabase
-                  .from('watchlist')
-                  .select('*', { count: 'exact', head: true })
-                  .eq('user_id', session.user.id);
-                const { error: insertErr } = await supabase
-                  .from('watchlist')
-                  .insert({
-                    user_id: session.user.id,
-                    media_id: resolvedId,
-                    watched: false,
-                    sort_order: count ?? 0,
-                    order_index: count ?? 0,
-                  });
-                if (insertErr) throw insertErr;
-                await syncCheck(resolvedId);
-              } else {
-                throw error;
-              }
-            } else {
-              throw error;
-            }
-          } else {
-            const newMediaId = inserted?.id ?? null;
-            if (newMediaId) {
-              setSupabaseMediaId(newMediaId);
-              const { count } = await supabase
-                .from('watchlist')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', session.user.id);
-              const { error: insertErr } = await supabase
-                .from('watchlist')
-                .insert({
-                  user_id: session.user.id,
-                  media_id: newMediaId,
-                  watched: false,
-                  sort_order: count ?? 0,
-                  order_index: count ?? 0,
-                });
-              if (insertErr) throw insertErr;
-              await syncCheck(newMediaId);
-            } else {
-              setInWatchlist(false);
-            }
-          }
-        } else if (mediaId) {
-          const { count } = await supabase
-            .from('watchlist')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', session.user.id);
-          const { error } = await supabase
-            .from('watchlist')
-            .insert({
-              user_id: session.user.id,
-              media_id: mediaId,
-              watched: false,
-              sort_order: count ?? 0,
-              order_index: count ?? 0,
-            });
-          if (error) throw error;
-          await syncCheck(mediaId);
-        } else {
-          setInWatchlist(false);
-        }
-      } else {
-        if (!mediaId) {
-          setInWatchlist(false);
+      if (adding) {
+        const mediaRowId = await resolveMediaRowId(true);
+        if (!mediaRowId) {
+          Alert.alert('Could not save', 'Missing movie data. Please try again.');
           return;
         }
-        const { error } = await supabase
+
+        const { count } = await supabase
           .from('watchlist')
-          .delete()
-          .eq('user_id', session.user.id)
-          .eq('media_id', mediaId);
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId);
+
+        const { error } = await supabase.from('watchlist').insert({
+          user_id: userId,
+          media_id: mediaRowId,
+          watched: false,
+          sort_order: count ?? 0,
+          order_index: count ?? 0,
+        });
+
+        if (error?.code === '23505') {
+          await syncMembership(mediaRowId);
+          return;
+        }
         if (error) throw error;
-        await syncCheck(mediaId);
+        await syncMembership(mediaRowId);
+        return;
       }
+
+      const mediaRowId = await resolveMediaRowId(false);
+      if (!mediaRowId) {
+        setInWatchlist(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('watchlist')
+        .delete()
+        .eq('user_id', userId)
+        .eq('media_id', mediaRowId);
+      if (error) throw error;
+      await syncMembership(mediaRowId);
     } catch (err) {
       console.error('Watchlist error:', err);
-      setInWatchlist(!nextInWatchlist);
+      try {
+        const mid = await resolveMediaRowId(false);
+        if (mid) {
+          const { data } = await supabase
+            .from('watchlist')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('media_id', mid)
+            .maybeSingle();
+          setInWatchlist(!!data);
+        }
+      } catch {
+        setInWatchlist(false);
+      }
       Alert.alert(
-        nextInWatchlist ? 'Could not save' : 'Could not remove',
-        nextInWatchlist
+        adding ? 'Could not save' : 'Could not remove',
+        adding
           ? 'Failed to add to watchlist. Please try again.'
           : 'Failed to remove from watchlist. Please try again.'
       );
@@ -652,7 +762,9 @@ export default function MovieDetailsScreen() {
   async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
       .from('media')
-      .select('id, title, synopsis, release_year, poster_url, backdrop_url, type, tmdb_id')
+      .select(
+        'id, title, synopsis, release_year, poster_url, backdrop_url, type, tmdb_id, imdb_id, rt_score, metascore, imdb_rating, ratings_fetched_at'
+      )
       .eq('id', mediaId)
       .single();
 
@@ -843,6 +955,17 @@ export default function MovieDetailsScreen() {
   }, [tmdbMovieId]);
 
   useEffect(() => {
+    if (!id || id === 'undefined' || String(id).trim() === '') {
+      setStreamingProviders([]);
+      return;
+    }
+
+    const ac = new AbortController();
+    void loadDirectStreamingLinks(ac.signal);
+    return () => ac.abort();
+  }, [id, loadDirectStreamingLinks]);
+
+  useEffect(() => {
     if (!watchProvidersResults) return;
     if (prevCountryRef.current === selectedCountry) return;
     prevCountryRef.current = selectedCountry;
@@ -850,6 +973,126 @@ export default function MovieDetailsScreen() {
     const t = setTimeout(() => setIsUpdatingProviders(false), 400);
     return () => clearTimeout(t);
   }, [selectedCountry, watchProvidersResults]);
+
+  useEffect(() => {
+    if (!movie) return;
+    let cancelled = false;
+
+    const imdb = normalizeImdbId(movie.imdb_id);
+    if (!imdb) {
+      setOmdbRatingsDisplay(null);
+      setOmdbRatingsLoading(false);
+      return;
+    }
+
+    async function run() {
+      setOmdbRatingsLoading(true);
+      try {
+        if (supabaseMediaId) {
+          const { data: row } = await supabase
+            .from('media')
+            .select('rt_score, metascore, imdb_rating, ratings_fetched_at')
+            .eq('id', supabaseMediaId)
+            .maybeSingle();
+
+          if (cancelled) return;
+
+          if (
+            row?.rt_score != null &&
+            String(row.rt_score).trim() !== '' &&
+            typeof row.ratings_fetched_at === 'string' &&
+            row.ratings_fetched_at !== ''
+          ) {
+            const fetchedAt = new Date(row.ratings_fetched_at).getTime();
+            if (
+              !Number.isNaN(fetchedAt) &&
+              Date.now() - fetchedAt < RATINGS_TTL_MS
+            ) {
+              setOmdbRatingsDisplay({
+                rt_score: row.rt_score ?? null,
+                metascore: row.metascore ?? null,
+                imdb_rating: row.imdb_rating ?? null,
+              });
+              setOmdbRatingsLoading(false);
+              return;
+            }
+          }
+        }
+
+        const scores = await getOmdbScores(imdb);
+        if (cancelled) return;
+
+        setOmdbRatingsDisplay({
+          rt_score: scores.rottenTomatoes,
+          metascore: scores.metascore,
+          imdb_rating: scores.imdbRating,
+        });
+
+        const now = new Date().toISOString();
+        const patch = {
+          imdb_id: imdb,
+          rt_score: scores.rottenTomatoes,
+          metascore: scores.metascore,
+          imdb_rating: scores.imdbRating,
+          ratings_fetched_at: now,
+        };
+
+        if (supabaseMediaId) {
+          const { error } = await supabase
+            .from('media')
+            .update(patch)
+            .eq('id', supabaseMediaId);
+          if (error && __DEV__) {
+            console.warn('[MovieDetails] ratings media update:', error.message);
+          }
+        } else if (isTmdbId && id) {
+          const tmdbNum = Number(id);
+          if (Number.isFinite(tmdbNum)) {
+            const { error } = await supabase.from('media').upsert(
+              {
+                tmdb_id: tmdbNum,
+                type: 'movie' as const,
+                title: movie.title,
+                poster_url: movie.poster_url ?? null,
+                backdrop_url: movie.backdrop_url ?? null,
+                release_year: movie.release_year ?? null,
+                ...patch,
+              },
+              { onConflict: 'tmdb_id' }
+            );
+            if (error && __DEV__) {
+              console.warn('[MovieDetails] ratings media upsert:', error.message);
+            } else if (!error) {
+              const { data: inserted } = await supabase
+                .from('media')
+                .select('id')
+                .eq('tmdb_id', tmdbNum)
+                .maybeSingle();
+              if (inserted?.id) setSupabaseMediaId(inserted.id);
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) setOmdbRatingsDisplay(null);
+      } finally {
+        if (!cancelled) setOmdbRatingsLoading(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    movie?.imdb_id,
+    movie?.title,
+    movie?.poster_url,
+    movie?.backdrop_url,
+    movie?.release_year,
+    supabaseMediaId,
+    isTmdbId,
+    id,
+  ]);
 
   if (loading) {
     return (
@@ -909,7 +1152,7 @@ export default function MovieDetailsScreen() {
                   pressed && styles.providerIconPressed,
                 ]}
                 onPress={() => {
-                  if (avail.direct_url) Linking.openURL(avail.direct_url);
+                  if (avail.direct_url) void handleStreamingPress(avail.direct_url);
                 }}
               >
                 <View style={isMember ? styles.providerLogoMember : undefined}>
@@ -953,10 +1196,69 @@ export default function MovieDetailsScreen() {
   };
 
   function renderDetailsContent() {
+    if (movie == null) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      );
+    }
+
     return (
       <>
         <View>
           <Text style={[styles.title, isLandscape && styles.titleDesktop]}>{movie.title}</Text>
+          {(omdbRatingsLoading ||
+            (omdbRatingsDisplay &&
+              (omdbRatingsDisplay.rt_score || omdbRatingsDisplay.metascore))) ? (
+            <View
+              style={[
+                styles.titleRatingsRow,
+                isLandscape && styles.titleRatingsRowDesktop,
+              ]}
+            >
+              {omdbRatingsLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#9ca3af"
+                  style={styles.omdbRatingsSpinner}
+                />
+              ) : null}
+              {omdbRatingsDisplay?.rt_score &&
+              omdbRatingsDisplay.rt_score.trim() !== '' ? (
+                <View
+                  style={styles.titleRatingChip}
+                  accessibilityLabel={`Rotten Tomatoes ${omdbRatingsDisplay.rt_score}`}
+                >
+                  <Text style={styles.rtTomatoEmoji}>🍅</Text>
+                  <Text style={styles.titleRatingText}>
+                    {omdbRatingsDisplay.rt_score}
+                  </Text>
+                </View>
+              ) : null}
+              {omdbRatingsDisplay?.metascore &&
+              parseMetascoreNumber(omdbRatingsDisplay.metascore) != null ? (
+                <View
+                  style={styles.titleRatingChip}
+                  accessibilityLabel={`Metacritic ${omdbRatingsDisplay.metascore}`}
+                >
+                  <View
+                    style={[
+                      styles.metascoreSquare,
+                      {
+                        backgroundColor: metascoreSquareColor(
+                          parseMetascoreNumber(omdbRatingsDisplay.metascore)!
+                        ),
+                      },
+                    ]}
+                  />
+                  <Text style={styles.titleRatingText}>
+                    {omdbRatingsDisplay.metascore}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
           {(movie.release_year != null ||
             movie.us_certification ||
             (movie.runtime != null && movie.runtime > 0)) ? (
@@ -986,7 +1288,121 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
+        <View
+          style={[
+            styles.whereToWatchStreamSection,
+            isLandscape && styles.whereToWatchStreamSectionDesktop,
+          ]}
+        >
+          <Text
+            style={[
+              styles.whereToWatchHeader,
+              isLandscape && styles.whereToWatchHeaderDesktop,
+            ]}
+          >
+            Where to Watch
+          </Text>
+          <ScrollView
+            style={styles.streamingRawStateScroll}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.streamingRawStateText} selectable>
+              {`RAW STATE: ${JSON.stringify(streamingProviders, null, 2)}`}
+            </Text>
+          </ScrollView>
+          {streamingProviders && streamingProviders.length > 0
+            ? streamingProviders
+                .filter(
+                  (opt) =>
+                    typeof opt.link === 'string' && opt.link.trim() !== ''
+                )
+                .map((opt, idx) => {
+                  const platformName =
+                    opt.serviceName.trim() !== ''
+                      ? opt.serviceName.trim()
+                      : 'service';
+                  return (
+                    <TouchableOpacity
+                      key={`${opt.serviceId}-${idx}`}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Watch on ${platformName}`}
+                      onPress={() => void handleStreamingPress(opt.link)}
+                      style={[
+                        styles.streamPlatformButton,
+                        isLandscape && styles.streamPlatformButtonDesktop,
+                      ]}
+                    >
+                      <View style={styles.streamProviderTouchableInner}>
+                        <View
+                          style={styles.streamProviderLogoWrap}
+                          accessibilityElementsHidden
+                        >
+                          <Ionicons
+                            name="tv-outline"
+                            size={22}
+                            color="#a5b4fc"
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.streamPlatformButtonText,
+                            isLandscape && styles.streamPlatformButtonTextDesktop,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {`Watch on ${platformName}`}
+                        </Text>
+                        <Ionicons name="open-outline" size={18} color="#ffffff" />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+            : null}
+        </View>
+
         <View style={styles.actionRow}>
+          {session ? (
+            <Pressable
+              style={[
+                styles.actionButton,
+                isLandscape && styles.actionButtonDesktop,
+                inWatchlist && styles.actionButtonRemove,
+                watchlistLoading && styles.actionButtonDisabled,
+              ]}
+              onPress={toggleWatchlist}
+              disabled={watchlistLoading}
+              accessibilityRole="button"
+              accessibilityLabel={
+                inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'
+              }
+              accessibilityState={{ selected: inWatchlist, busy: watchlistLoading }}
+            >
+              {watchlistLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={inWatchlist ? '#22c55e' : '#ffffff'}
+                  style={styles.watchlistSpinner}
+                />
+              ) : (
+                <Ionicons
+                  name={inWatchlist ? 'bookmark' : 'bookmark-outline'}
+                  size={20}
+                  color={inWatchlist ? '#22c55e' : '#ffffff'}
+                />
+              )}
+              <Text
+                style={[
+                  styles.actionButtonText,
+                  inWatchlist && styles.actionButtonTextRemove,
+                ]}
+                numberOfLines={1}
+              >
+                Watchlist
+              </Text>
+            </Pressable>
+          ) : null}
           {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
               style={({ pressed }) => [
@@ -1011,140 +1427,22 @@ export default function MovieDetailsScreen() {
             <View style={styles.watchedBadgeStatic}>
               <Text style={styles.watchedBadgeStaticText}>✓ Movie Info</Text>
             </View>
-          ) : (
-            <>
-              <Pressable
-                style={[
-                  styles.actionButton,
-                  isLandscape && styles.actionButtonDesktop,
-                  inWatchlist && styles.actionButtonRemove,
-                  watchlistLoading && styles.actionButtonDisabled,
-                ]}
-                onPress={toggleWatchlist}
-                disabled={watchlistLoading}
-              >
-                {watchlistLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={inWatchlist ? '#22c55e' : '#ffffff'}
-                    style={styles.watchlistSpinner}
-                  />
-                ) : (
-                  <Ionicons
-                    name={inWatchlist ? 'checkmark-circle' : 'add-circle-outline'}
-                    size={18}
-                    color={
-                      inWatchlist ? '#22c55e' : session ? '#ffffff' : '#a5b4fc'
-                    }
-                  />
-                )}
-                <Text
-                  style={[
-                    styles.actionButtonText,
-                    inWatchlist && styles.actionButtonTextRemove,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {session ? (inWatchlist ? 'On Watchlist' : 'Add to Watchlist') : 'Sign in to Add'}
-                </Text>
-              </Pressable>
-
-              {trailerKey ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    isLandscape && styles.actionButtonDesktop,
-                    pressed && styles.actionButtonPressed,
-                  ]}
-                  onPress={() => setTrailerModalVisible(true)}
-                >
-                  <Ionicons name="play-circle" size={18} color="#ffffff" />
-                  <Text style={styles.actionButtonText} numberOfLines={1}>Watch Trailer</Text>
-                </Pressable>
-              ) : null}
-            </>
-          )}
+          ) : trailerKey ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                isLandscape && styles.actionButtonDesktop,
+                pressed && styles.actionButtonPressed,
+              ]}
+              onPress={() => setTrailerModalVisible(true)}
+            >
+              <Ionicons name="play-circle" size={18} color="#ffffff" />
+              <Text style={styles.actionButtonText} numberOfLines={1}>
+                Watch Trailer
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
-
-        {tmdbMovieId != null ? (
-          <Pressable
-            style={({ pressed }) => [
-              styles.watchNowButton,
-              isLandscape && styles.watchNowButtonDesktop,
-              pressed && styles.watchNowButtonPressed,
-            ]}
-            onPress={() => Linking.openURL(`https://www.themoviedb.org/movie/${tmdbMovieId}/watch`)}
-          >
-            <Text style={[styles.watchNowButtonText, isLandscape && styles.watchNowButtonTextDesktop]}>
-              Watch Now
-            </Text>
-            <Ionicons name="open-outline" size={18} color="#ffffff" />
-          </Pressable>
-        ) : null}
-
-        {(() => {
-          const countryData = watchProvidersResults?.[selectedCountry];
-          const mergedProviders = countryData?.flatrate ?? [];
-          const displayProviders = filterWatchProvidersByEnabled(
-            mergedProviders,
-            enabledServiceIds
-          );
-
-          if (!watchProvidersResults) return null;
-
-          if (mergedProviders.length === 0) {
-            return (
-              <Text style={styles.streamingEmptyMessage}>
-                No streaming services currently configured are offering this movie.
-              </Text>
-            );
-          }
-
-          if (displayProviders.length === 0) {
-            return (
-              <Text style={styles.streamingEmptyMessage}>
-                None of your selected streaming services are offering this title.
-              </Text>
-            );
-          }
-
-          const renderProviderBadges = (
-            providers: Array<{ provider_id: number; provider_name: string; logo_path: string | null }>
-          ) => (
-            <View style={styles.providerBadgesRow}>
-              {providers.map((p) => (
-                <View key={p.provider_id} style={styles.providerBadge}>
-                  {p.logo_path ? (
-                    <Image
-                      source={{ uri: toFullImageUrl(p.logo_path) ?? '' }}
-                      style={styles.providerBadgeImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.providerBadgePlaceholder}>
-                      <Text style={styles.providerBadgeInitial}>{p.provider_name.charAt(0)}</Text>
-                    </View>
-                  )}
-                  <Text style={styles.providerBadgeName} numberOfLines={1}>{p.provider_name}</Text>
-                </View>
-              ))}
-            </View>
-          );
-
-          return (
-            <View style={[styles.watchProvidersSection, isLandscape && styles.watchProvidersSectionDesktop]}>
-              <Text style={[styles.whereToWatchHeader, isLandscape && styles.whereToWatchHeaderDesktop]}>
-                Where to Watch
-              </Text>
-              <View style={styles.watchProviderCategory}>
-                <Text style={[styles.watchProviderLabel, isLandscape && styles.watchProviderLabelDesktop]}>
-                  Stream, rent & buy
-                </Text>
-                {renderProviderBadges(displayProviders)}
-              </View>
-            </View>
-          );
-        })()}
 
         {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
           <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
@@ -1580,69 +1878,72 @@ const styles = StyleSheet.create({
   whereToWatchHeaderDesktop: {
     fontSize: 22,
   },
-  watchProvidersSection: {
+  whereToWatchStreamSection: {
     width: '100%',
+    marginTop: 8,
+    marginBottom: 4,
   },
-  watchProvidersSectionDesktop: {},
-  streamingEmptyMessage: {
-    fontSize: 14,
-    color: '#9ca3af',
-    fontStyle: 'italic',
-    paddingVertical: 12,
-    marginTop: 4,
-  },
-  watchProviderCategory: {
-    marginBottom: 14,
-  },
-  watchProviderLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9ca3af',
+  whereToWatchStreamSectionDesktop: {
+    marginTop: 12,
     marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  watchProviderLabelDesktop: {
-    fontSize: 14,
+  streamingRawStateScroll: {
+    maxHeight: 400,
+    backgroundColor: '#1e1e1e',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
   },
-  providerBadgesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+  streamingRawStateText: {
+    fontFamily: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'monospace',
+    }),
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#00ff00',
   },
-  providerBadge: {
+  streamPlatformButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1f1f1f',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    maxWidth: 140,
+    justifyContent: 'center',
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 10,
   },
-  providerBadgeImage: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    marginRight: 8,
+  streamProviderTouchableInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 8,
   },
-  providerBadgePlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    marginRight: 8,
-    backgroundColor: '#2d2d2d',
+  streamProviderLogoWrap: {
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  providerBadgeInitial: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6b7280',
+  streamPlatformButtonDesktop: {
+    paddingVertical: 16,
+    borderRadius: 14,
+    marginBottom: 12,
   },
-  providerBadgeName: {
-    fontSize: 13,
-    color: '#e5e7eb',
+  streamPlatformButtonPressed: {
+    opacity: 0.85,
+  },
+  streamPlatformButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
     flex: 1,
+    textAlign: 'center',
+  },
+  streamPlatformButtonTextDesktop: {
+    fontSize: 17,
   },
   streamingSection: {
     marginTop: 24,
@@ -1683,57 +1984,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#6b7280',
-  },
-  watchNowButton: {
-    backgroundColor: '#22c55e',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    width: '100%',
-    alignSelf: 'stretch',
-    marginTop: 0,
-    marginBottom: 20,
-  },
-  watchNowLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 16,
-    paddingVertical: 12,
-  },
-  watchNowLinkDesktop: {
-    marginTop: 20,
-    paddingVertical: 14,
-  },
-  watchNowLinkPressed: {
-    opacity: 0.8,
-  },
-  watchNowLinkText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#22c55e',
-  },
-  watchNowLinkTextDesktop: {
-    fontSize: 16,
-  },
-  watchNowButtonDesktop: {
-    paddingVertical: 16,
-    borderRadius: 14,
-  },
-  watchNowButtonPressed: {
-    opacity: 0.8,
-  },
-  watchNowButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  watchNowButtonTextDesktop: {
-    fontSize: 18,
   },
   streamingIconsRow: {
     flexDirection: 'row',
@@ -1936,6 +2186,40 @@ const styles = StyleSheet.create({
   },
   titleDesktop: {
     fontSize: 34,
+  },
+  titleRatingsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  titleRatingsRowDesktop: {
+    marginTop: 10,
+    gap: 12,
+  },
+  omdbRatingsSpinner: {
+    marginRight: 4,
+  },
+  titleRatingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  rtTomatoEmoji: {
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  titleRatingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d1d5db',
+  },
+  metascoreSquare: {
+    width: 14,
+    height: 14,
+    borderRadius: 2,
   },
   metaRow: {
     flexDirection: 'row',
