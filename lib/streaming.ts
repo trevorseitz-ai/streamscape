@@ -172,7 +172,10 @@ export async function getDirectStreamingLinks(
    */
 
   const proxied = await tryFetchStreamingViaDeployProxy(tmdbId, pathType, countryParam);
-  if (proxied !== null) {
+  // Only skip the direct RapidAPI path when the proxy returned real rows. If it returned [] (upstream
+  // error, wrong server key, etc.) or failed (null), fall through so EXPO_PUBLIC_* baked into the web
+  // bundle can still work on Vercel when server env is missing.
+  if (proxied !== null && proxied.length > 0) {
     if (__DEV__) {
       console.log('[streaming] getDirectStreamingLinks via /api/streaming proxy:', proxied.length);
     }

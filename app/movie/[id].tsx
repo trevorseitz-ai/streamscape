@@ -1302,15 +1302,17 @@ export default function MovieDetailsScreen() {
           >
             Where to Watch
           </Text>
-          <ScrollView
-            style={styles.streamingRawStateScroll}
-            nestedScrollEnabled
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.streamingRawStateText} selectable>
-              {`RAW STATE: ${JSON.stringify(streamingProviders, null, 2)}`}
-            </Text>
-          </ScrollView>
+          {__DEV__ ? (
+            <ScrollView
+              style={styles.streamingRawStateScroll}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.streamingRawStateText} selectable>
+                {`RAW STATE: ${JSON.stringify(streamingProviders, null, 2)}`}
+              </Text>
+            </ScrollView>
+          ) : null}
           {streamingProviders && streamingProviders.length > 0
             ? streamingProviders
                 .filter(
