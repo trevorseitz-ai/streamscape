@@ -35,3 +35,11 @@ RapidAPI Streaming Availability options on Movie Details open provider URLs via 
 - [ ] **Video Integration:** YouTube Data API for native trailer playback and clips.
 - [ ] **Trivia & Context:** Wikipedia/WikiData integration for cast bios and movie trivia.
 - [ ] **AI “Vibe” Engine:** LLM-powered personalization (e.g., “Movies for a rainy Sunday”).
+
+## 📺 Platform Expansion: Android TV
+
+- [ ] Migrate to react-native-tvos for TV focus support.
+- [ ] Implement D-Pad navigation (Focus Engine).
+- [ ] Design a "10-foot UI" layout for the Home and Movie Details screens.
+
+Core business logic (Supabase, TMDB) remains shared across platforms.

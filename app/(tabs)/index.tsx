@@ -12,6 +12,7 @@ import {
   Keyboard,
   Platform,
   useWindowDimensions,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MovieCard, type Movie } from '../../components/MovieCard';
@@ -19,6 +20,7 @@ import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { HomeHeader } from '../../components/HomeHeader';
+import { isTvTarget } from '../../lib/isTv';
 import { supabase } from '../../lib/supabase';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -35,7 +37,13 @@ export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
   const { width, height } = useWindowDimensions();
-  const heroHeight = height * 0.4;
+  const isTV = isTvTarget();
+  const windowWidth = Dimensions.get('window').width;
+  const screenBg = isTV ? '#121212' : '#0f0f0f';
+  const horizontalPad = isTV
+    ? Math.min(80, Math.max(48, windowWidth * 0.04))
+    : MAIN_HORIZONTAL_PADDING;
+  const heroHeight = height * (isTV ? 0.45 : 0.4);
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -107,9 +115,13 @@ export default function HomeScreen() {
   const heroMovie = trending.length > 0 ? trending[0] : null;
   const restTrending = trending.slice(1);
 
-  /** Grid: 3 columns on wider viewports, 2 on narrow. */
-  const gridColumnCount = width >= 430 ? 3 : 2;
-  const trendingContentWidth = width - MAIN_HORIZONTAL_PADDING * 2;
+  /** Grid: more columns on TV / large screens; 3 on wide phones, 2 on narrow. */
+  const gridColumnCount = isTV
+    ? Math.min(8, Math.max(4, Math.floor((width - horizontalPad * 2) / 200)))
+    : width >= 430
+      ? 3
+      : 2;
+  const trendingContentWidth = width - horizontalPad * 2;
   const trendingCardWidth =
     (trendingContentWidth - TRENDING_GAP * (gridColumnCount - 1)) / gridColumnCount;
 
@@ -134,11 +146,18 @@ export default function HomeScreen() {
     );
   }
 
-  const HeaderWrapper = Platform.OS === 'web' ? View : SafeAreaView;
+  const HeaderWrapper =
+    Platform.OS === 'web' || isTV ? View : SafeAreaView;
 
   return (
-    <View style={styles.wrapper}>
-      <HeaderWrapper style={styles.safeHeader}>
+    <View
+      style={[
+        styles.wrapper,
+        { backgroundColor: screenBg },
+        isTV && { width: windowWidth, alignSelf: 'stretch' },
+      ]}
+    >
+      <HeaderWrapper style={[styles.safeHeader, { backgroundColor: screenBg }]}>
         <HomeHeader
           session={session}
           onLogout={handleLogout}
@@ -147,7 +166,10 @@ export default function HomeScreen() {
       </HeaderWrapper>
       <ScrollView
         style={styles.mainScroll}
-        contentContainerStyle={styles.mainContentContainer}
+        contentContainerStyle={[
+          styles.mainContentContainer,
+          { paddingHorizontal: horizontalPad },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -265,7 +287,6 @@ const styles = StyleSheet.create({
   },
   mainContentContainer: {
     paddingTop: 12,
-    paddingHorizontal: MAIN_HORIZONTAL_PADDING,
     paddingBottom: 40,
   },
   bottomHalf: {

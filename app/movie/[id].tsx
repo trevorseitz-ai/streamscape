@@ -33,6 +33,7 @@ import {
 } from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
+import { isTvTarget } from '../../lib/isTv';
 import { useMovie } from '../../lib/movie-context';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
@@ -490,7 +491,9 @@ export default function MovieDetailsScreen() {
     setSearchError,
   } = useSearch();
   const { setTitle } = useMovie();
-  const { isLandscape, height: viewportHeight } = useBreakpoint();
+  const { isLandscape: breakpointLandscape, height: viewportHeight } = useBreakpoint();
+  /** TV: always use landscape / wide layout even if the window reports portrait. */
+  const isLandscape = breakpointLandscape || isTvTarget();
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 

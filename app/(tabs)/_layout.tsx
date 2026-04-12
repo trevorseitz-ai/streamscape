@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { HeaderRight } from '../../components/HeaderRight';
 import { WatchlistHeaderTitle } from '../../components/WatchlistHeaderTitle';
+import { isTvTarget } from '../../lib/isTv';
 
 function getTabIcon(routeName: string, focused: boolean) {
   const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
@@ -21,6 +22,7 @@ function getTabIcon(routeName: string, focused: boolean) {
 
 export default function TabLayout() {
   const router = useRouter();
+  const isTV = isTvTarget();
   const [session, setSession] = useState<{
     user: { id: string; email?: string };
   } | null>(null);
@@ -43,8 +45,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={({ route }) => ({
         tabBarStyle: {
-          backgroundColor: '#0f0f0f',
+          backgroundColor: isTV ? '#121212' : '#0f0f0f',
           borderTopColor: '#2d2d2d',
+          ...(isTV ? { width: '100%', alignSelf: 'stretch' } : {}),
         },
         tabBarActiveTintColor: '#6366f1',
         tabBarInactiveTintColor: '#6b7280',
@@ -64,7 +67,7 @@ export default function TabLayout() {
           justifyContent: 'center',
         },
         headerShown: true,
-        headerStyle: { backgroundColor: '#0f0f0f' },
+        headerStyle: { backgroundColor: isTV ? '#121212' : '#0f0f0f' },
         headerTintColor: '#ffffff',
         headerTitleStyle: { fontWeight: '600' },
         headerTitleAlign: 'left',
