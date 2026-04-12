@@ -19,7 +19,6 @@ import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import {
@@ -384,12 +383,6 @@ export default function MovieDetailsScreen() {
         : routeParams.id;
   const fromWatched = routeParams.fromWatched;
   const router = useRouter();
-  const navigation = useNavigation();
-
-  useEffect(() => {
-    const state = navigation.getState();
-    console.log('[MovieDetails] navigation.getState() on mount:', JSON.stringify(state, null, 2));
-  }, [navigation]);
   const { selectedCountry } = useCountry();
   const [isUpdatingProviders, setIsUpdatingProviders] = useState(false);
   const prevCountryRef = useRef(selectedCountry);
@@ -433,14 +426,6 @@ export default function MovieDetailsScreen() {
   const loadDirectStreamingLinks = useCallback(
     async (signal?: AbortSignal): Promise<StreamingOption[]> => {
       const currentMovieId = resolvedStreamingTmdbId;
-      const normalizedFromRoute = normalizeTmdbIdForStreaming(id);
-
-      console.log('[MovieDetails] streaming pipeline — pre-fetch', {
-        routeParamId: id,
-        normalizedTmdbIdFromRoute: normalizedFromRoute,
-        tmdbMovieIdState: tmdbMovieId,
-        resolvedNumericIdForApi: currentMovieId,
-      });
 
       if (currentMovieId == null) {
         setStreamingProviders([]);
@@ -1302,17 +1287,6 @@ export default function MovieDetailsScreen() {
           >
             Where to Watch
           </Text>
-          {__DEV__ ? (
-            <ScrollView
-              style={styles.streamingRawStateScroll}
-              nestedScrollEnabled
-              keyboardShouldPersistTaps="handled"
-            >
-              <Text style={styles.streamingRawStateText} selectable>
-                {`RAW STATE: ${JSON.stringify(streamingProviders, null, 2)}`}
-              </Text>
-            </ScrollView>
-          ) : null}
           {streamingProviders && streamingProviders.length > 0
             ? streamingProviders
                 .filter(
@@ -1888,23 +1862,6 @@ const styles = StyleSheet.create({
   whereToWatchStreamSectionDesktop: {
     marginTop: 12,
     marginBottom: 8,
-  },
-  streamingRawStateScroll: {
-    maxHeight: 400,
-    backgroundColor: '#1e1e1e',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  streamingRawStateText: {
-    fontFamily: Platform.select({
-      ios: 'Menlo',
-      android: 'monospace',
-      default: 'monospace',
-    }),
-    fontSize: 11,
-    lineHeight: 15,
-    color: '#00ff00',
   },
   streamPlatformButton: {
     flexDirection: 'row',

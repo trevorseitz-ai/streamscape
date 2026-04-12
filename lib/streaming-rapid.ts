@@ -23,6 +23,24 @@ export interface StreamingOption {
   type: string;
 }
 
+/** One row per service: same provider often appears multiple times (rent / buy / add-on). First wins. */
+export function dedupeStreamingOptionsByServiceFirst(
+  options: StreamingOption[]
+): StreamingOption[] {
+  const seen = new Set<string>();
+  const result: StreamingOption[] = [];
+  for (const opt of options) {
+    const key =
+      opt.serviceId && opt.serviceId !== 'unknown'
+        ? `id:${opt.serviceId}`
+        : `name:${opt.serviceName.trim().toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(opt);
+  }
+  return result;
+}
+
 /** RapidAPI: options under `streamingOptions[country]` with nested `service`. */
 function mapLiveStreamingItem(raw: unknown): StreamingOption | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -157,7 +175,7 @@ export async function fetchLiveStreamingOptions(
       const mapped = mapLiveStreamingItem(item);
       if (mapped) out.push(mapped);
     }
-    return out;
+    return dedupeStreamingOptionsByServiceFirst(out);
   } catch (err) {
     devWarn('[streaming] fetchLiveStreamingOptions error:', err);
     return [];
