@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet, Keyboard, TouchableOpacity } from 'react-native';
+import { View, Pressable, Text, StyleSheet, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { CountrySelector } from './CountrySelector';
+import { tvFocusable } from '../lib/tvFocus';
 
 interface HeaderRightProps {
   routeName?: string;
@@ -40,26 +41,27 @@ export function HeaderRight({
     <View style={styles.headerRight}>
       <CountrySelector />
       {!compact && session ? (
-        <TouchableOpacity
-          style={styles.authButton}
+        <Pressable
+          {...tvFocusable()}
+          style={({ pressed }) => [styles.authButton, pressed && { opacity: 0.85 }]}
           onPress={onLogout}
-          activeOpacity={0.8}
         >
           <Ionicons name="log-out-outline" size={20} color="#ef4444" />
           <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
+        </Pressable>
       ) : !compact ? (
-        <TouchableOpacity
-          style={styles.authButton}
+        <Pressable
+          {...tvFocusable()}
+          style={({ pressed }) => [styles.authButton, pressed && { opacity: 0.85 }]}
           onPress={onLogin}
-          activeOpacity={0.8}
         >
           <Ionicons name="person-circle-outline" size={20} color="#6366f1" />
           <Text style={styles.loginText}>Log In</Text>
-        </TouchableOpacity>
+        </Pressable>
       ) : null}
       {showSearch && !hideSearchIcon && (
         <Pressable
+          {...tvFocusable()}
           style={styles.searchIcon}
           onPress={() => {
             let willOpen = false;

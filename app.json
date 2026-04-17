@@ -3,7 +3,7 @@
     "name": "ReelDive",
     "slug": "reeldive",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "reeldive",
@@ -13,9 +13,12 @@
       "backgroundColor": "#0f0f0f"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.reeldive"
     },
     "android": {
+      "isTV": true,
+      "banner": "./assets/tv-banner.png",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

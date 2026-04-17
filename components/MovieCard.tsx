@@ -4,13 +4,18 @@ import {
   Image,
   Pressable,
   StyleSheet,
-  TouchableOpacity,
   Platform,
 } from 'react-native';
+import { useTvNativeTag } from '../hooks/useTvNativeTag';
+import { tvAndroidNavProps } from '../lib/tvAndroidNavProps';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWatchlistStatus } from '../lib/watchlist-status-context';
+import { tvFocusable } from '../lib/tvFocus';
+import { isTvTarget, shouldUseTvDpadFocus } from '../lib/isTv';
+import { useTVFocusRing } from '../hooks/useTVFocus';
+import { tvBodyFontSize } from '../lib/tvTypography';
 
 export interface Movie {
   id: string;
@@ -23,6 +28,8 @@ export interface Movie {
 interface MovieCardProps {
   movie: Movie;
   onPress?: () => void;
+  /** TV: clamp D-pad focus on the right edge of the grid (prevents escaping the screen). */
+  tvClampFocusRight?: boolean;
 }
 
 function triggerHaptic() {
@@ -30,15 +37,20 @@ function triggerHaptic() {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 
-export function MovieCard({ movie, onPress }: MovieCardProps) {
+export function MovieCard({ movie, onPress, tvClampFocusRight = false }: MovieCardProps) {
   const router = useRouter();
   const status = useWatchlistStatus();
   const tmdbId = /^\d+$/.test(movie.id) ? Number(movie.id) : null;
+  const isTV = isTvTarget();
+  const tvPosterFocus = shouldUseTvDpadFocus() || isTV;
+  const focusRing = useTVFocusRing();
+  const { setRef: setPosterNavRef, nativeTag: posterNavTag } = useTvNativeTag();
 
   const handleCardPress = () => {
     onPress?.();
     router.push(`/movie/${movie.id}`);
   };
+
   const isInWatchlist = tmdbId != null && (status?.watchlistTmdbIds?.has(tmdbId) ?? false);
   const isWatched = tmdbId != null && (status?.watchedTmdbIds?.has(tmdbId) ?? false);
   const hasSession = !!status?.session;
@@ -62,65 +74,111 @@ export function MovieCard({ movie, onPress }: MovieCardProps) {
     status.toggleWatched(tmdbId, movie.title, movie.poster_url);
   };
 
+  const iconSize = isTV ? 22 : 16;
+
+  const posterInner = (
+    <>
+      {movie.poster_url ? (
+        <Image
+          source={{ uri: movie.poster_url }}
+          style={styles.poster}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.posterPlaceholder}>
+          <Text style={styles.placeholderText}>?</Text>
+        </View>
+      )}
+      {hasSession && tmdbId != null && (
+        <>
+          <Pressable
+            {...tvFocusable()}
+            style={[styles.iconButton, styles.iconButtonLeft]}
+            onPress={handleWatchlistPress}
+          >
+            <View style={styles.iconCircle}>
+              <Ionicons
+                name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
+                size={iconSize}
+                color="#ffffff"
+              />
+            </View>
+          </Pressable>
+          <Pressable
+            {...tvFocusable()}
+            style={[styles.iconButton, styles.iconButtonRight]}
+            onPress={handleWatchedPress}
+          >
+            <View style={styles.iconCircle}>
+              <Ionicons
+                name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                size={iconSize}
+                color={isWatched ? '#22c55e' : 'rgba(255,255,255,0.6)'}
+              />
+            </View>
+          </Pressable>
+        </>
+      )}
+      {rating !== null && (
+        <View style={styles.ratingBadge}>
+          <Text style={styles.ratingStar}>★</Text>
+          <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+        </View>
+      )}
+    </>
+  );
+
+  const titleStyle = [
+    styles.title,
+    isTV && { marginTop: 0, fontSize: tvBodyFontSize(14) },
+  ];
+  const yearStyle = [styles.year, isTV && { fontSize: tvBodyFontSize(12) }];
+
+  if (tvPosterFocus) {
+    return (
+      <View style={[styles.card, isTV && styles.cardTv]}>
+        <Pressable
+          ref={setPosterNavRef as never}
+          {...tvFocusable()}
+          {...(tvClampFocusRight
+            ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
+            : {})}
+          accessibilityRole="button"
+          onPress={handleCardPress}
+          onFocus={focusRing.onFocus}
+          onBlur={focusRing.onBlur}
+          style={({ pressed }) => [
+            styles.posterPressable,
+            focusRing.ringStyle,
+            pressed && styles.cardPressed,
+          ]}
+        >
+          <View style={styles.posterContainer}>{posterInner}</View>
+        </Pressable>
+        <Pressable onPress={handleCardPress} style={styles.titlePressableTv}>
+          <Text style={titleStyle} numberOfLines={2}>
+            {movie.title}
+          </Text>
+          {movie.release_year != null ? (
+            <Text style={yearStyle}>{movie.release_year}</Text>
+          ) : null}
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <Pressable
+      {...tvFocusable()}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={handleCardPress}
     >
-      <View style={styles.posterContainer}>
-        {movie.poster_url ? (
-          <Image
-            source={{ uri: movie.poster_url }}
-            style={styles.poster}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.posterPlaceholder}>
-            <Text style={styles.placeholderText}>?</Text>
-          </View>
-        )}
-        {hasSession && tmdbId != null && (
-          <>
-            <TouchableOpacity
-              style={[styles.iconButton, styles.iconButtonLeft]}
-              onPress={handleWatchlistPress}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconCircle}>
-                <Ionicons
-                  name={isInWatchlist ? 'bookmark' : 'bookmark-outline'}
-                  size={16}
-                  color="#ffffff"
-                />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.iconButton, styles.iconButtonRight]}
-              onPress={handleWatchedPress}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconCircle}>
-                <Ionicons
-                  name={isWatched ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                  size={16}
-                  color={isWatched ? '#22c55e' : 'rgba(255,255,255,0.6)'}
-                />
-              </View>
-            </TouchableOpacity>
-          </>
-        )}
-        {rating !== null && (
-          <View style={styles.ratingBadge}>
-            <Text style={styles.ratingStar}>★</Text>
-            <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.title} numberOfLines={2}>
+      <View style={styles.posterContainer}>{posterInner}</View>
+      <Text style={titleStyle} numberOfLines={2}>
         {movie.title}
       </Text>
       {movie.release_year != null ? (
-        <Text style={styles.year}>{movie.release_year}</Text>
+        <Text style={yearStyle}>{movie.release_year}</Text>
       ) : null}
     </Pressable>
   );
@@ -130,6 +188,16 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 180,
+  },
+  cardTv: {
+    maxWidth: 9999,
+  },
+  titlePressableTv: {
+    marginTop: 8,
+  },
+  posterPressable: {
+    borderRadius: 8,
+    overflow: 'visible',
   },
   cardPressed: {
     opacity: 0.85,

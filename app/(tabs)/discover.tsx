@@ -17,6 +17,8 @@ import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
+import { isTvTarget } from '../../lib/isTv';
+import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -46,7 +48,8 @@ const GENRES = [
 ];
 
 const HORIZONTAL_PADDING = 20;
-const GRID_GAP = 12;
+const GRID_GAP_PHONE = 12;
+const GRID_GAP_TV = 20;
 const MIN_POSTER_WIDTH = 100;
 const MAX_POSTER_WIDTH = 180;
 const YEAR_JUMP_DISTANCE = 350;
@@ -153,17 +156,23 @@ type ListItem =
 
 function useNumColumns() {
   const { width } = useWindowDimensions();
+  const isTV = isTvTarget();
   return useMemo(() => {
+    const gap = isTV ? GRID_GAP_TV : GRID_GAP_PHONE;
     const available = width - HORIZONTAL_PADDING * 2;
-    const cols = Math.floor((available + GRID_GAP) / (MIN_POSTER_WIDTH + GRID_GAP));
+    if (isTV) {
+      const w6 = (available - gap * 5) / 6;
+      return w6 >= 100 ? 6 : 5;
+    }
+    const cols = Math.floor((available + gap) / (MIN_POSTER_WIDTH + gap));
     const clamped = Math.max(2, Math.min(cols, 10));
-    const itemWidth = (available - GRID_GAP * (clamped - 1)) / clamped;
+    const itemWidth = (available - gap * (clamped - 1)) / clamped;
     if (itemWidth > MAX_POSTER_WIDTH && clamped < 10) {
-      const wider = Math.floor((available + GRID_GAP) / (MAX_POSTER_WIDTH + GRID_GAP));
+      const wider = Math.floor((available + gap) / (MAX_POSTER_WIDTH + gap));
       return Math.max(2, wider);
     }
     return clamped;
-  }, [width]);
+  }, [width, isTV]);
 }
 
 export default function DiscoverScreen() {
@@ -191,6 +200,8 @@ export default function DiscoverScreen() {
   const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
   const { isLandscape } = useBreakpoint();
+  const isTV = isTvTarget();
+  const gridGap = isTV ? GRID_GAP_TV : GRID_GAP_PHONE;
 
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
@@ -232,8 +243,8 @@ export default function DiscoverScreen() {
 
   const itemWidth = useMemo(() => {
     const available = screenWidth - HORIZONTAL_PADDING * 2;
-    return (available - GRID_GAP * (numColumns - 1)) / numColumns;
-  }, [screenWidth, numColumns]);
+    return (available - gridGap * (numColumns - 1)) / numColumns;
+  }, [screenWidth, numColumns, gridGap]);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -479,8 +490,10 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Discover</Text>
-        <Text style={styles.subtitle}>Browse movies by year & genre</Text>
+        <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(32) }]}>Discover</Text>
+        <Text style={[styles.subtitle, isTV && { fontSize: tvBodyFontSize(16) }]}>
+          Browse movies by year & genre
+        </Text>
       </View>
 
       <View style={styles.chipRowContainer}>
@@ -608,7 +621,9 @@ export default function DiscoverScreen() {
           removeClippedSubviews={true}
           ListHeaderComponent={
             phase1Movies.length > 0 ? (
-              <Text style={styles.sectionTitle}>{sectionLabel}</Text>
+              <Text style={[styles.sectionTitle, isTV && { fontSize: tvTitleFontSize(18) }]}>
+                {sectionLabel}
+              </Text>
             ) : null
           }
           ListFooterComponent={
@@ -636,7 +651,7 @@ export default function DiscoverScreen() {
             }
 
             return (
-              <View style={[styles.gridRow, { gap: GRID_GAP }]}>
+              <View style={[styles.gridRow, { gap: gridGap }]}>
                 {item.movies.map((movie) => (
                   <View key={movie.id} style={{ width: itemWidth, maxWidth: MAX_POSTER_WIDTH }}>
                     <MovieCard

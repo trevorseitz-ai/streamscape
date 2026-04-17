@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
+import { PlatformPressable } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { HeaderRight } from '../../components/HeaderRight';
 import { WatchlistHeaderTitle } from '../../components/WatchlistHeaderTitle';
-import { isTvTarget } from '../../lib/isTv';
+import { TvSidebarTabBar } from '../../components/TvSidebarTabBar';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvTitleFontSize } from '../../lib/tvTypography';
 
 function getTabIcon(routeName: string, focused: boolean) {
   const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
@@ -23,6 +27,7 @@ function getTabIcon(routeName: string, focused: boolean) {
 export default function TabLayout() {
   const router = useRouter();
   const isTV = isTvTarget();
+  const tvDpad = shouldUseTvDpadFocus();
   const [session, setSession] = useState<{
     user: { id: string; email?: string };
   } | null>(null);
@@ -43,12 +48,24 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={isTV ? (props) => <TvSidebarTabBar {...props} /> : undefined}
       screenOptions={({ route }) => ({
-        tabBarStyle: {
-          backgroundColor: isTV ? '#121212' : '#0f0f0f',
-          borderTopColor: '#2d2d2d',
-          ...(isTV ? { width: '100%', alignSelf: 'stretch' } : {}),
-        },
+        ...(isTV
+          ? {
+              tabBarPosition: 'left',
+              /** Main tab scene fills remaining width next to the custom sidebar. */
+              sceneStyle: { flex: 1 },
+            }
+          : {
+              tabBarStyle: {
+                backgroundColor: '#0f0f0f',
+                borderTopColor: '#2d2d2d',
+              },
+              tabBarItemStyle: {
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            }),
         tabBarActiveTintColor: '#6366f1',
         tabBarInactiveTintColor: '#6b7280',
         tabBarIcon: ({ color, size, focused }) => (
@@ -58,18 +75,27 @@ export default function TabLayout() {
             color={color}
           />
         ),
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
-        },
-        tabBarItemStyle: {
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
+        ...(!isTV
+          ? {
+              tabBarLabelStyle: {
+                fontSize: 11,
+                fontWeight: '500',
+              },
+            }
+          : {}),
+        ...(!isTV && tvDpad
+          ? {
+              tabBarButton: (props: BottomTabBarButtonProps) => (
+                <PlatformPressable {...props} focusable />
+              ),
+            }
+          : {}),
         headerShown: true,
         headerStyle: { backgroundColor: isTV ? '#121212' : '#0f0f0f' },
         headerTintColor: '#ffffff',
-        headerTitleStyle: { fontWeight: '600' },
+        headerTitleStyle: isTV
+          ? { fontWeight: '700', fontSize: tvTitleFontSize(17) }
+          : { fontWeight: '600' },
         headerTitleAlign: 'left',
         headerShadowVisible: false,
         headerRight: () => (

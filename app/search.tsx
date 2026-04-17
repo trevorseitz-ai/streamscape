@@ -14,8 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { MovieCard, type Movie } from '../components/MovieCard';
 import { useSearch } from '../lib/search-context';
+import { fetchTmdb } from '../lib/tmdbFetch';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_POSTER_W92 = 'https://image.tmdb.org/t/p/w92';
 
 interface SuggestionMovie {
@@ -64,10 +64,11 @@ export default function SearchScreen() {
       setIsTyping(true);
 
       try {
-        const url = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(trimmed)}&language=en-US&page=1`;
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        });
+        const res = await fetchTmdb(
+          '/search/movie',
+          { query: trimmed, language: 'en-US', page: '1' },
+          apiKey
+        );
         if (!res.ok) {
           if (id === suggestionRequestId.current) setSuggestions([]);
           return;

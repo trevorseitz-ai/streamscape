@@ -8,7 +8,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
-  TouchableOpacity,
   Keyboard,
   Platform,
   useWindowDimensions,
@@ -20,10 +19,13 @@ import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { HomeHeader } from '../../components/HomeHeader';
+import { fetchTmdb } from '../../lib/tmdbFetch';
 import { isTvTarget } from '../../lib/isTv';
+import { tvBodyFontSize, tvFontSize, tvTitleFontSize } from '../../lib/tvTypography';
+import { tvFocusable } from '../../lib/tvFocus';
 import { supabase } from '../../lib/supabase';
+import { TvFocusGuideView } from '../../components/TvFocusGuideView';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 interface TrendingMovie extends Movie {
@@ -31,7 +33,8 @@ interface TrendingMovie extends Movie {
 }
 
 const MAIN_HORIZONTAL_PADDING = 20;
-const TRENDING_GAP = 10;
+const TRENDING_GAP_PHONE = 10;
+const TRENDING_GAP_TV = 20;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -68,24 +71,45 @@ export default function HomeScreen() {
   const { selectedCountry } = useCountry();
   const { setSearchResult, setSearchError } = useSearch();
   const [trending, setTrending] = useState<TrendingMovie[]>([]);
+  const [trendingError, setTrendingError] = useState<string | null>(null);
 
   const [trendingLoading, setTrendingLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchTrending() {
+    async function loadTrending() {
       setTrendingLoading(true);
+      setTrendingError(null);
       const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
       if (!apiKey) {
+        setTrendingError(
+          'TMDB trending: API key missing. Set EXPO_PUBLIC_TMDB_API_KEY and restart Metro.'
+        );
         setTrendingLoading(false);
         return;
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
       try {
-        const res = await fetch(
-          `${TMDB_BASE}/trending/movie/day?language=en-US&region=${selectedCountry}`,
-          { headers: { Authorization: `Bearer ${apiKey}` } }
+        const res = await fetchTmdb(
+          '/trending/movie/day',
+          { language: 'en-US', region: selectedCountry },
+          apiKey,
+          { signal: controller.signal }
         );
-        if (!res.ok) throw new Error(`TMDB error ${res.status}`);
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+          const text = await res.text();
+          let msg = `TMDB error ${res.status}`;
+          try {
+            const j = JSON.parse(text) as { status_message?: string };
+            if (j.status_message) msg = j.status_message;
+          } catch {
+            /* ignore */
+          }
+          throw new Error(msg);
+        }
         const data = await res.json();
 
         const movies: TrendingMovie[] = (data.results ?? [])
@@ -104,26 +128,43 @@ export default function HomeScreen() {
         setTrending(movies);
       } catch (err) {
         console.error('Trending fetch error:', err);
+        if (err instanceof Error) {
+          const base =
+            err.name === 'AbortError'
+              ? 'Request timed out. Check network and try again.'
+              : err.message === 'Network request failed' || err.message === 'Failed to fetch'
+                ? 'Network request failed (HTTPS to api.themoviedb.org). TV/emulator must allow internet; not the same as Metro on your Mac.'
+                : err.message;
+          setTrendingError(`TMDB trending: ${base}`);
+        } else {
+          setTrendingError('TMDB trending: Could not load trending movies');
+        }
       } finally {
+        clearTimeout(timeoutId);
         setTrendingLoading(false);
       }
     }
 
-    fetchTrending();
+    loadTrending();
   }, [selectedCountry]);
 
   const heroMovie = trending.length > 0 ? trending[0] : null;
   const restTrending = trending.slice(1);
 
-  /** Grid: more columns on TV / large screens; 3 on wide phones, 2 on narrow. */
-  const gridColumnCount = isTV
-    ? Math.min(8, Math.max(4, Math.floor((width - horizontalPad * 2) / 200)))
-    : width >= 430
-      ? 3
-      : 2;
+  const trendingGap = isTV ? TRENDING_GAP_TV : TRENDING_GAP_PHONE;
+
+  /** Grid: 5–6 columns on TV; 3 on wide phones, 2 on narrow. */
+  const gridColumnCount = (() => {
+    if (!isTV) {
+      return width >= 430 ? 3 : 2;
+    }
+    const inner = width - horizontalPad * 2;
+    const w6 = (inner - trendingGap * 5) / 6;
+    return w6 >= 100 ? 6 : 5;
+  })();
   const trendingContentWidth = width - horizontalPad * 2;
   const trendingCardWidth =
-    (trendingContentWidth - TRENDING_GAP * (gridColumnCount - 1)) / gridColumnCount;
+    (trendingContentWidth - trendingGap * (gridColumnCount - 1)) / gridColumnCount;
 
   const handleMoviePress = (movie: Movie) => {
     Keyboard.dismiss();
@@ -135,12 +176,24 @@ export default function HomeScreen() {
   if (!session) {
     return (
       <View style={styles.blackout}>
-        <Text style={styles.blackoutBrand}>ReelDive</Text>
+        <Text
+          style={[styles.blackoutBrand, isTV && { fontSize: tvTitleFontSize(24) }]}
+        >
+          ReelDive
+        </Text>
         <Pressable
+          {...tvFocusable()}
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}
         >
-          <Text style={styles.blackoutButtonText}>Log In</Text>
+          <Text
+            style={[
+              styles.blackoutButtonText,
+              isTV && { fontSize: tvBodyFontSize(16) },
+            ]}
+          >
+            Log In
+          </Text>
         </Pressable>
       </View>
     );
@@ -149,14 +202,8 @@ export default function HomeScreen() {
   const HeaderWrapper =
     Platform.OS === 'web' || isTV ? View : SafeAreaView;
 
-  return (
-    <View
-      style={[
-        styles.wrapper,
-        { backgroundColor: screenBg },
-        isTV && { width: windowWidth, alignSelf: 'stretch' },
-      ]}
-    >
+  const mainColumn = (
+    <>
       <HeaderWrapper style={[styles.safeHeader, { backgroundColor: screenBg }]}>
         <HomeHeader
           session={session}
@@ -173,20 +220,57 @@ export default function HomeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {trendingError && !trendingLoading ? (
+          <View style={styles.trendingErrorBanner}>
+            <Text
+              style={[
+                styles.trendingErrorTitle,
+                isTV && { fontSize: tvTitleFontSize(15) },
+              ]}
+            >
+              Trending couldn’t load
+            </Text>
+            <Text
+              style={[
+                styles.trendingErrorBody,
+                isTV && { fontSize: tvBodyFontSize(13) },
+              ]}
+            >
+              {trendingError}
+            </Text>
+            <Text
+              style={[
+                styles.trendingErrorHint,
+                isTV && { fontSize: tvBodyFontSize(11) },
+              ]}
+            >
+              This request uses HTTPS to TMDB on the public internet. The shell and header loaded from
+              Metro — if you only see this error, fix outbound internet / DNS on the device, not the
+              Mac↔emulator link.
+            </Text>
+          </View>
+        ) : null}
         {/* Hero #1 Trending */}
         {trendingLoading ? (
           <View style={[styles.heroSkeleton, { height: heroHeight }]}>
             <ActivityIndicator size="large" color="#6366f1" />
-            <Text style={styles.heroSkeletonText}>Loading trending for your region...</Text>
+            <Text
+              style={[
+                styles.heroSkeletonText,
+                isTV && { fontSize: tvBodyFontSize(14) },
+              ]}
+            >
+              Loading trending for your region...
+            </Text>
           </View>
         ) : heroMovie ? (
-          <TouchableOpacity
+          <Pressable
+            {...tvFocusable()}
             style={[styles.heroContainer, styles.heroTouchable, { height: heroHeight }]}
             onPress={() => {
               handleMoviePress(heroMovie);
               router.push(`/movie/${heroMovie.id}`);
             }}
-            activeOpacity={0.9}
           >
             {heroMovie.backdrop_url ? (
               <Image
@@ -200,27 +284,67 @@ export default function HomeScreen() {
             <View style={styles.heroOverlay} />
             <View style={styles.heroContent}>
               <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>#1 Trending Today</Text>
+                <Text
+                  style={[
+                    styles.heroBadgeText,
+                    isTV && { fontSize: tvFontSize(11) },
+                  ]}
+                >
+                  #1 Trending Today
+                </Text>
               </View>
-              <Text style={styles.heroTitle}>{heroMovie.title}</Text>
+              <Text
+                style={[
+                  styles.heroTitle,
+                  isTV && { fontSize: tvTitleFontSize(26) },
+                ]}
+              >
+                {heroMovie.title}
+              </Text>
               <View style={styles.heroMeta}>
                 {heroMovie.release_year != null ? (
-                  <Text style={styles.heroYear}>{heroMovie.release_year}</Text>
+                  <Text
+                    style={[
+                      styles.heroYear,
+                      isTV && { fontSize: tvBodyFontSize(14) },
+                    ]}
+                  >
+                    {heroMovie.release_year}
+                  </Text>
                 ) : null}
                 {heroMovie.vote_average != null ? (
                   <View style={styles.heroRating}>
-                    <Text style={styles.heroRatingStar}>★</Text>
-                    <Text style={styles.heroRatingText}>
+                    <Text
+                      style={[
+                        styles.heroRatingStar,
+                        isTV && { fontSize: tvFontSize(13) },
+                      ]}
+                    >
+                      ★
+                    </Text>
+                    <Text
+                      style={[
+                        styles.heroRatingText,
+                        isTV && { fontSize: tvBodyFontSize(14) },
+                      ]}
+                    >
                       {(Math.round(heroMovie.vote_average * 10) / 10).toFixed(1)}
                     </Text>
                   </View>
                 ) : null}
               </View>
               <View style={styles.heroButton}>
-                <Text style={styles.heroButtonText}>View Details</Text>
+                <Text
+                  style={[
+                    styles.heroButtonText,
+                    isTV && { fontSize: tvBodyFontSize(14) },
+                  ]}
+                >
+                  View Details
+                </Text>
               </View>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
 
         {/* Trending Now #2–#10 */}
@@ -228,27 +352,63 @@ export default function HomeScreen() {
           <View style={styles.bottomHalf} />
         ) : restTrending.length > 0 ? (
           <View style={styles.bottomHalf}>
-            <Text style={styles.sectionTitle}>Trending Now</Text>
-            <View style={styles.trendingGrid}>
-              {restTrending.map((movie) => (
-                <View key={movie.id} style={{ width: trendingCardWidth }}>
-                  <MovieCard
-                    movie={movie}
-                    onPress={() => handleMoviePress(movie)}
-                  />
-                </View>
-              ))}
+            <Text
+              style={[
+                styles.sectionTitle,
+                isTV && { fontSize: tvTitleFontSize(20) },
+              ]}
+            >
+              Trending Now
+            </Text>
+            <View style={[styles.trendingGrid, { gap: trendingGap }]}>
+              {restTrending.map((movie, idx) => {
+                const isRightEdge =
+                  isTV &&
+                  ((idx + 1) % gridColumnCount === 0 || idx === restTrending.length - 1);
+                return (
+                  <View key={movie.id} style={{ width: trendingCardWidth }}>
+                    <MovieCard
+                      movie={movie}
+                      onPress={() => handleMoviePress(movie)}
+                      tvClampFocusRight={isRightEdge}
+                    />
+                  </View>
+                );
+              })}
             </View>
           </View>
         ) : (
           <View style={styles.bottomHalf}>
-            <Text style={styles.trendingEmpty}>
-              {trending.length === 0 ? 'Could not load trending movies' : 'No more trending'}
+            <Text
+              style={[
+                styles.trendingEmpty,
+                isTV && { fontSize: tvBodyFontSize(14) },
+              ]}
+            >
+              {trendingError ??
+                (trending.length === 0
+                  ? 'TMDB trending: nothing to show'
+                  : 'No more trending')}
             </Text>
           </View>
         )}
       </ScrollView>
+    </>
+  );
 
+  return (
+    <View
+      style={[
+        styles.wrapper,
+        { backgroundColor: screenBg },
+        isTV && { width: windowWidth, alignSelf: 'stretch' },
+      ]}
+    >
+      {isTV ? (
+        <TvFocusGuideView style={styles.tvMainGuide}>{mainColumn}</TvFocusGuideView>
+      ) : (
+        mainColumn
+      )}
     </View>
   );
 }
@@ -281,6 +441,10 @@ const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  tvMainGuide: {
+    flex: 1,
+    minWidth: 0,
   },
   mainScroll: {
     flex: 1,
@@ -410,11 +574,35 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: TRENDING_GAP,
+    justifyContent: 'flex-start',
   },
   trendingEmpty: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  trendingErrorBanner: {
+    backgroundColor: '#1e1b4b',
+    borderWidth: 1,
+    borderColor: '#4338ca',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  trendingErrorTitle: {
+    color: '#e0e7ff',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  trendingErrorBody: {
+    color: '#c7d2fe',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  trendingErrorHint: {
+    color: '#818cf8',
+    fontSize: 11,
+    lineHeight: 16,
   },
 });

@@ -91,6 +91,15 @@ export default function LoginScreen() {
         <Pressable style={styles.back} onPress={() => router.back()}>
           <Text style={styles.backText}>← Back</Text>
         </Pressable>
+
+        {__DEV__ ? (
+          <Pressable
+            style={({ pressed }) => [styles.devDiagLink, pressed && styles.devDiagLinkPressed]}
+            onPress={() => router.push('/dev/network-diag')}
+          >
+            <Text style={styles.devDiagLinkText}>Network diagnostics (dev)</Text>
+          </Pressable>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -167,5 +176,18 @@ const styles = StyleSheet.create({
   backText: {
     color: '#6b7280',
     fontSize: 14,
+  },
+  devDiagLink: {
+    marginTop: 20,
+    paddingVertical: 8,
+  },
+  devDiagLinkPressed: {
+    opacity: 0.7,
+  },
+  devDiagLinkText: {
+    fontSize: 13,
+    color: '#818cf8',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

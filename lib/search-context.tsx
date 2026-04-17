@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Keyboard } from 'react-native';
+import { fetchTmdb } from './tmdbFetch';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 export interface Movie {
@@ -64,13 +64,12 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const searchUrl = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(trimmed)}&language=en-US`;
-
-      const res = await fetch(searchUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-      });
+      const res = await fetchTmdb(
+        '/search/movie',
+        { query: trimmed, language: 'en-US' },
+        apiKey,
+        { signal: controller.signal }
+      );
       clearTimeout(timeoutId);
 
       const responseText = await res.text();

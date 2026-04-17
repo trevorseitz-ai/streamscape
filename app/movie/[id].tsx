@@ -40,6 +40,7 @@ import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
+import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -836,7 +837,7 @@ export default function MovieDetailsScreen() {
         ? typeof window !== 'undefined'
           ? window.location.origin
           : ''
-        : process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8081';
+        : getMetroDevServerOrigin();
 
     try {
       const res = await fetch(`${baseUrl}/api/movie?id=${mediaId}`);

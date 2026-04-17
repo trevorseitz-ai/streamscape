@@ -45,51 +45,63 @@ export function WatchlistStatusProvider({
   const [watchedTmdbIds, setWatchedTmdbIds] = useState<Set<number>>(new Set());
 
   const fetchStatus = useCallback(async (userId: string) => {
-    const [watchlistRes, watchedRes] = await Promise.all([
-      supabase
-        .from('watchlist')
-        .select('media_id, media(tmdb_id)')
-        .eq('user_id', userId)
-        .eq('watched', false),
-      supabase
-        .from('watched_history')
-        .select('tmdb_id')
-        .eq('user_id', userId),
-    ]);
+    try {
+      const [watchlistRes, watchedRes] = await Promise.all([
+        supabase
+          .from('watchlist')
+          .select('media_id, media(tmdb_id)')
+          .eq('user_id', userId)
+          .eq('watched', false),
+        supabase
+          .from('watched_history')
+          .select('tmdb_id')
+          .eq('user_id', userId),
+      ]);
 
-    const watchlistIds = new Set<number>();
-    if (watchlistRes.data) {
-      for (const row of watchlistRes.data) {
-        const raw = row.media;
-        const media = Array.isArray(raw)
-          ? (raw[0] as { tmdb_id: number | null } | undefined)
-          : (raw as { tmdb_id: number | null } | null);
-        if (media?.tmdb_id != null) {
-          watchlistIds.add(media.tmdb_id);
+      const watchlistIds = new Set<number>();
+      if (watchlistRes.data) {
+        for (const row of watchlistRes.data) {
+          const raw = row.media;
+          const media = Array.isArray(raw)
+            ? (raw[0] as { tmdb_id: number | null } | undefined)
+            : (raw as { tmdb_id: number | null } | null);
+          if (media?.tmdb_id != null) {
+            watchlistIds.add(media.tmdb_id);
+          }
         }
       }
-    }
 
-    const watchedIds = new Set<number>();
-    if (watchedRes.data) {
-      for (const row of watchedRes.data) {
-        watchedIds.add(row.tmdb_id);
+      const watchedIds = new Set<number>();
+      if (watchedRes.data) {
+        for (const row of watchedRes.data) {
+          watchedIds.add(row.tmdb_id);
+        }
       }
-    }
 
-    setWatchlistTmdbIds(watchlistIds);
-    setWatchedTmdbIds(watchedIds);
+      setWatchlistTmdbIds(watchlistIds);
+      setWatchedTmdbIds(watchedIds);
+    } catch (e) {
+      console.warn('[watchlist-status] fetchStatus failed (network or Supabase)', e);
+    }
   }, []);
 
   const refetch = useCallback(async () => {
-    if (session) await fetchStatus(session.user.id);
+    if (!session) return;
+    try {
+      await fetchStatus(session.user.id);
+    } catch (e) {
+      console.warn('[watchlist-status] refetch failed', e);
+    }
   }, [session, fetchStatus]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
-      if (s) fetchStatus(s.user.id);
-      else {
+      if (s) {
+        void fetchStatus(s.user.id).catch((e) =>
+          console.warn('[watchlist-status] initial fetchStatus', e)
+        );
+      } else {
         setWatchlistTmdbIds(new Set());
         setWatchedTmdbIds(new Set());
       }
@@ -99,8 +111,11 @@ export function WatchlistStatusProvider({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (s) fetchStatus(s.user.id);
-      else {
+      if (s) {
+        void fetchStatus(s.user.id).catch((e) =>
+          console.warn('[watchlist-status] auth fetchStatus', e)
+        );
+      } else {
         setWatchlistTmdbIds(new Set());
         setWatchedTmdbIds(new Set());
       }

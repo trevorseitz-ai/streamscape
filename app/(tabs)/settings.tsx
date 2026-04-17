@@ -409,6 +409,26 @@ export default function SettingsScreen() {
             : `${selectedIds.size} service${selectedIds.size > 1 ? 's' : ''} selected — Discover will prioritize movies on your services.`}
         </Text>
       </View>
+
+      {__DEV__ && (
+        <View style={styles.devSection}>
+          <Text style={styles.devSectionTitle}>Developer</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.devRow,
+              pressed && styles.providerCardPressed,
+            ]}
+            onPress={() => router.push('/dev/network-diag')}
+          >
+            <Text style={styles.devRowText}>Network diagnostics</Text>
+            <Ionicons name="chevron-forward" size={20} color="#a5b4fc" />
+          </Pressable>
+          <Text style={styles.devHint}>
+            Test TMDB, Metro, and Supabase from inside the app (no TV browser). On your Mac you can
+            also run: npm run adb:open-url -- https://www.google.com
+          </Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -674,5 +694,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#a5b4fc',
     lineHeight: 20,
+  },
+  devSection: {
+    marginTop: 24,
+    marginBottom: 16,
+  },
+  devSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+  devRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#312e81',
+  },
+  devRowText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#e0e7ff',
+  },
+  devHint: {
+    fontSize: 12,
+    color: '#6b7280',
+    lineHeight: 18,
+    marginTop: 10,
   },
 });

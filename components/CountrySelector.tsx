@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useCountry } from '../lib/country-context';
+import { tvFocusable } from '../lib/tvFocus';
 
 export function CountrySelector() {
   const { selectedCountry, setSelectedCountry } = useCountry();
@@ -8,6 +9,7 @@ export function CountrySelector() {
   return (
     <View style={styles.container}>
       <Pressable
+        {...tvFocusable()}
         style={[
           styles.button,
           selectedCountry === 'US' && styles.buttonActive,
@@ -22,6 +24,7 @@ export function CountrySelector() {
         </Text>
       </Pressable>
       <Pressable
+        {...tvFocusable()}
         style={[
           styles.button,
           selectedCountry === 'CA' && styles.buttonActive,

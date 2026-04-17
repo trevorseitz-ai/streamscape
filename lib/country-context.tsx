@@ -33,11 +33,13 @@ export function CountryProvider({ children }: { children: React.ReactNode }) {
   const [selectedCountry, setSelectedCountryState] = useState<CountryCode>('US');
 
   useEffect(() => {
-    loadAndMigrateCountry().then((country) => {
-      if (country) {
-        setSelectedCountryState(country);
-      }
-    });
+    loadAndMigrateCountry()
+      .then((country) => {
+        if (country) {
+          setSelectedCountryState(country);
+        }
+      })
+      .catch((e) => console.warn('[country-context] load failed', e));
   }, []);
 
   const setSelectedCountry = (country: CountryCode) => {
