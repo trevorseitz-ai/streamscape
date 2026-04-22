@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
-import { Tabs, useRouter } from 'expo-router';
+import { View } from 'react-native';
+import { Tabs } from 'expo-router';
 import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../lib/supabase';
-import { HeaderRight } from '../../components/HeaderRight';
-import { WatchlistHeaderTitle } from '../../components/WatchlistHeaderTitle';
-import { TvSidebarTabBar } from '../../components/TvSidebarTabBar';
+import { TvSidebarTabBar, TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
+import { TvFocusGuideView } from '../../components/TvFocusGuideView';
 import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
-import { tvTitleFontSize } from '../../lib/tvTypography';
 
 function getTabIcon(routeName: string, focused: boolean) {
-  const iconMap: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
+  const iconMap: Record<
+    string,
+    { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }
+  > = {
     index: { active: 'home', inactive: 'home-outline' },
-    discover: { active: 'compass', inactive: 'compass-outline' },
+    search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
-    watched: { active: 'time', inactive: 'time-outline' },
-    settings: { active: 'settings', inactive: 'settings-outline' },
+    library: { active: 'library', inactive: 'library-outline' },
+    profile: { active: 'person', inactive: 'person-outline' },
+    discover: { active: 'compass', inactive: 'compass-outline' },
+    account: { active: 'person-circle', inactive: 'person-circle-outline' },
   };
   const icons = iconMap[routeName];
   const name = icons ? (focused ? icons.active : icons.inactive) : 'ellipse-outline';
@@ -25,36 +26,46 @@ function getTabIcon(routeName: string, focused: boolean) {
 }
 
 export default function TabLayout() {
-  const router = useRouter();
   const isTV = isTvTarget();
   const tvDpad = shouldUseTvDpadFocus();
-  const [session, setSession] = useState<{
-    user: { id: string; email?: string };
-  } | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  return (
+  const tabs = (
     <Tabs
       tabBar={isTV ? (props) => <TvSidebarTabBar {...props} /> : undefined}
       screenOptions={({ route }) => ({
         ...(isTV
           ? {
               tabBarPosition: 'left',
-              /** Main tab scene fills remaining width next to the custom sidebar. */
-              sceneStyle: { flex: 1 },
+              tabBarStyle: {
+                width: TV_SIDEBAR_WIDTH,
+                minWidth: TV_SIDEBAR_WIDTH,
+                maxWidth: TV_SIDEBAR_WIDTH,
+                flexGrow: 0,
+                flexShrink: 0,
+                margin: 0,
+                marginLeft: 0,
+                marginRight: 0,
+                padding: 0,
+                paddingHorizontal: 0,
+                paddingVertical: 0,
+                gap: 0,
+                borderWidth: 0,
+                elevation: 0,
+              },
+              sceneStyle: {
+                flex: 1,
+                flexGrow: 1,
+                flexShrink: 1,
+                width: '100%',
+                minWidth: 0,
+                alignSelf: 'stretch',
+                margin: 0,
+                marginLeft: 0,
+                marginRight: 0,
+                padding: 0,
+                paddingLeft: 0,
+                paddingRight: 0,
+              },
             }
           : {
               tabBarStyle: {
@@ -90,77 +101,37 @@ export default function TabLayout() {
               ),
             }
           : {}),
-        headerShown: true,
-        headerStyle: { backgroundColor: isTV ? '#121212' : '#0f0f0f' },
-        headerTintColor: '#ffffff',
-        headerTitleStyle: isTV
-          ? { fontWeight: '700', fontSize: tvTitleFontSize(17) }
-          : { fontWeight: '600' },
-        headerTitleAlign: 'left',
-        headerShadowVisible: false,
-        headerRight: () => (
-          <HeaderRight
-            routeName={route.name}
-            session={session}
-            onLogout={() => supabase.auth.signOut()}
-            onLogin={() => router.push('/login')}
-          />
-        ),
+        headerShown: false,
       })}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          headerShown: false,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{ title: 'Discover' }}
-      />
-      <Tabs.Screen
-        name="watchlist"
-        options={{
-          title: 'My Watchlist',
-          headerTitle: () => <WatchlistHeaderTitle />,
-        }}
-      />
-      <Tabs.Screen
-        name="watched"
-        options={{ title: 'Watched' }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings' }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="search" options={{ title: 'Search' }} />
+      <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist' }} />
+      <Tabs.Screen name="library" options={{ title: 'Library' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      <Tabs.Screen name="discover" options={{ title: 'Discover' }} />
+      <Tabs.Screen name="account" options={{ title: 'Account' }} />
     </Tabs>
   );
-}
 
-const styles = StyleSheet.create({
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  headerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 6,
-  },
-  loginText: {
-    color: '#6366f1',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  logoutText: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+  return isTV ? (
+    <TvFocusGuideView
+      style={{
+        flex: 1,
+        width: '100%',
+        minWidth: 0,
+        flexDirection: 'row',
+        gap: 0,
+        margin: 0,
+        padding: 0,
+        alignItems: 'stretch',
+        justifyContent: 'flex-start',
+      }}
+    >
+      {/** Single flex child so the navigator fills width (avoids intrinsic-width gap). */}
+      <View style={{ flex: 1, minWidth: 0, margin: 0, padding: 0 }}>{tabs}</View>
+    </TvFocusGuideView>
+  ) : (
+    tabs
+  );
+}

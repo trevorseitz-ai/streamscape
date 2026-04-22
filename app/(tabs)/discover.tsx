@@ -1,4 +1,11 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
@@ -8,16 +15,25 @@ import {
   Pressable,
   FlatList,
   Switch,
+  Image,
   useWindowDimensions,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
-import { MovieCard, type Movie } from '../../components/MovieCard';
+import {
+  MovieRow,
+  getMoviePosterLayout,
+  MOVIE_POSTER_EDGE_INSET,
+  MOVIES_PER_HORIZONTAL_ROW,
+} from '../../components/MovieRow';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
 import { isTvTarget } from '../../lib/isTv';
+import { tvFocusable } from '../../lib/tvFocus';
+import { tvScale } from '../../lib/tvUiScale';
+import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
 
@@ -50,8 +66,13 @@ const GENRES = [
 const HORIZONTAL_PADDING = 20;
 const GRID_GAP_PHONE = 12;
 const GRID_GAP_TV = 20;
-const MIN_POSTER_WIDTH = 100;
-const MAX_POSTER_WIDTH = 180;
+/** Discover TV: nav + horizontal buffers (see `DiscoverTvHorizontalMovieRow` math). */
+/** Matches Home’s 20px inset from the main column edge (nav + buffer). */
+const DISCOVER_TV_CONTENT_BUFFER = 20;
+const DISCOVER_TV_RIGHT_MARGIN = 20;
+const DISCOVER_TV_GAP = 20;
+const DISCOVER_TV_LIST_VERTICAL_PAD = 20;
+const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 200;
 const YEAR_JUMP_DISTANCE = 350;
 const YEAR_CHIP_SNAP_INTERVAL = 70;
 
@@ -154,26 +175,143 @@ type ListItem =
   | { type: 'row'; movies: DiscoverResult[]; key: string }
   | { type: 'divider'; title: string; key: string };
 
-function useNumColumns() {
-  const { width } = useWindowDimensions();
-  const isTV = isTvTarget();
-  return useMemo(() => {
-    const gap = isTV ? GRID_GAP_TV : GRID_GAP_PHONE;
-    const available = width - HORIZONTAL_PADDING * 2;
-    if (isTV) {
-      const w6 = (available - gap * 5) / 6;
-      return w6 >= 100 ? 6 : 5;
-    }
-    const cols = Math.floor((available + gap) / (MIN_POSTER_WIDTH + gap));
-    const clamped = Math.max(2, Math.min(cols, 10));
-    const itemWidth = (available - gap * (clamped - 1)) / clamped;
-    if (itemWidth > MAX_POSTER_WIDTH && clamped < 10) {
-      const wider = Math.floor((available + gap) / (MAX_POSTER_WIDTH + gap));
-      return Math.max(2, wider);
-    }
-    return clamped;
-  }, [width, isTV]);
+type DiscoverTvHorizontalRowProps = {
+  movies: DiscoverResult[];
+  router: ReturnType<typeof useRouter>;
+  /** Inner width for five-across math (after shell padding); ≤0 uses window fallback. */
+  usableWidth: number;
+  renderMovieFooter?: (movie: DiscoverResult) => ReactNode;
+};
+
+function DiscoverTvPosterCell({
+  movie,
+  posterWidth,
+  posterHeight,
+  onPress,
+  footer,
+}: {
+  movie: DiscoverResult;
+  posterWidth: number;
+  posterHeight: number;
+  onPress: () => void;
+  footer: ReactNode | null;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <View style={{ width: posterWidth, flexShrink: 0 }} collapsable={false}>
+      <Pressable
+        {...tvFocusable()}
+        focusable={true}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        onPress={onPress}
+        style={[
+          {
+            width: posterWidth,
+            height: posterHeight,
+            overflow: 'visible' as const,
+          },
+          isFocused && {
+            borderWidth: 3,
+            borderColor: '#ffffff',
+            transform: [{ scale: 1.05 }],
+          },
+        ]}
+      >
+        {movie.poster_url ? (
+          <Image
+            source={{ uri: movie.poster_url }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View
+            style={[
+              discoverTvPosterStyles.placeholder,
+              { width: '100%', height: '100%' },
+            ]}
+          >
+            <Text style={discoverTvPosterStyles.placeholderMark}>?</Text>
+          </View>
+        )}
+      </Pressable>
+      {footer}
+    </View>
+  );
 }
+
+function DiscoverTvHorizontalMovieRow({
+  movies,
+  router,
+  usableWidth,
+  renderMovieFooter,
+}: DiscoverTvHorizontalRowProps) {
+  const { width } = useWindowDimensions();
+  const { posterWidth, posterHeight } = useMemo(() => {
+    const fromWindow =
+      width -
+      TV_SIDEBAR_WIDTH -
+      DISCOVER_TV_CONTENT_BUFFER -
+      DISCOVER_TV_RIGHT_MARGIN;
+    const USABLE_WIDTH = usableWidth > 0 ? usableWidth : fromWindow;
+    const POSTER_WIDTH = (USABLE_WIDTH - DISCOVER_TV_GAP * 4) / 5;
+    const POSTER_HEIGHT = POSTER_WIDTH * 1.5;
+    return { posterWidth: POSTER_WIDTH, posterHeight: POSTER_HEIGHT };
+  }, [width, usableWidth]);
+
+  return (
+    <View style={discoverTvRowStyles.rowWrap}>
+      <FlatList
+        horizontal
+        data={movies}
+        keyExtractor={(m) => m.id}
+        showsHorizontalScrollIndicator={false}
+        removeClippedSubviews={false}
+        style={discoverTvRowStyles.rowFlatList}
+        contentContainerStyle={{
+          paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
+          gap: DISCOVER_TV_GAP,
+        }}
+        renderItem={({ item }) => (
+          <DiscoverTvPosterCell
+            movie={item}
+            posterWidth={posterWidth}
+            posterHeight={posterHeight}
+            onPress={() => router.push(`/movie/${item.id}`)}
+            footer={renderMovieFooter?.(item) ?? null}
+          />
+        )}
+      />
+    </View>
+  );
+}
+
+const discoverTvRowStyles = StyleSheet.create({
+  rowWrap: {
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 40,
+    overflow: 'visible',
+  },
+  rowFlatList: {
+    width: '100%',
+    overflow: 'visible',
+  },
+});
+
+const discoverTvPosterStyles = StyleSheet.create({
+  placeholder: {
+    backgroundColor: '#2d2d2d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderMark: {
+    fontSize: 28,
+    color: '#6b7280',
+  },
+});
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -197,11 +335,34 @@ export default function DiscoverScreen() {
     );
     return () => subscription.unsubscribe();
   }, []);
-  const numColumns = useNumColumns();
   const { width: screenWidth } = useWindowDimensions();
   const { isLandscape } = useBreakpoint();
   const isTV = isTvTarget();
-  const gridGap = isTV ? GRID_GAP_TV : GRID_GAP_PHONE;
+  /** TV: shell `discoverTvContentWrap` supplies 20 / 20 horizontal padding — no extra horizontal inset here. */
+  const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
+  const [tvDiscoverShellW, setTvDiscoverShellW] = useState(0);
+  const tvRowUsableWidth = useMemo(() => {
+    if (!isTV) return 0;
+    if (tvDiscoverShellW > 0) {
+      return (
+        tvDiscoverShellW -
+        DISCOVER_TV_CONTENT_BUFFER -
+        DISCOVER_TV_RIGHT_MARGIN
+      );
+    }
+    return (
+      screenWidth -
+      TV_SIDEBAR_WIDTH -
+      DISCOVER_TV_CONTENT_BUFFER -
+      DISCOVER_TV_RIGHT_MARGIN
+    );
+  }, [isTV, tvDiscoverShellW, screenWidth]);
+  const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
+
+  const discoverPosterLayout = useMemo(
+    () => getMoviePosterLayout(screenWidth, 'phone'),
+    [screenWidth]
+  );
 
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
@@ -219,11 +380,18 @@ export default function DiscoverScreen() {
   const fetchingRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
+  const genreListRef = useRef<FlatList>(null);
   const [yearScrollX, setYearScrollX] = useState(0);
   const [yearContentWidth, setYearContentWidth] = useState(0);
+  const [genreScrollX, setGenreScrollX] = useState(0);
+  const [genreContentWidth, setGenreContentWidth] = useState(0);
 
   const canScrollYearLeft = yearScrollX > 10;
   const canScrollYearRight = yearContentWidth > screenWidth && yearScrollX < yearContentWidth - screenWidth - 10;
+
+  const canScrollGenreLeft = genreScrollX > 10;
+  const canScrollGenreRight =
+    genreContentWidth > screenWidth && genreScrollX < genreContentWidth - screenWidth - 10;
 
   const scrollYear = useCallback((direction: 'left' | 'right') => {
     const offset = direction === 'left' ? -YEAR_JUMP_DISTANCE : YEAR_JUMP_DISTANCE;
@@ -233,6 +401,14 @@ export default function DiscoverScreen() {
     yearListRef.current?.scrollToOffset({ offset: nextX, animated: true });
   }, [yearScrollX, yearContentWidth, screenWidth]);
 
+  const scrollGenre = useCallback((direction: 'left' | 'right') => {
+    const offset = direction === 'left' ? -YEAR_JUMP_DISTANCE : YEAR_JUMP_DISTANCE;
+    const currentX = genreScrollX;
+    const maxScroll = Math.max(0, genreContentWidth - screenWidth);
+    const nextX = Math.max(0, Math.min(maxScroll, currentX + offset));
+    genreListRef.current?.scrollToOffset({ offset: nextX, animated: true });
+  }, [genreScrollX, genreContentWidth, screenWidth]);
+
   useEffect(() => {
     getSavedProviderIds().then(setProviderIds);
   }, []);
@@ -241,10 +417,14 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
-  const itemWidth = useMemo(() => {
-    const available = screenWidth - HORIZONTAL_PADDING * 2;
-    return (available - gridGap * (numColumns - 1)) / numColumns;
-  }, [screenWidth, numColumns, gridGap]);
+  /** Extra bottom padding so the next row peeks (phone). TV uses a fixed large inset. */
+  const verticalPeekPadding = useMemo(() => {
+    if (isTV) return 0;
+    const posterH = discoverPosterLayout.posterHeight;
+    const titleAndMeta = 88;
+    const rowHeight = posterH + titleAndMeta + gridGap;
+    return Math.round(rowHeight * 0.5);
+  }, [discoverPosterLayout.posterHeight, gridGap, isTV]);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -391,33 +571,21 @@ export default function DiscoverScreen() {
   };
 
 
-  const renderYearChip = ({ item: year }: { item: number }) => {
-    const isSelected = year === selectedYear;
-    return (
-      <Pressable
-        style={[styles.chip, isSelected && styles.chipSelected]}
-        onPress={() => handleYearSelect(year)}
-      >
-        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-          {year}
-        </Text>
-      </Pressable>
-    );
-  };
+  const renderYearChip = ({ item: year }: { item: number }) => (
+    <DiscoverFilterChip
+      label={String(year)}
+      isSelected={year === selectedYear}
+      onPress={() => handleYearSelect(year)}
+    />
+  );
 
-  const renderGenreChip = ({ item }: { item: (typeof GENRES)[number] }) => {
-    const isSelected = selectedGenres.includes(item.id);
-    return (
-      <Pressable
-        style={[styles.chip, isSelected && styles.chipSelected]}
-        onPress={() => handleGenreToggle(item.id)}
-      >
-        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-          {item.name}
-        </Text>
-      </Pressable>
-    );
-  };
+  const renderGenreChip = ({ item }: { item: (typeof GENRES)[number] }) => (
+    <DiscoverFilterChip
+      label={item.name}
+      isSelected={selectedGenres.includes(item.id)}
+      onPress={() => handleGenreToggle(item.id)}
+    />
+  );
 
   const activeGenreNames = useMemo(
     () => GENRES.filter((g) => selectedGenres.includes(g.id)).map((g) => g.name),
@@ -449,10 +617,10 @@ export default function DiscoverScreen() {
   const listData = useMemo(() => {
     const items: ListItem[] = [];
 
-    for (let i = 0; i < phase1Movies.length; i += numColumns) {
+    for (let i = 0; i < phase1Movies.length; i += MOVIES_PER_HORIZONTAL_ROW) {
       items.push({
         type: 'row',
-        movies: phase1Movies.slice(i, i + numColumns),
+        movies: phase1Movies.slice(i, i + MOVIES_PER_HORIZONTAL_ROW),
         key: `p1-${i}`,
       });
     }
@@ -461,17 +629,17 @@ export default function DiscoverScreen() {
       if (phase1Movies.length > 0) {
         items.push({ type: 'divider', title: dividerTitle, key: 'phase-divider' });
       }
-      for (let i = 0; i < phase2Movies.length; i += numColumns) {
+      for (let i = 0; i < phase2Movies.length; i += MOVIES_PER_HORIZONTAL_ROW) {
         items.push({
           type: 'row',
-          movies: phase2Movies.slice(i, i + numColumns),
+          movies: phase2Movies.slice(i, i + MOVIES_PER_HORIZONTAL_ROW),
           key: `p2-${i}`,
         });
       }
     }
 
     return items;
-  }, [phase1Movies, phase2Movies, numColumns, fetchPhase, dividerTitle]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle]);
 
   // Auth guard: blackout when not logged in (after all hooks)
   if (!session) {
@@ -487,9 +655,9 @@ export default function DiscoverScreen() {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+  const discoverMain = (
+    <>
+      <View style={[styles.header, { paddingHorizontal: contentPadX }]}>
         <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(32) }]}>Discover</Text>
         <Text style={[styles.subtitle, isTV && { fontSize: tvBodyFontSize(16) }]}>
           Browse movies by year & genre
@@ -505,7 +673,11 @@ export default function DiscoverScreen() {
             renderItem={renderYearChip}
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipListContent}
+            removeClippedSubviews={false}
+            contentContainerStyle={[
+              styles.chipListContent,
+              { paddingHorizontal: contentPadX },
+            ]}
             onScroll={(e) => setYearScrollX(e.nativeEvent.contentOffset.x)}
             onContentSizeChange={(w) => setYearContentWidth(w)}
             scrollEventThrottle={16}
@@ -539,41 +711,64 @@ export default function DiscoverScreen() {
       </View>
 
       <View style={styles.chipRowContainer}>
-        <FlatList
-          data={GENRES}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderGenreChip}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipListContent}
-        />
+        <View style={styles.yearListWrapper}>
+          <FlatList
+            ref={genreListRef}
+            data={GENRES}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderGenreChip}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            removeClippedSubviews={false}
+            contentContainerStyle={[
+              styles.chipListContent,
+              { paddingHorizontal: contentPadX },
+            ]}
+            onScroll={(e) => setGenreScrollX(e.nativeEvent.contentOffset.x)}
+            onContentSizeChange={(w) => setGenreContentWidth(w)}
+            scrollEventThrottle={16}
+          />
+          {isLandscape && (canScrollGenreLeft || canScrollGenreRight) ? (
+            <>
+              {canScrollGenreLeft ? (
+                <TouchableOpacity
+                  style={[styles.yearScrollArrow, styles.yearScrollArrowLeft]}
+                  onPress={() => scrollGenre('left')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : null}
+              {canScrollGenreRight ? (
+                <TouchableOpacity
+                  style={[styles.yearScrollArrow, styles.yearScrollArrowRight]}
+                  onPress={() => scrollGenre('right')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : null}
+            </>
+          ) : null}
+        </View>
       </View>
 
-      <View style={styles.monetizationRow}>
-        <Pressable
-          style={[styles.monetizationPill, monetization === 'flatrate' && styles.monetizationPillActive]}
+      <View style={[styles.monetizationRow, { paddingHorizontal: contentPadX }]}>
+        <MonetizationFilterChip
+          label="Free/Stream"
+          isSelected={monetization === 'flatrate'}
           onPress={() => handleMonetizationChange('flatrate')}
-        >
-          <Text style={[styles.monetizationPillText, monetization === 'flatrate' && styles.monetizationPillTextActive]}>
-            Free/Stream
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.monetizationPill, monetization === 'rent' && styles.monetizationPillActive]}
+        />
+        <MonetizationFilterChip
+          label="Rent/Buy"
+          isSelected={monetization === 'rent'}
           onPress={() => handleMonetizationChange('rent')}
-        >
-          <Text style={[styles.monetizationPillText, monetization === 'rent' && styles.monetizationPillTextActive]}>
-            Rent/Buy
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.monetizationPill, monetization === 'both' && styles.monetizationPillActive]}
+        />
+        <MonetizationFilterChip
+          label="All"
+          isSelected={monetization === 'both'}
           onPress={() => handleMonetizationChange('both')}
-        >
-          <Text style={[styles.monetizationPillText, monetization === 'both' && styles.monetizationPillTextActive]}>
-            All
-          </Text>
-        </Pressable>
+        />
       </View>
 
       {!hasMovies && !loading && (
@@ -588,7 +783,7 @@ export default function DiscoverScreen() {
       )}
 
       {loading && !hasMovies && (
-        <View style={styles.centered}>
+        <View style={[styles.centered, { paddingHorizontal: contentPadX }]}>
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
             {selectedYear != null
@@ -600,7 +795,7 @@ export default function DiscoverScreen() {
 
       {error ? (
         !loading ? (
-          <View style={styles.centered}>
+          <View style={[styles.centered, { paddingHorizontal: contentPadX }]}>
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null
@@ -608,22 +803,37 @@ export default function DiscoverScreen() {
 
       {hasMovies && (
         <FlatList
-          key={`grid-${numColumns}`}
+          key="discover-poster-grid"
           data={listData}
           keyExtractor={(item) => item.key}
-          contentContainerStyle={styles.resultsContent}
+          contentContainerStyle={[
+            styles.resultsContent,
+            {
+              paddingHorizontal: isTV ? 0 : MOVIE_POSTER_EDGE_INSET,
+              paddingBottom: isTV
+                ? DISCOVER_TV_RESULTS_PADDING_BOTTOM
+                : 40 + verticalPeekPadding,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
           onEndReached={loadMore}
           onEndReachedThreshold={1.5}
           windowSize={5}
           maxToRenderPerBatch={10}
           initialNumToRender={20}
-          removeClippedSubviews={true}
+          removeClippedSubviews={false}
           ListHeaderComponent={
             phase1Movies.length > 0 ? (
-              <Text style={[styles.sectionTitle, isTV && { fontSize: tvTitleFontSize(18) }]}>
-                {sectionLabel}
-              </Text>
+              isTV ? (
+                <Text
+                  style={[styles.sectionTitle, { fontSize: tvTitleFontSize(18) }]}
+                >
+                  {sectionLabel}
+                </Text>
+              ) : (
+                <Text style={styles.sectionTitle}>{sectionLabel}</Text>
+              )
             ) : null
           }
           ListFooterComponent={
@@ -650,39 +860,56 @@ export default function DiscoverScreen() {
               );
             }
 
-            return (
-              <View style={[styles.gridRow, { gap: gridGap }]}>
-                {item.movies.map((movie) => (
-                  <View key={movie.id} style={{ width: itemWidth, maxWidth: MAX_POSTER_WIDTH }}>
-                    <MovieCard
-                      movie={{
-                        id: movie.id,
-                        title: movie.title,
-                        poster_url: movie.poster_url,
-                        release_year: movie.release_year,
-                        vote_average: movie.vote_average,
-                      }}
-                    />
-                    {movie.platforms.length > 0 && (
-                      <View style={styles.platformBadges}>
-                        {movie.platforms
-                          .filter((p) => p.access_type === 'subscription')
-                          .slice(0, 2)
-                          .map((p, i) => (
-                            <View key={i} style={styles.platformBadge}>
-                              <Text style={styles.platformBadgeText}>
-                                {p.name}
-                              </Text>
-                            </View>
-                          ))}
+            const renderDiscoverFooter = (movie: DiscoverResult) =>
+              movie.platforms.length > 0 ? (
+                <View style={styles.platformBadges}>
+                  {movie.platforms
+                    .filter((p) => p.access_type === 'subscription')
+                    .slice(0, 2)
+                    .map((p, i) => (
+                      <View key={i} style={styles.platformBadge}>
+                        <Text style={styles.platformBadgeText}>{p.name}</Text>
                       </View>
-                    )}
-                  </View>
-                ))}
-              </View>
+                    ))}
+                </View>
+              ) : null;
+
+            if (isTV) {
+              return (
+                <DiscoverTvHorizontalMovieRow
+                  movies={item.movies}
+                  router={router}
+                  usableWidth={tvRowUsableWidth}
+                  renderMovieFooter={renderDiscoverFooter}
+                />
+              );
+            }
+
+            return (
+              <MovieRow
+                movies={item.movies}
+                phoneLayout="horizontal"
+                wrapWithHorizontalInset={false}
+                renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
+              />
             );
           }}
         />
+      )}
+    </>
+  );
+
+  return (
+    <View style={styles.container}>
+      {isTV ? (
+        <View
+          style={styles.discoverTvContentWrap}
+          onLayout={(e) => setTvDiscoverShellW(e.nativeEvent.layout.width)}
+        >
+          {discoverMain}
+        </View>
+      ) : (
+        discoverMain
       )}
     </View>
   );
@@ -708,6 +935,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f0f0f',
     paddingTop: 8,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  /**
+   * TV: fills space beside sidebar (`flex:1`), left/right from constants.
+   * Poster math: `usableWidth = onLayout.width - CONTENT_BUFFER - RIGHT_MARGIN`.
+   */
+  discoverTvContentWrap: {
+    flex: 1,
+    minWidth: 0,
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+    paddingLeft: DISCOVER_TV_CONTENT_BUFFER,
+    paddingRight: DISCOVER_TV_RIGHT_MARGIN,
   },
   header: {
     paddingHorizontal: HORIZONTAL_PADDING,
@@ -769,6 +1012,19 @@ const styles = StyleSheet.create({
   chipTextSelected: {
     color: '#ffffff',
   },
+  chipTextTvFocus: {
+    color: '#ffffff',
+  },
+  chipTvFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    transform: [{ scale: 1.05 }],
+    zIndex: 2,
+    elevation: 4,
+  },
+  chipPressed: {
+    opacity: 0.88,
+  },
   monetizationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -796,6 +1052,13 @@ const styles = StyleSheet.create({
   },
   monetizationPillTextActive: {
     color: '#ffffff',
+  },
+  monetizationPillTvFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    transform: [{ scale: 1.05 }],
+    zIndex: 2,
+    elevation: 4,
   },
   emptyState: {
     flex: 1,
@@ -837,10 +1100,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 16,
-  },
-  gridRow: {
-    flexDirection: 'row',
     marginBottom: 16,
   },
   phaseDivider: {
@@ -896,3 +1155,77 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+type DiscoverFilterChipProps = {
+  label: string;
+  isSelected: boolean;
+  onPress: () => void;
+};
+
+function DiscoverFilterChip({ label, isSelected, onPress }: DiscoverFilterChipProps) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <Pressable
+      focusable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        isSelected && styles.chipSelected,
+        isFocused && styles.chipTvFocused,
+        pressed && styles.chipPressed,
+      ]}
+    >
+      <Text
+        style={[
+          styles.chipText,
+          isSelected && styles.chipTextSelected,
+          isFocused && !isSelected && styles.chipTextTvFocus,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+type MonetizationFilterChipProps = {
+  label: string;
+  isSelected: boolean;
+  onPress: () => void;
+};
+
+function MonetizationFilterChip({
+  label,
+  isSelected,
+  onPress,
+}: MonetizationFilterChipProps) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <Pressable
+      focusable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.monetizationPill,
+        isSelected && styles.monetizationPillActive,
+        isFocused && styles.monetizationPillTvFocused,
+        pressed && styles.chipPressed,
+      ]}
+    >
+      <Text
+        style={[
+          styles.monetizationPillText,
+          isSelected && styles.monetizationPillTextActive,
+          isFocused && !isSelected && styles.chipTextTvFocus,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
