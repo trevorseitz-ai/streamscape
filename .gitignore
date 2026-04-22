@@ -33,8 +33,9 @@ yarn-error.*
 # Cursor / IDE (machine-specific MCP paths, etc.)
 .cursor/
 
-# local env files
+# local env files (secrets — never commit)
 .env
+.env.local
 .env*.local
 
 # typescript
