@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -14,8 +15,8 @@ import * as Haptics from 'expo-haptics';
 import { useWatchlistStatus } from '../lib/watchlist-status-context';
 import { tvFocusable } from '../lib/tvFocus';
 import { isTvTarget, shouldUseTvDpadFocus } from '../lib/isTv';
-import { useTVFocusRing } from '../hooks/useTVFocus';
 import { tvBodyFontSize } from '../lib/tvTypography';
+import { useTvSearchFocusBridge } from '../lib/tv-search-focus-context';
 
 export interface Movie {
   id: string;
@@ -30,6 +31,9 @@ interface MovieCardProps {
   onPress?: () => void;
   /** TV: clamp D-pad focus on the right edge of the grid (prevents escaping the screen). */
   tvClampFocusRight?: boolean;
+  /** When set (e.g. Discover grid), fixes poster size to an exact pixel layout (2:3 via height). */
+  posterWidth?: number;
+  posterHeight?: number;
 }
 
 function triggerHaptic() {
@@ -37,13 +41,20 @@ function triggerHaptic() {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 
-export function MovieCard({ movie, onPress, tvClampFocusRight = false }: MovieCardProps) {
+export function MovieCard({
+  movie,
+  onPress,
+  tvClampFocusRight = false,
+  posterWidth: fixedPosterWidth,
+  posterHeight: fixedPosterHeight,
+}: MovieCardProps) {
   const router = useRouter();
   const status = useWatchlistStatus();
   const tmdbId = /^\d+$/.test(movie.id) ? Number(movie.id) : null;
   const isTV = isTvTarget();
   const tvPosterFocus = shouldUseTvDpadFocus() || isTV;
-  const focusRing = useTVFocusRing();
+  const [isFocused, setIsFocused] = useState(false);
+  const { setTvContentHasFocus } = useTvSearchFocusBridge();
   const { setRef: setPosterNavRef, nativeTag: posterNavTag } = useTvNativeTag();
 
   const handleCardPress = () => {
@@ -76,9 +87,40 @@ export function MovieCard({ movie, onPress, tvClampFocusRight = false }: MovieCa
 
   const iconSize = isTV ? 22 : 16;
 
+  const hasFixedPosterSize =
+    fixedPosterWidth != null &&
+    fixedPosterHeight != null &&
+    fixedPosterWidth > 0 &&
+    fixedPosterHeight > 0;
+
+  /** TV + Discover: border/focus live on Pressable; inner surface fills the box. */
+  const tvPosterPressableBounds =
+    hasFixedPosterSize && tvPosterFocus
+      ? {
+          width: fixedPosterWidth,
+          height: fixedPosterHeight,
+          justifyContent: 'center' as const,
+          alignItems: 'center' as const,
+        }
+      : null;
+
+  const posterContainerStyle = [
+    styles.posterContainer,
+    hasFixedPosterSize && tvPosterFocus
+      ? { width: '100%' as const, height: '100%' as const }
+      : hasFixedPosterSize
+        ? { width: fixedPosterWidth, height: fixedPosterHeight }
+        : null,
+  ];
+
+  const cardWidthStyle = hasFixedPosterSize
+    ? { width: fixedPosterWidth, maxWidth: fixedPosterWidth }
+    : null;
+
   const posterInner = (
     <>
       {movie.poster_url ? (
+        /* Crop to 2:3 box; cover avoids stretch/squish with TV fixed poster bounds. */
         <Image
           source={{ uri: movie.poster_url }}
           style={styles.poster}
@@ -136,24 +178,29 @@ export function MovieCard({ movie, onPress, tvClampFocusRight = false }: MovieCa
 
   if (tvPosterFocus) {
     return (
-      <View style={[styles.card, isTV && styles.cardTv]}>
+      <View style={[styles.card, isTV && styles.cardTv, cardWidthStyle]}>
         <Pressable
           ref={setPosterNavRef as never}
+          focusable={true}
           {...tvFocusable()}
           {...(tvClampFocusRight
             ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
             : {})}
           accessibilityRole="button"
           onPress={handleCardPress}
-          onFocus={focusRing.onFocus}
-          onBlur={focusRing.onBlur}
+          onFocus={() => {
+            setIsFocused(true);
+            setTvContentHasFocus(true);
+          }}
+          onBlur={() => setIsFocused(false)}
           style={({ pressed }) => [
             styles.posterPressable,
-            focusRing.ringStyle,
+            tvPosterPressableBounds,
+            isFocused && styles.posterFocusedTv,
             pressed && styles.cardPressed,
           ]}
         >
-          <View style={styles.posterContainer}>{posterInner}</View>
+          <View style={posterContainerStyle}>{posterInner}</View>
         </Pressable>
         <Pressable onPress={handleCardPress} style={styles.titlePressableTv}>
           <Text style={titleStyle} numberOfLines={2}>
@@ -170,10 +217,10 @@ export function MovieCard({ movie, onPress, tvClampFocusRight = false }: MovieCa
   return (
     <Pressable
       {...tvFocusable()}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      style={({ pressed }) => [styles.card, cardWidthStyle, pressed && styles.cardPressed]}
       onPress={handleCardPress}
     >
-      <View style={styles.posterContainer}>{posterInner}</View>
+      <View style={posterContainerStyle}>{posterInner}</View>
       <Text style={titleStyle} numberOfLines={2}>
         {movie.title}
       </Text>
@@ -198,6 +245,20 @@ const styles = StyleSheet.create({
   posterPressable: {
     borderRadius: 8,
     overflow: 'visible',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  posterFocusedTv: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+    transform: [{ scale: 1.05 }],
+    overflow: 'visible',
+    zIndex: 2,
+    elevation: 10,
+    shadowColor: '#000000',
+    shadowOpacity: 0.45,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
   },
   cardPressed: {
     opacity: 0.85,
@@ -274,3 +335,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+export { MovieCard as TVMovieCard };

@@ -1,5 +1,13 @@
-import { useRef, useEffect, useState } from 'react';
+import {
+  useRef,
+  useEffect,
+  useState,
+  useLayoutEffect,
+  useCallback,
+  type ElementRef,
+} from 'react';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -12,9 +20,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { MovieCard, type Movie } from '../components/MovieCard';
-import { useSearch } from '../lib/search-context';
-import { fetchTmdb } from '../lib/tmdbFetch';
+import { MovieCard, type Movie } from '../../components/MovieCard';
+import { useSearch } from '../../lib/search-context';
+import { fetchTmdb } from '../../lib/tmdbFetch';
+import { isTvTarget } from '../../lib/isTv';
+import { useTvNativeTag } from '../../hooks/useTvNativeTag';
+import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 
 const TMDB_POSTER_W92 = 'https://image.tmdb.org/t/p/w92';
 
@@ -27,7 +38,28 @@ interface SuggestionMovie {
 
 export default function SearchScreen() {
   const router = useRouter();
-  const inputRef = useRef<TextInput>(null);
+  const isFocused = useIsFocused();
+  const isTV = isTvTarget();
+  const inputRef = useRef<ElementRef<typeof TextInput>>(null);
+  const { setRef: setSearchNavRef, nativeTag: searchFieldNavTag } = useTvNativeTag();
+  const { setSearchFieldNativeTag, setTvContentHasFocus } = useTvSearchFocusBridge();
+
+  const setInputRefMerged = useCallback(
+    (node: ElementRef<typeof TextInput> | null) => {
+      inputRef.current = node;
+      setSearchNavRef(node);
+    },
+    [setSearchNavRef]
+  );
+
+  useLayoutEffect(() => {
+    if (!isTV || !isFocused) {
+      setSearchFieldNativeTag(null);
+      return;
+    }
+    setSearchFieldNativeTag(searchFieldNavTag);
+    return () => setSearchFieldNativeTag(null);
+  }, [isTV, isFocused, searchFieldNavTag, setSearchFieldNativeTag]);
   const {
     query,
     setQuery,
@@ -108,7 +140,7 @@ export default function SearchScreen() {
         </Pressable>
         <View style={styles.inputWrapper}>
           <TextInput
-            ref={inputRef}
+            ref={isTV ? setInputRefMerged : inputRef}
             style={styles.input}
             placeholder="Search movies..."
             placeholderTextColor="#6b7280"
@@ -123,6 +155,7 @@ export default function SearchScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus
+            onFocus={isTV ? () => setTvContentHasFocus(true) : undefined}
           />
           {query.length > 0 ? (
             <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>

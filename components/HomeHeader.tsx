@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,9 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useTvNativeTag } from '../hooks/useTvNativeTag';
 import { isTvTarget } from '../lib/isTv';
 import { tvBodyFontSize, tvTitleFontSize } from '../lib/tvTypography';
-import { tvFocusable, tvPreferredFocusProps } from '../lib/tvFocus';
-import { tvAndroidNavProps } from '../lib/tvAndroidNavProps';
+import { tvPreferredFocusProps } from '../lib/tvFocus';
 import { useTvSearchFocusBridge } from '../lib/tv-search-focus-context';
 import { HeaderRight } from './HeaderRight';
 
@@ -29,93 +27,45 @@ export function HomeHeader(props: HomeHeaderProps) {
   const router = useRouter();
   const { isLandscape } = useBreakpoint();
   const isTV = isTvTarget();
-  const searchIconSize = isTV ? 28 : 20;
-  const [searchFocused, setSearchFocused] = useState(false);
-  const { setRef, nativeTag } = useTvNativeTag();
-  const { setSearchFieldNativeTag, searchSidebarNativeTag } = useTvSearchFocusBridge();
+  const { setSearchFieldNativeTag } = useTvSearchFocusBridge();
 
   const handleSearchPress = () => {
     router.push('/search');
   };
 
   useLayoutEffect(() => {
-    if (!isTV) {
-      setSearchFieldNativeTag(null);
-      return;
-    }
-    setSearchFieldNativeTag(nativeTag);
+    setSearchFieldNativeTag(null);
     return () => setSearchFieldNativeTag(null);
-  }, [isTV, nativeTag, setSearchFieldNativeTag]);
+  }, [setSearchFieldNativeTag]);
 
-  const renderSearchControl = (wrapperStyle: StyleProp<ViewStyle>, placeholderStyle: StyleProp<ViewStyle>) => {
-    if (!isTV) {
-      return (
-        <Pressable
-          {...tvPreferredFocusProps()}
-          style={[styles.fakeInput, wrapperStyle]}
-          onPress={handleSearchPress}
-        >
-          <Ionicons
-            name="search"
-            size={searchIconSize}
-            color="#6b7280"
-            style={styles.searchIcon}
-          />
-          <Text style={[styles.placeholderText, isTV && { fontSize: tvBodyFontSize(16) }]}>
-            Search movies...
-          </Text>
-        </Pressable>
-      );
-    }
+  if (isTV) {
+    return null;
+  }
 
+  const renderSearchControl = (wrapperStyle: StyleProp<ViewStyle>) => {
     return (
-      <View
-        ref={setRef}
-        collapsable={false}
-        focusable
-        onFocus={() => setSearchFocused(true)}
-        onBlur={() => setSearchFocused(false)}
-        style={[
-          styles.fakeInput,
-          wrapperStyle,
-          searchFocused && styles.fakeInputTvFocused,
-        ]}
-        {...tvAndroidNavProps({
-          nextFocusLeft: searchSidebarNativeTag,
-        })}
+      <Pressable
+        {...tvPreferredFocusProps()}
+        style={[styles.fakeInput, wrapperStyle]}
+        onPress={handleSearchPress}
       >
-        <Pressable
-          onPress={handleSearchPress}
-          style={[styles.searchInner, placeholderStyle]}
-          {...tvFocusable()}
-        >
-          <Ionicons
-            name="search"
-            size={searchIconSize}
-            color="#6b7280"
-            style={styles.searchIcon}
-          />
-          <Text style={[styles.placeholderText, { fontSize: tvBodyFontSize(16) }]}>
-            Search movies...
-          </Text>
-        </Pressable>
-      </View>
+        <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+        <Text style={[styles.placeholderText, { fontSize: tvBodyFontSize(16) }]}>
+          Search movies...
+        </Text>
+      </Pressable>
     );
   };
 
   if (isLandscape) {
     return (
-      <View style={[styles.headerRow, isTV && styles.headerRowTv]}>
+      <View style={styles.headerRow}>
         <View style={styles.leftGroup}>
           <View style={styles.branding}>
-            <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(20) }]}>
-              ReelDive
-            </Text>
-            <Text style={[styles.tagline, isTV && { fontSize: tvBodyFontSize(13) }]}>
-              Welcome to ReelDive
-            </Text>
+            <Text style={[styles.title, { fontSize: tvTitleFontSize(20) }]}>ReelDive</Text>
+            <Text style={[styles.tagline, { fontSize: tvBodyFontSize(13) }]}>Welcome to ReelDive</Text>
           </View>
-          {renderSearchControl(styles.inputWrapperRow, {})}
+          {renderSearchControl(styles.inputWrapperRow)}
         </View>
         <View style={styles.rightGroup}>
           <HeaderRight
@@ -131,13 +81,11 @@ export function HomeHeader(props: HomeHeaderProps) {
   }
 
   return (
-    <View style={[styles.headerColumn, isTV && styles.headerColumnTv]}>
+    <View style={styles.headerColumn}>
       <View style={styles.headerTopRow}>
         <View style={styles.branding}>
-          <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(20) }]}>ReelDive</Text>
-          <Text style={[styles.tagline, isTV && { fontSize: tvBodyFontSize(13) }]}>
-            Welcome to ReelDive
-          </Text>
+          <Text style={[styles.title, { fontSize: tvTitleFontSize(20) }]}>ReelDive</Text>
+          <Text style={[styles.tagline, { fontSize: tvBodyFontSize(13) }]}>Welcome to ReelDive</Text>
         </View>
         <View style={styles.rightGroup}>
           <HeaderRight
@@ -150,7 +98,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         </View>
       </View>
       <View style={styles.searchRowPortrait}>
-        {renderSearchControl(styles.inputWrapperPortrait, {})}
+        {renderSearchControl(styles.inputWrapperPortrait)}
       </View>
     </View>
   );
@@ -168,11 +116,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
     elevation: 10,
   },
-  headerRowTv: {
-    backgroundColor: '#121212',
-    minHeight: 72,
-    paddingVertical: 16,
-  },
   headerColumn: {
     flexDirection: 'column',
     paddingHorizontal: 16,
@@ -180,9 +123,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f0f0f',
     zIndex: 10,
     elevation: 10,
-  },
-  headerColumnTv: {
-    backgroundColor: '#121212',
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -227,15 +167,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
     minHeight: 44,
-  },
-  fakeInputTvFocused: {
-    borderColor: '#6366f1',
-    borderWidth: 2,
-  },
-  searchInner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   inputWrapperRow: {
     flex: 1,

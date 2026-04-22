@@ -3,7 +3,7 @@
  * `/tv-landing` (see app/index.tsx) instead of the phone marketing screen.
  */
 import { useEffect } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { lockAsync as lockScreenOrientation, OrientationLock } from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
@@ -21,9 +21,7 @@ const ROOT_BG_TV = '#121212';
 
 export default function RootLayout() {
   const isTV = isTvTarget();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const rootBg = isTV ? ROOT_BG_TV : ROOT_BG_PHONE;
-  const layoutReady = windowWidth > 0 && windowHeight > 0;
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -53,18 +51,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <View
-        style={[
-          styles.root,
-          isTV &&
-            layoutReady && {
-              width: windowWidth,
-              minHeight: windowHeight,
-              alignSelf: 'stretch',
-            },
-          { backgroundColor: rootBg },
-        ]}
-      >
+      <View style={[styles.root, { backgroundColor: rootBg }]}>
         <RootErrorBoundary>
           <SearchProvider>
             <CountryProvider>
@@ -96,6 +83,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     width: '100%',
-    ...(Platform.OS === 'web' ? {} : { maxWidth: '100%' }),
+    height: '100%',
   },
 });

@@ -13,7 +13,6 @@ import {
   Modal,
   Dimensions,
   FlatList,
-  TouchableOpacity,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -1291,55 +1290,27 @@ export default function MovieDetailsScreen() {
           >
             Where to Watch
           </Text>
-          {streamingProviders && streamingProviders.length > 0
-            ? streamingProviders
-                .filter(
-                  (opt) =>
-                    typeof opt.link === 'string' && opt.link.trim() !== ''
-                )
-                .map((opt, idx) => {
-                  const platformName =
-                    opt.serviceName.trim() !== ''
-                      ? opt.serviceName.trim()
-                      : 'service';
-                  return (
-                    <TouchableOpacity
-                      key={`${opt.serviceId}-${idx}`}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Watch on ${platformName}`}
-                      onPress={() => void handleStreamingPress(opt.link)}
-                      style={[
-                        styles.streamPlatformButton,
-                        isLandscape && styles.streamPlatformButtonDesktop,
-                      ]}
-                    >
-                      <View style={styles.streamProviderTouchableInner}>
-                        <View
-                          style={styles.streamProviderLogoWrap}
-                          accessibilityElementsHidden
-                        >
-                          <Ionicons
-                            name="tv-outline"
-                            size={22}
-                            color="#a5b4fc"
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.streamPlatformButtonText,
-                            isLandscape && styles.streamPlatformButtonTextDesktop,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {`Watch on ${platformName}`}
-                        </Text>
-                        <Ionicons name="open-outline" size={18} color="#ffffff" />
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-            : null}
+          {(() => {
+            const validOptions = (streamingProviders ?? []).filter(
+              (opt) =>
+                typeof opt.link === 'string' && opt.link.trim() !== ''
+            );
+            if (validOptions.length === 0) {
+              return (
+                <Text style={styles.streamingTvEmptyNote}>
+                  No streaming options found in your region.
+                </Text>
+              );
+            }
+            return validOptions.map((opt, idx) => (
+              <StreamingButton
+                key={`${opt.serviceId}-${idx}`}
+                provider={opt}
+                onStreamPress={handleStreamingPress}
+                isLandscape={isLandscape}
+              />
+            ));
+          })()}
         </View>
 
         <View style={styles.actionRow}>
@@ -1867,46 +1838,49 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
-  streamPlatformButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366f1',
+  streamingTvButton: {
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: '#333333',
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
-    width: '100%',
-    alignSelf: 'stretch',
     marginBottom: 10,
-  },
-  streamProviderTouchableInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    gap: 8,
-  },
-  streamProviderLogoWrap: {
-    width: 28,
+    borderWidth: 2,
+    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streamPlatformButtonDesktop: {
+  streamingTvButtonDesktop: {
     paddingVertical: 16,
     borderRadius: 14,
     marginBottom: 12,
   },
-  streamPlatformButtonPressed: {
-    opacity: 0.85,
+  streamingTvButtonFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+    transform: [{ scale: 1.05 }],
+    overflow: 'visible',
+    zIndex: 2,
+    elevation: 6,
   },
-  streamPlatformButtonText: {
+  streamingTvButtonPressing: {
+    opacity: 0.88,
+  },
+  streamingTvButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-    flex: 1,
     textAlign: 'center',
   },
-  streamPlatformButtonTextDesktop: {
+  streamingTvButtonTextDesktop: {
     fontSize: 17,
+  },
+  streamingTvEmptyNote: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   streamingSection: {
     marginTop: 24,
@@ -2519,3 +2493,47 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
 });
+
+type StreamingButtonProps = {
+  provider: StreamingOption;
+  onStreamPress: (url: string) => void | Promise<void>;
+  isLandscape: boolean;
+};
+
+function StreamingButton({
+  provider,
+  onStreamPress,
+  isLandscape,
+}: StreamingButtonProps) {
+  const [isFocused, setIsFocused] = useState(false);
+  const platformName =
+    provider.serviceName.trim() !== '' ? provider.serviceName.trim() : 'service';
+  const label = `Watch on ${platformName}`;
+
+  return (
+    <Pressable
+      focusable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={() => void onStreamPress(provider.link)}
+      style={({ pressed }) => [
+        styles.streamingTvButton,
+        isLandscape && styles.streamingTvButtonDesktop,
+        isFocused && styles.streamingTvButtonFocused,
+        pressed && styles.streamingTvButtonPressing,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text
+        style={[
+          styles.streamingTvButtonText,
+          isLandscape && styles.streamingTvButtonTextDesktop,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}

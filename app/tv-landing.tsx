@@ -173,7 +173,7 @@ export default function TvLandingScreen() {
               </Pressable>
               <Pressable
                 {...(tvFocus ? { focusable: true } : {})}
-                onPress={() => router.push('/(tabs)/settings')}
+                onPress={() => router.push('/(tabs)/profile')}
                 style={tvBtnState}
               >
                 <Text style={styles.actionLabel}>Settings</Text>

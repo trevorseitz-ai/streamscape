@@ -22,6 +22,25 @@ export function getTVFocusRingStyle(focused: boolean): ViewStyle {
 }
 
 /**
+ * High-contrast focus for TV sidebar nav: bright border + white outer glow.
+ */
+export function getTVSidebarNavFocusStyle(focused: boolean): ViewStyle {
+  if (!focused) {
+    return {};
+  }
+  return {
+    transform: [{ scale: 1.06 }],
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 16,
+  };
+}
+
+/**
  * Tracks focus for a single focusable (e.g. movie poster) and returns merged ring styles on TV.
  */
 export function useTVFocusRing() {

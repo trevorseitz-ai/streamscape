@@ -344,9 +344,9 @@ export default function WatchlistScreen() {
       <View style={styles.wrapper}>
         <View style={styles.center}>
           <Ionicons name="list" size={48} color="#2d2d2d" />
-          <Text style={styles.emptyText}>Your watchlist awaits</Text>
+          <Text style={styles.emptyText}>Please log in</Text>
           <Text style={styles.emptySubtext}>
-            Tap "Sign In" in the top-right to get started
+            Sign in to view and manage your watchlist
           </Text>
         </View>
         {showSearchOverlay && (
