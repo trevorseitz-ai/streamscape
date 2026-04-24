@@ -9,6 +9,7 @@ import {
   Pressable,
   Alert,
   Keyboard,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -23,6 +24,11 @@ import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { RatingModal } from '../../components/RatingModal';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvFocusable } from '../../lib/tvFocus';
+import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
+import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
+import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -66,6 +72,26 @@ export default function WatchlistScreen() {
     watchlistId: string;
     movie: WatchlistMovie;
   } | null>(null);
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+
+  const isTV = isTvTarget();
+  const tvListRowDpad = shouldUseTvDpadFocus() || isTV;
+  /** Android TV: scroll/shell views must not participate in the focus graph. */
+  const tvNf =
+    isTV && Platform.OS === 'android'
+      ? ({ focusable: false, collapsable: false } as const)
+      : {};
+  const tvChildNf =
+    isTV && Platform.OS === 'android' ? ({ focusable: false } as const) : {};
+  const { setMainContentEntryNativeTag, setTvContentHasFocus, sidebarSlotNativeTags } =
+    useTvSearchFocusBridge();
+  const { setRef: setFirstRowRef, nativeTag: firstRowNavTag } = useTvNativeTag();
+  const watchlistSidebarLeftTag =
+    isTV && Platform.OS === 'android'
+      ? (sidebarSlotNativeTags['watchlist'] ?? null)
+      : null;
+  /** Single-column list: every row is the “left column” for sidebar return. */
+  const gridColumnCount = 1;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -295,6 +321,24 @@ export default function WatchlistScreen() {
     return movies.filter((m) => m.title.toLowerCase().includes(q));
   }, [movies, isSearching, query]);
 
+  /** Android TV: sidebar `nextFocusRight` targets the first list row’s native tag. */
+  useEffect(() => {
+    if (!isTV || Platform.OS !== 'android') {
+      return;
+    }
+    if (filteredMovies.length === 0 || firstRowNavTag == null) {
+      setMainContentEntryNativeTag(null);
+      return;
+    }
+    setMainContentEntryNativeTag(firstRowNavTag);
+    return () => setMainContentEntryNativeTag(null);
+  }, [
+    isTV,
+    filteredMovies.length,
+    firstRowNavTag,
+    setMainContentEntryNativeTag,
+  ]);
+
   const handleMoviePress = useCallback(
     (_movie?: { id: string; tmdb_id: number | null }) => {
       setIsSearching(false);
@@ -330,7 +374,7 @@ export default function WatchlistScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.center} {...tvNf}>
         <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
@@ -341,8 +385,8 @@ export default function WatchlistScreen() {
 
   if (!session) {
     return (
-      <View style={styles.wrapper}>
-        <View style={styles.center}>
+      <View style={styles.wrapper} {...tvNf}>
+        <View style={styles.center} {...tvNf}>
           <Ionicons name="list" size={48} color="#2d2d2d" />
           <Text style={styles.emptyText}>Please log in</Text>
           <Text style={styles.emptySubtext}>
@@ -370,18 +414,19 @@ export default function WatchlistScreen() {
   }
 
   return (
-    <View style={styles.wrapper}>
+    <View style={styles.wrapper} {...tvNf}>
       <ScrollView
+        {...tvNf}
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={styles.header} {...tvNf}>
           <Text style={styles.subtitle}>
             {movies.length} {movies.length === 1 ? 'movie' : 'movies'} saved
           </Text>
           {orderSaving ? (
-            <View style={styles.savingOrderBanner}>
+            <View style={styles.savingOrderBanner} {...tvNf}>
               <ActivityIndicator size="small" color="#6366f1" />
               <Text style={styles.savingOrderText}>Saving order...</Text>
             </View>
@@ -389,25 +434,50 @@ export default function WatchlistScreen() {
         </View>
 
         {movies.length === 0 ? (
-        <View style={styles.empty}>
+        <View style={styles.empty} {...tvNf}>
           <Text style={styles.emptyText}>Your watchlist is empty</Text>
           <Text style={styles.emptySubtext}>
             Search for a movie and tap "Add to Watchlist" to save it
           </Text>
         </View>
       ) : filteredMovies.length === 0 && query.trim() ? (
-        <View style={styles.empty}>
+        <View style={styles.empty} {...tvNf}>
           <Text style={styles.emptyText}>No matches in your watchlist</Text>
           <Text style={styles.emptySubtext}>
             Try "Search Global" to find it on TMDB
           </Text>
         </View>
       ) : (
-        <View style={styles.list}>
-          {filteredMovies.map((movie, index) => (
+        <View style={styles.list} {...tvNf}>
+          {filteredMovies.map((movie, index) => {
+            const isLeftCol = index % gridColumnCount === 0;
+            const useTvRowNav =
+              isTV &&
+              Platform.OS === 'android' &&
+              isLeftCol &&
+              watchlistSidebarLeftTag != null;
+            return (
             <Pressable
               key={movie.watchlistId}
-              style={styles.row}
+              ref={index === 0 ? (setFirstRowRef as never) : undefined}
+              {...(tvListRowDpad ? tvFocusable() : {})}
+              {...(useTvRowNav
+                ? tvAndroidNavProps({ nextFocusLeft: watchlistSidebarLeftTag })
+                : {})}
+              onFocus={() => {
+                setFocusedRowIndex(index);
+                setTvContentHasFocus(true);
+              }}
+              onBlur={() => {
+                setFocusedRowIndex((f) => (f === index ? null : f));
+                setTvContentHasFocus(false);
+              }}
+              style={[
+                styles.row,
+                tvListRowDpad &&
+                  focusedRowIndex === index &&
+                  styles.rowTvFocused,
+              ]}
               onPress={() => {
                 router.push(`/movie/${movie.tmdb_id ?? movie.id}`);
               }}
@@ -417,14 +487,15 @@ export default function WatchlistScreen() {
                   source={{ uri: movie.poster_url }}
                   style={styles.thumbnail}
                   resizeMode="cover"
+                  {...tvChildNf}
                 />
               ) : (
-                <View style={styles.thumbnailPlaceholder}>
+                <View style={styles.thumbnailPlaceholder} {...tvChildNf}>
                   <Text style={styles.thumbnailPlaceholderText}>?</Text>
                 </View>
               )}
 
-              <View style={styles.movieInfo}>
+              <View style={styles.movieInfo} {...tvNf}>
                 <Text style={styles.movieTitle} numberOfLines={2}>
                   {movie.title}
                 </Text>
@@ -433,7 +504,7 @@ export default function WatchlistScreen() {
                 ) : null}
               </View>
 
-              <View style={styles.providerIcons}>
+              <View style={styles.providerIcons} {...tvNf}>
                 {movie.tmdb_id != null && (providerLogos[movie.tmdb_id] ?? []).length > 0
                   ? (providerLogos[movie.tmdb_id] ?? []).map((p) => (
                       <Image
@@ -441,14 +512,16 @@ export default function WatchlistScreen() {
                         source={{ uri: p.logo_url }}
                         style={styles.providerIcon}
                         resizeMode="cover"
+                        {...tvChildNf}
                       />
                     ))
                   : null}
               </View>
 
-              <View style={styles.actionButtons}>
+              <View style={styles.actionButtons} {...tvNf}>
                 <Pressable
                   style={styles.actionButton}
+                  {...tvChildNf}
                   onPress={(e) => {
                     e.stopPropagation();
                     setPendingWatched({
@@ -463,6 +536,7 @@ export default function WatchlistScreen() {
                 </Pressable>
                 <Pressable
                   style={styles.actionButton}
+                  {...tvChildNf}
                   onPress={(e) => {
                     e.stopPropagation();
                     handleRemove(movie.watchlistId);
@@ -473,6 +547,7 @@ export default function WatchlistScreen() {
                 </Pressable>
                 <Pressable
                   style={styles.actionButton}
+                  {...tvChildNf}
                   onPress={(e) => {
                     e.stopPropagation();
                     moveItem(movies.indexOf(movie), 'up');
@@ -488,6 +563,7 @@ export default function WatchlistScreen() {
                 </Pressable>
                 <Pressable
                   style={styles.actionButton}
+                  {...tvChildNf}
                   onPress={(e) => {
                     e.stopPropagation();
                     moveItem(movies.indexOf(movie), 'down');
@@ -505,7 +581,8 @@ export default function WatchlistScreen() {
                 </Pressable>
               </View>
             </Pressable>
-          ))}
+            );
+          })}
         </View>
       )}
       </ScrollView>
@@ -669,5 +746,10 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /** Android TV: visible focus (matches home poster ring intent). */
+  rowTvFocused: {
+    borderColor: '#00F5FF',
+    borderWidth: 2,
   },
 });

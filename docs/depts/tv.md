@@ -62,3 +62,11 @@ Before booting the emulator, ensure the `.env` file follows the **RapidAPI** nam
 TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search, horizontal rows) so focus can move predictably across the screen.
 
 **D-pad navigation** is implemented with React Native TV primitives: **`nextFocus*`** props, native focus tags via [`hooks/useTvNativeTag.ts`](../../hooks/useTvNativeTag.ts), and the left rail in [`components/TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). Row geometry and margins follow [`docs/tv_layout_rules.md`](../tv_layout_rules.md); home horizontal lists use [`components/HomeTvMovieRow.tsx`](../../components/HomeTvMovieRow.tsx).
+
+## List Rendering & Focus Stability (The Box Rule)
+
+> **The Box Rule (Deferred Sorting).** Never dynamically re-sort or re-order a `FlatList` or `ScrollView` based on an active user click (e.g. clicking “Add” moving an item to the top of the list).
+
+**Why:** React Native destroys the physical DOM nodes during live re-sorts. If the native Android TV spatial engine is holding focus on a node when it is destroyed, the engine panics and throws the focus to the top-left of the screen (typically the **Sidebar**).
+
+**The Fix:** Lock the sort order when the component mounts or when a search query is executed. When a user clicks an item, apply a **visual toggle** (e.g. change the border color, opacity, or add a checkmark icon) via state, but **do not** move the item in the array. Defer the actual re-sorting of the list until the next time the user mounts the screen.

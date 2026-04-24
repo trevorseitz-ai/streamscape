@@ -1,4 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  memo,
+} from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
@@ -11,6 +17,7 @@ import {
   Pressable,
   ListRenderItem,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -19,6 +26,7 @@ import {
   saveProviderIds,
 } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
+import { isTvTarget } from '../../lib/isTv';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -52,6 +60,12 @@ function providerIdsToNumberArray(set: Set<string>): number[] {
 export default function SettingsScreen() {
   const router = useRouter();
   const { selectedCountry } = useCountry();
+  const isTV = isTvTarget();
+  /** Android TV: list / chrome must not become accidental focus targets after grid updates. */
+  const tvNf =
+    isTV && Platform.OS === 'android'
+      ? ({ focusable: false, collapsable: false } as const)
+      : {};
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
@@ -218,37 +232,6 @@ export default function SettingsScreen() {
   }, [session, selectedCountry]);
 
   /** Two-way: add or remove provider id from selection (new Set each update). */
-  const handleToggle = useCallback(
-    (providerId: number) => {
-      const key = normalizeProviderId(providerId);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) {
-          next.delete(key);
-        } else {
-          next.add(key);
-        }
-        const idsArray = providerIdsToNumberArray(next);
-        saveProviderIds(idsArray);
-
-        if (session) {
-          supabase
-            .from('user_profiles')
-            .upsert(
-              { id: session.user.id, enabled_services: idsArray },
-              { onConflict: 'id' }
-            )
-            .then(({ error }) => {
-              if (error) console.warn('Failed to save to Supabase:', error.message);
-            });
-        }
-
-        return next;
-      });
-    },
-    [session]
-  );
-
   const handleSave = useCallback(async () => {
     const idsArray = providerIdsToNumberArray(selectedIds);
     try {
@@ -279,18 +262,46 @@ export default function SettingsScreen() {
     [selectedIds]
   );
 
+  /**
+   * Search filter + fixed display order only (no re-sort when selection changes).
+   * Order stays stable so TV FlatList cells are not remounted on add/remove.
+   */
   const sortedFilteredProviders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return [...providers]
       .filter((p) => p.name.toLowerCase().includes(q))
-      .sort((a, b) => {
-        const aSel = selectedIds.has(normalizeProviderId(a.id)) ? 1 : 0;
-        const bSel = selectedIds.has(normalizeProviderId(b.id)) ? 1 : 0;
-        return bSel - aSel || a.display_priority - b.display_priority;
-      });
-  }, [providers, searchQuery, selectedIds]);
+      .sort((a, b) => a.display_priority - b.display_priority);
+  }, [providers, searchQuery]);
 
-  const renderProviderItem: ListRenderItem<ProviderEntry> = useCallback(
+  const handleToggle = useCallback((providerId: number) => {
+    const key = normalizeProviderId(providerId);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      const idsArray = providerIdsToNumberArray(next);
+      saveProviderIds(idsArray);
+
+      if (session) {
+        supabase
+          .from('user_profiles')
+          .upsert(
+            { id: session.user.id, enabled_services: idsArray },
+            { onConflict: 'id' }
+          )
+          .then(({ error }) => {
+            if (error) console.warn('Failed to save to Supabase:', error.message);
+          });
+      }
+
+      return next;
+    });
+  }, [session]);
+
+  const renderProviderItem = useCallback<ListRenderItem<ProviderEntry>>(
     ({ item }) => {
       const idKey = normalizeProviderId(item.id);
       const isSelected = selectedIds.has(idKey);
@@ -302,20 +313,20 @@ export default function SettingsScreen() {
         />
       );
     },
-    [handleToggle, selectedIds]
+    [selectedIds, handleToggle]
   );
 
   const listHeader = useMemo(
     () => (
       <>
-        <View style={styles.cinematicSection}>
+        <View style={styles.cinematicSection} {...tvNf}>
           <Text style={styles.cinematicSectionTitle}>Your Cinematic Profile</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
+          <View style={styles.statsRow} {...tvNf}>
+            <View style={styles.statCard} {...tvNf}>
               <Text style={styles.statCardLabel}>Movies Watched</Text>
               <Text style={styles.statCardValue}>{totalWatched}</Text>
             </View>
-            <View style={styles.statCard}>
+            <View style={styles.statCard} {...tvNf}>
               <Text style={styles.statCardLabel}>Average Rating</Text>
               <Text style={styles.statCardValue}>
                 {averageRating != null ? averageRating : '—'}
@@ -345,17 +356,17 @@ export default function SettingsScreen() {
               </Text>
             </Pressable>
           ) : null}
-          <View style={styles.chartBlock}>
+          <View style={styles.chartBlock} {...tvNf}>
             <Text style={styles.chartLabel}>Rating distribution</Text>
-            <View style={styles.chartRow}>
+            <View style={styles.chartRow} {...tvNf}>
               {ratingDistribution.map((count, index) => {
                 const rating = index + 1;
                 const maxCount = Math.max(...ratingDistribution, 0);
                 const barHeight =
                   maxCount === 0 ? 0 : (count / maxCount) * 60;
                 return (
-                  <View key={rating} style={styles.chartColumn}>
-                    <View style={styles.chartBarTrack}>
+                  <View key={rating} style={styles.chartColumn} {...tvNf}>
+                    <View style={styles.chartBarTrack} {...tvNf}>
                       <View
                         style={[
                           styles.chartBarFill,
@@ -371,14 +382,14 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.header}>
+        <View style={styles.header} {...tvNf}>
           <Text style={styles.title}>Profile</Text>
           <Text style={styles.subtitle}>Manage your streaming preferences</Text>
         </View>
 
         <SavePreferencesButton onPress={handleSave} />
 
-        <View style={styles.section}>
+        <View style={styles.section} {...tvNf}>
           <Text style={styles.sectionTitle}>My Services</Text>
           <Text style={styles.sectionDescription}>
             Tap to select the services you subscribe to. Discover results will be
@@ -386,7 +397,7 @@ export default function SettingsScreen() {
           </Text>
 
           {fetchError ? (
-            <View style={styles.errorBox}>
+            <View style={styles.errorBox} {...tvNf}>
               <Text style={styles.errorText}>{fetchError}</Text>
             </View>
           ) : (
@@ -415,13 +426,14 @@ export default function SettingsScreen() {
       router,
       searchQuery,
       totalWatched,
+      tvNf,
     ]
   );
 
   const listFooter = useMemo(
     () => (
       <>
-        <View style={styles.infoBox}>
+        <View style={styles.infoBox} {...tvNf}>
           <Text style={styles.infoText}>
             {selectedIds.size === 0
               ? 'No services selected — Discover will show all movies.'
@@ -430,7 +442,7 @@ export default function SettingsScreen() {
         </View>
 
         {__DEV__ ? (
-          <View style={styles.devSection}>
+          <View style={styles.devSection} {...tvNf}>
             <Text style={styles.devSectionTitle}>Developer</Text>
             <Pressable
               style={({ pressed }) => [
@@ -450,13 +462,13 @@ export default function SettingsScreen() {
         ) : null}
       </>
     ),
-    [router, selectedIds.size]
+    [router, selectedIds.size, tvNf]
   );
 
   // Auth guard: blackout when not logged in (Log In button always accessible)
   if (!session) {
     return (
-      <View style={styles.blackout}>
+      <View style={styles.blackout} {...tvNf}>
         <Text style={styles.blackoutBrand}>ReelDive</Text>
         <Text style={styles.blackoutHint}>Sign in to manage your settings</Text>
         <Pressable
@@ -471,7 +483,7 @@ export default function SettingsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.center} {...tvNf}>
         <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
@@ -479,6 +491,7 @@ export default function SettingsScreen() {
 
   return (
     <FlatList
+      {...tvNf}
       style={styles.container}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
@@ -719,15 +732,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  /** Unselected: stable layout (same border width) without a visible outline */
+  /** Unselected: dimmed, neutral border */
   providerCardInactive: {
-    borderColor: 'transparent',
+    borderColor: '#2d2d2d',
     backgroundColor: '#1a1a1a',
+    opacity: 0.7,
   },
-  /** Selected: indigo frame + subtle tint so state reads instantly */
+  /** Selected: green border, full opacity */
   providerCardActive: {
-    borderColor: '#6366f1',
-    backgroundColor: 'rgba(99, 102, 241, 0.16)',
+    borderColor: '#22c55e',
+    backgroundColor: 'rgba(34, 197, 94, 0.14)',
+    opacity: 1,
   },
   /** D-pad / TV remote focus — distinct from saved selection */
   providerCardFocused: {
@@ -866,7 +881,21 @@ type ProviderCardProps = {
   onPress: () => void;
 };
 
-function ProviderCard({ item, isSelected, onPress }: ProviderCardProps) {
+function providerCardPropsAreEqual(
+  prev: Readonly<ProviderCardProps>,
+  next: Readonly<ProviderCardProps>
+): boolean {
+  return (
+    normalizeProviderId(prev.item.id) === normalizeProviderId(next.item.id) &&
+    prev.isSelected === next.isSelected
+  );
+}
+
+const ProviderCard = memo(function ProviderCard({
+  item,
+  isSelected,
+  onPress,
+}: ProviderCardProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
@@ -898,9 +927,9 @@ function ProviderCard({ item, isSelected, onPress }: ProviderCardProps) {
       </View>
       {isSelected ? (
         <View style={styles.providerCheckmark} pointerEvents="none">
-          <Ionicons name="checkmark-circle" size={18} color="#6366f1" />
+          <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
         </View>
       ) : null}
     </Pressable>
   );
-}
+}, providerCardPropsAreEqual);
