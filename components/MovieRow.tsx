@@ -21,6 +21,8 @@ export const TV_MOVIE_POSTER_GAP = 24;
 
 /** Posters per horizontal row (extras scroll). */
 export const MOVIES_PER_HORIZONTAL_ROW = 10;
+/** TV: columns across one visible band — must match Home `gridColumnCount` (5). */
+export const TV_POSTER_COLUMNS = 5;
 const PHONE_GRID_GAP = 10;
 /** Matches Home ScrollView phone padding (MAIN_HORIZONTAL_PADDING). */
 const PHONE_HORIZONTAL_INSET = 20;
@@ -130,8 +132,9 @@ export function MoviePosterRow({
         renderItem={({ item: movie, index }) => {
           const isRightEdge =
             isTV &&
-            (index % 5 === 4 || index === movies.length - 1);
-          const isLeftCol = index % 5 === 0;
+            (index % TV_POSTER_COLUMNS === TV_POSTER_COLUMNS - 1 ||
+              index === movies.length - 1);
+          const isLeftCol = index % TV_POSTER_COLUMNS === 0;
           return (
             <View
               style={{ width: layout.posterWidth, flexShrink: 0 }}

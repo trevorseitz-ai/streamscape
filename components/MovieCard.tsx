@@ -74,9 +74,9 @@ export function MovieCard({
 }: MovieCardProps) {
   const router = useRouter();
   const status = useWatchlistStatus();
-  const tmdbId = /^\d+$/.test(movie.id) ? Number(movie.id) : null;
   const isTV = isTvTarget();
   const tvPosterFocus = shouldUseTvDpadFocus() || isTV;
+  const tmdbId = /^\d+$/.test(String(movie.id)) ? Number(movie.id) : null;
   const [isFocused, setIsFocused] = useState(false);
   const { setTvContentHasFocus } = useTvSearchFocusBridge();
   const { setRef: setPosterNavRef, nativeTag: posterNavTag } = useTvNativeTag();
@@ -84,7 +84,7 @@ export function MovieCard({
 
   useEffect(() => {
     setPosterLoadFailed(false);
-  }, [movie.id, movie.poster_url]);
+  }, [movie?.id, movie?.poster_url]);
 
   useEffect(() => {
     onTvPosterNavTag?.(posterNavTag);
@@ -229,60 +229,60 @@ export function MovieCard({
 
   if (tvPosterFocus) {
     return (
-      <View style={[styles.card, isTV && styles.cardTv, cardWidthStyle]}>
-        <Pressable
-          ref={setPosterNavRef as never}
-          focusable={true}
-          {...tvFocusable()}
-          {...(hasTvAndroidNavProps
-            ? tvAndroidNavProps({
-                ...(tvClampFocusRight ? { nextFocusRightSelf: posterNavTag } : {}),
-                ...(tvNextFocusUp != null ? { nextFocusUp: tvNextFocusUp } : {}),
-                ...(tvNextFocusLeft != null ? { nextFocusLeft: tvNextFocusLeft } : {}),
-                ...(tvNextFocusDown != null ? { nextFocusDown: tvNextFocusDown } : {}),
-              })
-            : tvClampFocusRight
-              ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
-              : {})}
-          accessibilityRole="button"
-          onPress={handleCardPress}
-          onFocus={() => {
-            setIsFocused(true);
-            setTvContentHasFocus(true);
-            if (__DEV__) {
-              console.log(
-                `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
-              );
-            }
-          }}
-          onBlur={() => {
-            setIsFocused(false);
-            if (__DEV__) {
-              console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
-            }
-          }}
-          android_ripple={null}
-          style={[
-            styles.posterPressable,
-            tvPosterPressableBounds,
-            isFocused && styles.posterFocusedTv,
-          ]}
+      <Pressable
+        ref={setPosterNavRef as never}
+        focusable
+        {...tvFocusable()}
+        {...(hasTvAndroidNavProps
+          ? tvAndroidNavProps({
+              ...(tvClampFocusRight ? { nextFocusRightSelf: posterNavTag } : {}),
+              ...(tvNextFocusUp != null ? { nextFocusUp: tvNextFocusUp } : {}),
+              ...(tvNextFocusLeft != null ? { nextFocusLeft: tvNextFocusLeft } : {}),
+              ...(tvNextFocusDown != null ? { nextFocusDown: tvNextFocusDown } : {}),
+            })
+          : tvClampFocusRight
+            ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
+            : {})}
+        accessibilityRole="button"
+        onPress={handleCardPress}
+        onFocus={() => {
+          setIsFocused(true);
+          setTvContentHasFocus(true);
+          if (__DEV__) {
+            console.log(`[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`);
+          }
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          if (__DEV__) {
+            console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
+          }
+        }}
+        android_ripple={null}
+        style={[
+          styles.card,
+          isTV && styles.cardTv,
+          cardWidthStyle,
+          { position: 'relative', overflow: 'visible' },
+          styles.posterPressable,
+          isFocused && styles.posterFocusedTv,
+        ]}
+      >
+        <View
+          style={posterContainerStyle}
+          focusable={isTV && Platform.OS === 'android' ? false : undefined}
         >
-          <View style={posterContainerStyle}>{posterInner}</View>
-        </Pressable>
-        <Pressable
-          focusable={isTV ? false : undefined}
-          onPress={handleCardPress}
-          style={styles.titlePressableTv}
-        >
+          {posterInner}
+        </View>
+        <View style={styles.titleBlockTv} focusable={isTV && Platform.OS === 'android' ? false : undefined}>
           <Text style={titleStyle} numberOfLines={2}>
             {movie.title}
           </Text>
           {movie.release_year != null ? (
             <Text style={yearStyle}>{movie.release_year}</Text>
           ) : null}
-        </Pressable>
-      </View>
+        </View>
+      </Pressable>
     );
   }
 
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     maxWidth: 9999,
     overflow: 'visible',
   },
-  titlePressableTv: {
+  titleBlockTv: {
     marginTop: 8,
   },
   /** Idle: same border width as focused so scale/focus do not reflow the grid. */

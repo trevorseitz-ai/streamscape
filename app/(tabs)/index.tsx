@@ -168,17 +168,17 @@ export default function HomeScreen() {
 
   const trendingGap = isTV ? TRENDING_GAP_TV : TRENDING_GAP_PHONE;
 
-  /** Grid: 5–6 columns on TV; 3 on wide phones, 2 on narrow. */
+  /** TV: fixed 5 columns to match real layout & focus [R,C] math. Phone: 3 or 2. */
   const gridColumnCount = (() => {
-    if (!isTV) {
-      return width >= 430 ? 3 : 2;
+    if (isTV) {
+      return 5;
     }
-    const inner = width - horizontalPad * 2;
-    const w6 = (inner - trendingGap * 5) / 6;
-    return w6 >= 100 ? 6 : 5;
+    return width >= 430 ? 3 : 2;
   })();
-  /** TV: only two grid rows of posters to match fixed “floor” focus bounds. */
-  const maxTrendingGridCells = isTV ? 2 * gridColumnCount : restTrending.length;
+  /** TV: two grid rows of posters to match hard-bounded “floor” focus & right-edge clamp. */
+  const maxTrendingGridCells = isTV
+    ? 2 * gridColumnCount
+    : restTrending.length;
   const trendingGridMovies = isTV
     ? restTrending.slice(0, maxTrendingGridCells)
     : restTrending;
@@ -544,7 +544,13 @@ export default function HomeScreen() {
             <View style={styles.bottomHalf} />
           )
         ) : restTrending.length > 0 ? (
-          <View style={[styles.bottomHalf, isTV && styles.bottomHalfTv]} {...tvNf}>
+          <View
+            style={[
+              styles.bottomHalf,
+              isTV && styles.bottomHalfTv,
+            ]}
+            {...tvNf}
+          >
             {isTV ? (
               <View {...tvNf}>
                 <Text
@@ -569,14 +575,17 @@ export default function HomeScreen() {
               {...tvNf}
             >
               {trendingGridMovies.map((movie, idx) => {
+                const rowIndex = Math.floor(idx / gridColumnCount);
+                const colIndex = idx % gridColumnCount;
+                const isTopRow = rowIndex === 0;
                 const isRightEdge =
                   isTV &&
-                  ((idx + 1) % gridColumnCount === 0 || idx === trendingGridCount - 1);
+                  (colIndex === gridColumnCount - 1 || idx === trendingGridCount - 1);
+                /** First cell only — native tag for Hero `nextFocusDown` / `nextFocusRight`. */
                 const isFirstGridPoster = idx === 0;
-                const isLeftCol = idx % gridColumnCount === 0;
+                const isLeftCol = colIndex === 0;
                 const isBottomRow =
-                  trendingGridCount > 0 &&
-                  Math.floor(idx / gridColumnCount) === numTrendingGridRows - 1;
+                  trendingGridCount > 0 && rowIndex === numTrendingGridRows - 1;
                 return (
                   <View
                     key={movie.id}
@@ -593,7 +602,7 @@ export default function HomeScreen() {
                           : undefined
                       }
                       tvNextFocusUp={
-                        isFirstGridPoster && isTV && Platform.OS === 'android'
+                        isTopRow && isTV && Platform.OS === 'android'
                           ? heroMainEntryTag
                           : null
                       }
