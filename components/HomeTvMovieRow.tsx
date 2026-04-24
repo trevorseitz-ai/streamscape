@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,10 @@ const GAP = 20;
 const ROW_CHUNK = 10;
 const FOCUS_VERTICAL_PAD = 20;
 
+/** TV focus ring — Electric Cyan (art.md) */
+const ELECTRIC_CYAN = '#00F5FF';
+const TV_FOCUS_BORDER_WIDTH = 3;
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -46,7 +50,14 @@ function HomeTvPosterCell({
 }: PosterCellProps) {
   const router = useRouter();
   const [isFocused, setIsFocused] = useState(false);
+  const [posterLoadFailed, setPosterLoadFailed] = useState(false);
   const { setTvContentHasFocus } = useTvSearchFocusBridge();
+
+  useEffect(() => {
+    setPosterLoadFailed(false);
+  }, [movie.id, movie.poster_url]);
+
+  const showPlaceholder = !movie.poster_url || posterLoadFailed;
 
   return (
     <View
@@ -59,34 +70,41 @@ function HomeTvPosterCell({
         onFocus={() => {
           setIsFocused(true);
           setTvContentHasFocus(true);
+          if (__DEV__) {
+            console.log(
+              `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
+            );
+          }
         }}
-        onBlur={() => setIsFocused(false)}
+        onBlur={() => {
+          setIsFocused(false);
+          if (__DEV__) {
+            console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
+          }
+        }}
         onPress={() => {
           onMoviePress?.(movie);
           router.push(`/movie/${movie.id}`);
         }}
+        android_ripple={null}
         style={[
-          {
-            width: posterWidth,
-            height: posterHeight,
-            overflow: 'visible' as const,
-          },
-          isFocused && {
-            borderWidth: 3,
-            borderColor: '#ffffff',
-            transform: [{ scale: 1.05 }],
-          },
+          styles.posterFrame,
+          { width: posterWidth, height: posterHeight },
+          isFocused && styles.posterFrameFocused,
         ]}
       >
-        {movie.poster_url ? (
+        {!showPlaceholder ? (
           <Image
-            source={{ uri: movie.poster_url }}
-            style={{ width: '100%', height: '100%' }}
+            source={{ uri: movie.poster_url as string }}
+            style={styles.posterImageFill}
             resizeMode="cover"
+            onError={() => setPosterLoadFailed(true)}
           />
         ) : (
-          <View style={[styles.posterPlaceholder, { width: '100%', height: '100%' }]}>
-            <Text style={styles.placeholderMark}>?</Text>
+          <View style={[styles.posterPlaceholder, styles.posterImageFill]}>
+            <Text style={styles.placeholderTitle} numberOfLines={3}>
+              {movie.title}
+            </Text>
           </View>
         )}
       </Pressable>
@@ -220,8 +238,23 @@ const styles = StyleSheet.create({
   rowFlatList: {
     width: '100%',
     overflow: 'visible',
-    // TEMPORARY: diagnostic — FlatList viewport vs rowBlock
-    backgroundColor: 'rgba(255, 0, 0, 0.3)',
+  },
+  posterFrame: {
+    backgroundColor: 'transparent',
+    overflow: 'visible',
+    borderRadius: 8,
+    borderWidth: TV_FOCUS_BORDER_WIDTH,
+    borderColor: 'transparent',
+  },
+  posterFrameFocused: {
+    borderColor: ELECTRIC_CYAN,
+    transform: [{ scale: 1.05 }],
+    zIndex: 2,
+    elevation: 10,
+  },
+  posterImageFill: {
+    width: '100%',
+    height: '100%',
   },
   rowListContent: {
     alignItems: 'flex-start',
@@ -231,13 +264,16 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   posterPlaceholder: {
-    backgroundColor: '#2d2d2d',
+    backgroundColor: '#080C10',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
   },
-  placeholderMark: {
-    fontSize: 32,
-    color: '#6b7280',
+  placeholderTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#e5e7eb',
+    textAlign: 'center',
   },
   title: {
     marginTop: 8,

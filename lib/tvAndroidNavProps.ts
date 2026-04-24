@@ -10,6 +10,10 @@ export function tvAndroidNavProps(args: {
   nextFocusRight?: number | null;
   /** Explicit left target (e.g. sidebar search tag from search field). */
   nextFocusLeft?: number | null;
+  /** Explicit down target (e.g. first poster below hero). */
+  nextFocusDown?: number | null;
+  /** Explicit up target (e.g. hero button above first row). */
+  nextFocusUp?: number | null;
   hasTVPreferredFocus?: boolean;
 }): Record<string, unknown> {
   if (Platform.OS !== 'android') {
@@ -25,6 +29,12 @@ export function tvAndroidNavProps(args: {
     out.nextFocusRight = args.nextFocusRight;
   } else if (args.nextFocusRightSelf != null) {
     out.nextFocusRight = args.nextFocusRightSelf;
+  }
+  if (args.nextFocusDown != null) {
+    out.nextFocusDown = args.nextFocusDown;
+  }
+  if (args.nextFocusUp != null) {
+    out.nextFocusUp = args.nextFocusUp;
   }
   if (args.hasTVPreferredFocus) {
     out.hasTVPreferredFocus = true;

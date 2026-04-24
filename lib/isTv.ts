@@ -3,8 +3,12 @@ import { Platform } from 'react-native';
 
 /**
  * Android TV / Apple TV at runtime, or TV-targeted native build (extra.isTV from app.config).
+ *
+ * **Web (including production in the browser) must never be treated as TV** — not via
+ * `Platform.isTV`, not via `expoConfig.extra.isTV` from env, and not via simulated UA.
  */
 export function isTvTarget(): boolean {
+  if (Platform.OS === 'web') return false;
   if (Platform.isTV) return true;
   const extra = Constants.expoConfig?.extra as { isTV?: boolean } | undefined;
   return extra?.isTV === true;

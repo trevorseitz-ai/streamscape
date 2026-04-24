@@ -108,6 +108,7 @@ function SegmentLine({
 }) {
   return (
     <View
+      focusable={false}
       style={[
         {
           width: lineW,
@@ -123,6 +124,7 @@ function SegmentLine({
 }
 
 type TabItemProps = {
+  slotName: (typeof TV_SIDEBAR_SLOTS)[number];
   label: string;
   iconName: keyof typeof Ionicons.glyphMap;
   iconSize: number;
@@ -137,11 +139,12 @@ type TabItemProps = {
   onLongPress: () => void;
   hasTVPreferredFocus?: boolean;
   nextFocusRight?: number | null;
-  onSearchRailNativeTag?: (tag: number | null) => void;
+  onRegisterSlotNavTag?: (slot: (typeof TV_SIDEBAR_SLOTS)[number], tag: number | null) => void;
   onSidebarItemFocusIn?: () => void;
 };
 
 function TvSidebarTabItem({
+  slotName,
   label,
   iconName,
   iconSize,
@@ -156,7 +159,7 @@ function TvSidebarTabItem({
   onLongPress,
   hasTVPreferredFocus,
   nextFocusRight,
-  onSearchRailNativeTag,
+  onRegisterSlotNavTag,
   onSidebarItemFocusIn,
 }: TabItemProps) {
   const [dpadFocused, setDpadFocused] = useState(false);
@@ -168,10 +171,10 @@ function TvSidebarTabItem({
   const { setRef, nativeTag } = useTvNativeTag();
 
   useEffect(() => {
-    if (!onSearchRailNativeTag) return;
-    onSearchRailNativeTag(nativeTag);
-    return () => onSearchRailNativeTag(null);
-  }, [nativeTag, onSearchRailNativeTag]);
+    if (!onRegisterSlotNavTag) return;
+    onRegisterSlotNavTag(slotName, nativeTag);
+    return () => onRegisterSlotNavTag(slotName, null);
+  }, [slotName, nativeTag, onRegisterSlotNavTag]);
 
   return (
     <PlatformPressable
@@ -204,20 +207,22 @@ function TvSidebarTabItem({
         height={lineH}
         marginV={lineMarginV}
       />
-      <Text
-        style={[
-          styles.label,
-          {
-            color,
-            fontSize: labelFontSize,
-            lineHeight: labelLineHeight,
-            maxWidth: labelMaxWidth,
-          },
-        ]}
-        numberOfLines={2}
-      >
-        {label}
-      </Text>
+      <View focusable={false} collapsable={false}>
+        <Text
+          style={[
+            styles.label,
+            {
+              color,
+              fontSize: labelFontSize,
+              lineHeight: labelLineHeight,
+              maxWidth: labelMaxWidth,
+            },
+          ]}
+          numberOfLines={2}
+        >
+          {label}
+        </Text>
+      </View>
     </PlatformPressable>
   );
 }
@@ -230,7 +235,7 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
   const { width: windowWidth } = useWindowDimensions();
   const {
     searchFieldNativeTag,
-    setSearchSidebarNativeTag,
+    registerSidebarSlotNavTag,
     mainContentEntryNativeTag,
     setTvContentHasFocus,
   } = useTvSearchFocusBridge();
@@ -247,12 +252,6 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
   const labelMaxW = Math.max(48, TV_SIDEBAR_WIDTH - padH * 2);
   const missingMinH = Math.max(40, Math.round(56 * tvScale));
 
-  const activeRouteName = state.routes[state.index]?.name;
-  const focusBridgeRight =
-    activeRouteName === 'search' && searchFieldNativeTag != null
-      ? searchFieldNativeTag
-      : mainContentEntryNativeTag;
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -267,6 +266,7 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
 
   return (
     <View
+      focusable={false}
       collapsable={Platform.OS === 'android' ? false : undefined}
       style={[
         styles.sidebar,
@@ -280,7 +280,13 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
       {TV_SIDEBAR_SLOTS.map((slotName) => {
         const route = state.routes.find((r) => r.name === slotName);
         if (!route) {
-          return <View key={slotName} style={{ width: '100%', minHeight: missingMinH }} />;
+          return (
+            <View
+              key={slotName}
+              focusable={false}
+              style={{ width: '100%', minHeight: missingMinH }}
+            />
+          );
         }
         const index = state.routes.findIndex((r) => r.key === route.key);
         const selected = state.index === index;
@@ -333,14 +339,23 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
           });
         };
 
-        const homeOrSearchBridge =
-          (slotName === 'index' || slotName === 'search') && focusBridgeRight != null
-            ? focusBridgeRight
-            : undefined;
+        /**
+         * Every tab (except account) should jump to main content; Search uses the search
+         * field tag. Home/others use `mainContentEntryNativeTag` (Home = hero `View Details`).
+         */
+        const mainRightBridge: number | undefined =
+          slotName === 'search' && searchFieldNativeTag != null
+            ? searchFieldNativeTag
+            : mainContentEntryNativeTag != null
+              ? mainContentEntryNativeTag
+              : undefined;
+        const nextFocusRightTarget =
+          slotName === 'account' ? undefined : mainRightBridge;
 
         return (
           <TvSidebarTabItem
             key={route.key}
+            slotName={slotName}
             label={label}
             iconName={iconName}
             iconSize={iconSize}
@@ -354,10 +369,8 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
             onPress={onPress}
             onLongPress={onLongPress}
             hasTVPreferredFocus={slotName === 'index'}
-            nextFocusRight={homeOrSearchBridge}
-            onSearchRailNativeTag={
-              slotName === 'search' ? setSearchSidebarNativeTag : undefined
-            }
+            nextFocusRight={nextFocusRightTarget}
+            onRegisterSlotNavTag={registerSidebarSlotNavTag}
             onSidebarItemFocusIn={() => setTvContentHasFocus(false)}
           />
         );

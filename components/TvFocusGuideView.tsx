@@ -28,7 +28,8 @@ export function TvFocusGuideView({ children, style, destinations: _destinations 
   return (
     <View
       collapsable={false}
-      focusable={Platform.OS === 'android'}
+      // Must NOT take focus on Android TV — only explicit Pressables in the child tree should.
+      focusable={false}
       style={[styles.guide, style]}
     >
       {children}

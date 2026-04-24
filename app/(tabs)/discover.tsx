@@ -18,6 +18,7 @@ import {
   Image,
   useWindowDimensions,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
@@ -32,6 +33,8 @@ import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
 import { isTvTarget } from '../../lib/isTv';
 import { tvFocusable } from '../../lib/tvFocus';
+import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
+import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
 import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
@@ -72,7 +75,8 @@ const DISCOVER_TV_CONTENT_BUFFER = 20;
 const DISCOVER_TV_RIGHT_MARGIN = 20;
 const DISCOVER_TV_GAP = 20;
 const DISCOVER_TV_LIST_VERTICAL_PAD = 20;
-const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 200;
+/** TV: small bottom pad so the focus “floor” isn’t a huge empty scroll region. */
+const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 32;
 const YEAR_JUMP_DISTANCE = 350;
 const YEAR_CHIP_SNAP_INTERVAL = 70;
 
@@ -181,6 +185,9 @@ type DiscoverTvHorizontalRowProps = {
   /** Inner width for five-across math (after shell padding); ≤0 uses window fallback. */
   usableWidth: number;
   renderMovieFooter?: (movie: DiscoverResult) => ReactNode;
+  isLastVerticalListRow?: boolean;
+  discoverSidebarLeftTag?: number | null;
+  mainContentEntryNavTag?: number | null;
 };
 
 function DiscoverTvPosterCell({
@@ -189,50 +196,92 @@ function DiscoverTvPosterCell({
   posterHeight,
   onPress,
   footer,
+  colIndex,
+  isLastVerticalRow,
+  discoverSidebarLeftTag,
+  mainContentEntryNavTag,
 }: {
   movie: DiscoverResult;
   posterWidth: number;
   posterHeight: number;
   onPress: () => void;
   footer: ReactNode | null;
+  colIndex: number;
+  isLastVerticalRow: boolean;
+  discoverSidebarLeftTag: number | null;
+  mainContentEntryNavTag: number | null;
 }) {
   const [isFocused, setIsFocused] = useState(false);
+  const [posterLoadFailed, setPosterLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setPosterLoadFailed(false);
+  }, [movie.id, movie.poster_url]);
+
+  const showPlaceholder = !movie.poster_url || posterLoadFailed;
+  const useNav = Platform.OS === 'android';
 
   return (
-    <View style={{ width: posterWidth, flexShrink: 0 }} collapsable={false}>
+    <View
+      style={[
+        discoverTvPosterStyles.posterCellWrap,
+        { width: posterWidth, flexShrink: 0 },
+      ]}
+      collapsable={false}
+    >
       <Pressable
         {...tvFocusable()}
         focusable={true}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
+        {...(useNav
+          ? tvAndroidNavProps({
+              ...(colIndex === 0 && discoverSidebarLeftTag != null
+                ? { nextFocusLeft: discoverSidebarLeftTag }
+                : {}),
+              ...(isLastVerticalRow && mainContentEntryNavTag != null
+                ? { nextFocusDown: mainContentEntryNavTag }
+                : {}),
+            })
+          : {})}
+        onFocus={() => {
+          setIsFocused(true);
+          if (__DEV__) {
+            console.log(
+              `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
+            );
+          }
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          if (__DEV__) {
+            console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
+          }
+        }}
         onPress={onPress}
+        android_ripple={null}
         style={[
-          {
-            width: posterWidth,
-            height: posterHeight,
-            overflow: 'visible' as const,
-          },
-          isFocused && {
-            borderWidth: 3,
-            borderColor: '#ffffff',
-            transform: [{ scale: 1.05 }],
-          },
+          discoverTvPosterStyles.posterPressable,
+          { width: posterWidth, height: posterHeight },
+          isFocused && discoverTvPosterStyles.posterPressableFocused,
         ]}
       >
-        {movie.poster_url ? (
+        {!showPlaceholder ? (
           <Image
-            source={{ uri: movie.poster_url }}
-            style={{ width: '100%', height: '100%' }}
+            source={{ uri: movie.poster_url as string }}
+            style={discoverTvPosterStyles.posterImageFill}
             resizeMode="cover"
+            onError={() => setPosterLoadFailed(true)}
           />
         ) : (
           <View
+            focusable={false}
             style={[
               discoverTvPosterStyles.placeholder,
-              { width: '100%', height: '100%' },
+              discoverTvPosterStyles.posterImageFill,
             ]}
           >
-            <Text style={discoverTvPosterStyles.placeholderMark}>?</Text>
+            <Text style={discoverTvPosterStyles.placeholderTitle} numberOfLines={3}>
+              {movie.title}
+            </Text>
           </View>
         )}
       </Pressable>
@@ -246,6 +295,9 @@ function DiscoverTvHorizontalMovieRow({
   router,
   usableWidth,
   renderMovieFooter,
+  isLastVerticalListRow = false,
+  discoverSidebarLeftTag = null,
+  mainContentEntryNavTag = null,
 }: DiscoverTvHorizontalRowProps) {
   const { width } = useWindowDimensions();
   const { posterWidth, posterHeight } = useMemo(() => {
@@ -273,13 +325,17 @@ function DiscoverTvHorizontalMovieRow({
           paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
           gap: DISCOVER_TV_GAP,
         }}
-        renderItem={({ item }) => (
+        renderItem={({ item, index: colIndex }) => (
           <DiscoverTvPosterCell
             movie={item}
             posterWidth={posterWidth}
             posterHeight={posterHeight}
             onPress={() => router.push(`/movie/${item.id}`)}
             footer={renderMovieFooter?.(item) ?? null}
+            colIndex={colIndex}
+            isLastVerticalRow={isLastVerticalListRow}
+            discoverSidebarLeftTag={discoverSidebarLeftTag}
+            mainContentEntryNavTag={mainContentEntryNavTag}
           />
         )}
       />
@@ -292,7 +348,7 @@ const discoverTvRowStyles = StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
     alignSelf: 'stretch',
-    marginBottom: 40,
+    marginBottom: 12,
     overflow: 'visible',
   },
   rowFlatList: {
@@ -302,14 +358,37 @@ const discoverTvRowStyles = StyleSheet.create({
 });
 
 const discoverTvPosterStyles = StyleSheet.create({
+  posterCellWrap: {
+    overflow: 'visible',
+  },
+  posterPressable: {
+    backgroundColor: 'transparent',
+    overflow: 'visible',
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  posterPressableFocused: {
+    borderColor: '#00F5FF',
+    transform: [{ scale: 1.05 }],
+    zIndex: 2,
+    elevation: 10,
+  },
+  posterImageFill: {
+    width: '100%',
+    height: '100%',
+  },
   placeholder: {
-    backgroundColor: '#2d2d2d',
+    backgroundColor: '#080C10',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
   },
-  placeholderMark: {
-    fontSize: 28,
-    color: '#6b7280',
+  placeholderTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#e5e7eb',
+    textAlign: 'center',
   },
 });
 
@@ -338,6 +417,9 @@ export default function DiscoverScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const { isLandscape } = useBreakpoint();
   const isTV = isTvTarget();
+  const { sidebarSlotNativeTags, mainContentEntryNativeTag } = useTvSearchFocusBridge();
+  const discoverSidebarLeftTag =
+    isTV && Platform.OS === 'android' ? (sidebarSlotNativeTags['discover'] ?? null) : null;
   /** TV: shell `discoverTvContentWrap` supplies 20 / 20 horizontal padding — no extra horizontal inset here. */
   const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
   const [tvDiscoverShellW, setTvDiscoverShellW] = useState(0);
@@ -638,8 +720,20 @@ export default function DiscoverScreen() {
       }
     }
 
+    if (isTV) {
+      const rowsOnly: ListItem[] = [];
+      for (const it of items) {
+        if (it.type === 'row') {
+          rowsOnly.push(it);
+          if (rowsOnly.length >= 2) {
+            break;
+          }
+        }
+      }
+      return rowsOnly;
+    }
     return items;
-  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV]);
 
   // Auth guard: blackout when not logged in (after all hooks)
   if (!session) {
@@ -826,11 +920,11 @@ export default function DiscoverScreen() {
           ListHeaderComponent={
             phase1Movies.length > 0 ? (
               isTV ? (
-                <Text
-                  style={[styles.sectionTitle, { fontSize: tvTitleFontSize(18) }]}
-                >
-                  {sectionLabel}
-                </Text>
+                <View focusable={false} collapsable={false}>
+                  <Text style={[styles.sectionTitle, { fontSize: tvTitleFontSize(18) }]}>
+                    {sectionLabel}
+                  </Text>
+                </View>
               ) : (
                 <Text style={styles.sectionTitle}>{sectionLabel}</Text>
               )
@@ -849,7 +943,7 @@ export default function DiscoverScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index: rowIndex }) => {
             if (item.type === 'divider') {
               return (
                 <View style={styles.phaseDivider}>
@@ -881,6 +975,9 @@ export default function DiscoverScreen() {
                   router={router}
                   usableWidth={tvRowUsableWidth}
                   renderMovieFooter={renderDiscoverFooter}
+                  isLastVerticalListRow={rowIndex === listData.length - 1}
+                  discoverSidebarLeftTag={discoverSidebarLeftTag}
+                  mainContentEntryNavTag={mainContentEntryNativeTag}
                 />
               );
             }
@@ -890,6 +987,7 @@ export default function DiscoverScreen() {
                 movies={item.movies}
                 phoneLayout="horizontal"
                 wrapWithHorizontalInset={false}
+                tvSidebarLeftNavTag={discoverSidebarLeftTag}
                 renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
               />
             );

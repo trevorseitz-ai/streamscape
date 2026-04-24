@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,10 +31,30 @@ interface MovieCardProps {
   onPress?: () => void;
   /** TV: clamp D-pad focus on the right edge of the grid (prevents escaping the screen). */
   tvClampFocusRight?: boolean;
+  /** TV Android: poster `Pressable` native tag for parent focus bridges (e.g. hero `nextFocusDown`). */
+  onTvPosterNavTag?: (tag: number | null) => void;
+  /**
+   * TV Android: `nextFocusUp` for this poster (e.g. first cell → hero “View Details”).
+   * Applied with `tvAndroidNavProps`; omit on non-Android.
+   */
+  tvNextFocusUp?: number | null;
+  /**
+   * TV Android: go left to the active sidebar slot (e.g. first column of a grid/row).
+   * Use `nextFocusLeft` in `tvAndroidNavProps`.
+   */
+  tvNextFocusLeft?: number | null;
+  /**
+   * TV Android: bottom row / floor — e.g. loop `nextFocusDown` back to the hero’s entry tag.
+   */
+  tvNextFocusDown?: number | null;
   /** When set (e.g. Discover grid), fixes poster size to an exact pixel layout (2:3 via height). */
   posterWidth?: number;
   posterHeight?: number;
 }
+
+/** ReelDive TV: Electric Cyan (art.md) */
+const ELECTRIC_CYAN = '#00F5FF';
+const TV_FOCUS_BORDER_WIDTH = 3;
 
 function triggerHaptic() {
   if (Platform.OS === 'web') return;
@@ -45,6 +65,10 @@ export function MovieCard({
   movie,
   onPress,
   tvClampFocusRight = false,
+  onTvPosterNavTag,
+  tvNextFocusUp,
+  tvNextFocusLeft,
+  tvNextFocusDown,
   posterWidth: fixedPosterWidth,
   posterHeight: fixedPosterHeight,
 }: MovieCardProps) {
@@ -56,6 +80,21 @@ export function MovieCard({
   const [isFocused, setIsFocused] = useState(false);
   const { setTvContentHasFocus } = useTvSearchFocusBridge();
   const { setRef: setPosterNavRef, nativeTag: posterNavTag } = useTvNativeTag();
+  const [posterLoadFailed, setPosterLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setPosterLoadFailed(false);
+  }, [movie.id, movie.poster_url]);
+
+  useEffect(() => {
+    onTvPosterNavTag?.(posterNavTag);
+  }, [onTvPosterNavTag, posterNavTag]);
+
+  useEffect(() => {
+    return () => {
+      onTvPosterNavTag?.(null);
+    };
+  }, [onTvPosterNavTag]);
 
   const handleCardPress = () => {
     onPress?.();
@@ -117,21 +156,26 @@ export function MovieCard({
     ? { width: fixedPosterWidth, maxWidth: fixedPosterWidth }
     : null;
 
+  const showPosterPlaceholder = !movie.poster_url || posterLoadFailed;
+
   const posterInner = (
     <>
-      {movie.poster_url ? (
+      {!showPosterPlaceholder ? (
         /* Crop to 2:3 box; cover avoids stretch/squish with TV fixed poster bounds. */
         <Image
-          source={{ uri: movie.poster_url }}
+          source={{ uri: movie.poster_url as string }}
           style={styles.poster}
           resizeMode="cover"
+          onError={() => setPosterLoadFailed(true)}
         />
       ) : (
         <View style={styles.posterPlaceholder}>
-          <Text style={styles.placeholderText}>?</Text>
+          <Text style={styles.placeholderTitle} numberOfLines={3}>
+            {movie.title}
+          </Text>
         </View>
       )}
-      {hasSession && tmdbId != null && (
+      {hasSession && tmdbId != null && !isTV && (
         <>
           <Pressable
             {...tvFocusable()}
@@ -176,6 +220,13 @@ export function MovieCard({
   ];
   const yearStyle = [styles.year, isTV && { fontSize: tvBodyFontSize(12) }];
 
+  const hasTvAndroidNavProps =
+    Platform.OS === 'android' &&
+    (tvClampFocusRight ||
+      tvNextFocusUp != null ||
+      tvNextFocusLeft != null ||
+      tvNextFocusDown != null);
+
   if (tvPosterFocus) {
     return (
       <View style={[styles.card, isTV && styles.cardTv, cardWidthStyle]}>
@@ -183,26 +234,47 @@ export function MovieCard({
           ref={setPosterNavRef as never}
           focusable={true}
           {...tvFocusable()}
-          {...(tvClampFocusRight
-            ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
-            : {})}
+          {...(hasTvAndroidNavProps
+            ? tvAndroidNavProps({
+                ...(tvClampFocusRight ? { nextFocusRightSelf: posterNavTag } : {}),
+                ...(tvNextFocusUp != null ? { nextFocusUp: tvNextFocusUp } : {}),
+                ...(tvNextFocusLeft != null ? { nextFocusLeft: tvNextFocusLeft } : {}),
+                ...(tvNextFocusDown != null ? { nextFocusDown: tvNextFocusDown } : {}),
+              })
+            : tvClampFocusRight
+              ? tvAndroidNavProps({ nextFocusRightSelf: posterNavTag })
+              : {})}
           accessibilityRole="button"
           onPress={handleCardPress}
           onFocus={() => {
             setIsFocused(true);
             setTvContentHasFocus(true);
+            if (__DEV__) {
+              console.log(
+                `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
+              );
+            }
           }}
-          onBlur={() => setIsFocused(false)}
-          style={({ pressed }) => [
+          onBlur={() => {
+            setIsFocused(false);
+            if (__DEV__) {
+              console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
+            }
+          }}
+          android_ripple={null}
+          style={[
             styles.posterPressable,
             tvPosterPressableBounds,
             isFocused && styles.posterFocusedTv,
-            pressed && styles.cardPressed,
           ]}
         >
           <View style={posterContainerStyle}>{posterInner}</View>
         </Pressable>
-        <Pressable onPress={handleCardPress} style={styles.titlePressableTv}>
+        <Pressable
+          focusable={isTV ? false : undefined}
+          onPress={handleCardPress}
+          style={styles.titlePressableTv}
+        >
           <Text style={titleStyle} numberOfLines={2}>
             {movie.title}
           </Text>
@@ -235,22 +307,26 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 180,
+    overflow: 'visible',
   },
   cardTv: {
     maxWidth: 9999,
+    overflow: 'visible',
   },
   titlePressableTv: {
     marginTop: 8,
   },
+  /** Idle: same border width as focused so scale/focus do not reflow the grid. */
   posterPressable: {
+    backgroundColor: 'transparent',
     borderRadius: 8,
     overflow: 'visible',
-    borderWidth: 2,
+    borderWidth: TV_FOCUS_BORDER_WIDTH,
     borderColor: 'transparent',
   },
   posterFocusedTv: {
-    borderColor: '#ffffff',
-    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    borderWidth: TV_FOCUS_BORDER_WIDTH,
     transform: [{ scale: 1.05 }],
     overflow: 'visible',
     zIndex: 2,
@@ -294,13 +370,16 @@ const styles = StyleSheet.create({
   posterPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#2d2d2d',
+    backgroundColor: '#080C10',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
   },
-  placeholderText: {
-    fontSize: 32,
-    color: '#6b7280',
+  placeholderTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#e5e7eb',
+    textAlign: 'center',
   },
   ratingBadge: {
     position: 'absolute',

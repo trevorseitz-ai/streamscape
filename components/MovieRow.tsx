@@ -5,6 +5,7 @@ import {
   FlatList,
   StyleSheet,
   useWindowDimensions,
+  Platform,
 } from 'react-native';
 import { MovieCard, type Movie } from './MovieCard';
 import { isTvTarget } from '../lib/isTv';
@@ -77,6 +78,11 @@ export type MoviePosterRowProps = {
    * Set false when the parent already applied the same inset (e.g. Discover vertical list).
    */
   includeListHorizontalPadding?: boolean;
+  /** TV Android: `nextFocusLeft` to the current tab’s sidebar slot (left edge of the row). */
+  tvSidebarLeftNavTag?: number | null;
+  /** When this horizontal band is the last in its section, D-pad down can loop to this target. */
+  tvIsLastSubRow?: boolean;
+  tvRowDownLoopNavTag?: number | null;
 };
 
 /**
@@ -87,6 +93,9 @@ export function MoviePosterRow({
   onMoviePress,
   renderMovieFooter,
   includeListHorizontalPadding = true,
+  tvSidebarLeftNavTag = null,
+  tvIsLastSubRow = false,
+  tvRowDownLoopNavTag = null,
 }: MoviePosterRowProps) {
   const { width } = useWindowDimensions();
   const isTV = isTvTarget();
@@ -99,9 +108,12 @@ export function MoviePosterRow({
   const listPadding =
     includeListHorizontalPadding !== false ? layout.sidePadding : 0;
 
+  const tvNf = isTV && Platform.OS === 'android' ? ({ focusable: false, collapsable: false } as const) : {};
+
   return (
-    <View style={styles.posterRowOuter}>
+    <View style={styles.posterRowOuter} {...tvNf}>
       <FlatList
+        {...(isTV && Platform.OS === 'android' ? { focusable: false } : {})}
         horizontal
         data={movies}
         keyExtractor={(m) => m.id}
@@ -119,14 +131,26 @@ export function MoviePosterRow({
           const isRightEdge =
             isTV &&
             (index % 5 === 4 || index === movies.length - 1);
+          const isLeftCol = index % 5 === 0;
           return (
             <View
               style={{ width: layout.posterWidth, flexShrink: 0 }}
+              {...tvNf}
             >
               <MovieCard
                 movie={movie}
                 onPress={() => onMoviePress?.(movie)}
                 tvClampFocusRight={isRightEdge}
+                tvNextFocusLeft={
+                  isTV && Platform.OS === 'android' && isLeftCol
+                    ? tvSidebarLeftNavTag
+                    : null
+                }
+                tvNextFocusDown={
+                  isTV && Platform.OS === 'android' && tvIsLastSubRow
+                    ? tvRowDownLoopNavTag
+                    : null
+                }
                 posterWidth={layout.posterWidth}
                 posterHeight={layout.posterHeight}
               />
@@ -151,6 +175,9 @@ export type MovieRowProps = {
    * Set false when the parent already applied the same inset (e.g. Discover results FlatList).
    */
   wrapWithHorizontalInset?: boolean;
+  /** TV Android: passed to horizontal `MoviePosterRow`s (left rail + optional down loop). */
+  tvSidebarLeftNavTag?: number | null;
+  tvRowDownLoopNavTag?: number | null;
 };
 
 /**
@@ -164,16 +191,20 @@ export function MovieRow({
   renderMovieFooter,
   phoneLayout = 'grid',
   wrapWithHorizontalInset = true,
+  tvSidebarLeftNavTag = null,
+  tvRowDownLoopNavTag = null,
 }: MovieRowProps) {
   const { width } = useWindowDimensions();
   const isTV = isTvTarget();
 
   const listPad = wrapWithHorizontalInset !== false;
 
+  const sectionTvNf = isTV && Platform.OS === 'android' ? { focusable: false, collapsable: false } as const : {};
+
   if (isTV) {
     const chunks = chunkArray(movies, MOVIES_PER_HORIZONTAL_ROW);
     return (
-      <View style={styles.sectionTvOuter}>
+      <View style={styles.sectionTvOuter} {...sectionTvNf}>
         {title ? (
           <View
             style={
@@ -181,6 +212,7 @@ export function MovieRow({
                 ? styles.sectionTitleTvInset
                 : styles.sectionTitleTvFlush
             }
+            {...sectionTvNf}
           >
             <Text style={[styles.sectionTitle, { fontSize: tvTitleFontSize(20) }]}>
               {title}
@@ -194,6 +226,9 @@ export function MovieRow({
             onMoviePress={onMoviePress}
             renderMovieFooter={renderMovieFooter}
             includeListHorizontalPadding={listPad}
+            tvSidebarLeftNavTag={tvSidebarLeftNavTag}
+            tvIsLastSubRow={i === chunks.length - 1}
+            tvRowDownLoopNavTag={tvRowDownLoopNavTag}
           />
         ))}
       </View>
@@ -204,9 +239,7 @@ export function MovieRow({
     const chunks = chunkArray(movies, MOVIES_PER_HORIZONTAL_ROW);
     return (
       <View style={styles.sectionPhone}>
-        {title ? (
-          <Text style={styles.sectionTitle}>{title}</Text>
-        ) : null}
+        {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
         {chunks.map((chunk, i) => (
           <MoviePosterRow
             key={`ph-row-${i}`}
@@ -214,6 +247,9 @@ export function MovieRow({
             onMoviePress={onMoviePress}
             renderMovieFooter={renderMovieFooter}
             includeListHorizontalPadding={listPad}
+            tvSidebarLeftNavTag={isTV ? tvSidebarLeftNavTag : null}
+            tvIsLastSubRow={isTV && i === chunks.length - 1}
+            tvRowDownLoopNavTag={isTV ? tvRowDownLoopNavTag : null}
           />
         ))}
       </View>
@@ -272,7 +308,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   posterRowOuter: {
-    marginBottom: 16,
+    marginBottom: 8,
     alignSelf: 'stretch',
   },
   posterRowFlatList: {
