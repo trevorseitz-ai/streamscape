@@ -32,18 +32,25 @@ import {
 } from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
-import { isTvTarget } from '../../lib/isTv';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvFocusable, tvPreferredFocusProps } from '../../lib/tvFocus';
 import { useMovie } from '../../lib/movie-context';
+import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
+import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+/** TV focus ring (matches `app/(tabs)/index.tsx` art). */
+const ELECTRIC_CYAN = '#00F5FF';
+
+type TvRowEntryRefSetter = ReturnType<typeof useTvNativeTag>['setRef'];
 
 interface Person {
   id: string;
@@ -398,6 +405,12 @@ export default function MovieDetailsScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
+  const [errorBackFocused, setErrorBackFocused] = useState(false);
+  const [floatingBackFocused, setFloatingBackFocused] = useState(false);
+  const [watchlistBtnFocused, setWatchlistBtnFocused] = useState(false);
+  const [similarBtnFocused, setSimilarBtnFocused] = useState(false);
+  const [trailerActionBtnFocused, setTrailerActionBtnFocused] = useState(false);
+  const [trailerCloseFocused, setTrailerCloseFocused] = useState(false);
   const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
     []
@@ -492,8 +505,25 @@ export default function MovieDetailsScreen() {
   } = useSearch();
   const { setTitle } = useMovie();
   const { isLandscape: breakpointLandscape, height: viewportHeight } = useBreakpoint();
+  const isTV = isTvTarget();
+  const tvNf =
+    isTV && Platform.OS === 'android'
+      ? ({ focusable: false, collapsable: false } as const)
+      : {};
+  const tvDpadFocus = shouldUseTvDpadFocus();
+  /** Android D-pad: row-1 = streams, row-2 = watchlist / trailer; separate vertical links. */
+  const { setRef: setStreamRowEntryRef, nativeTag: streamRowEntryTag } = useTvNativeTag();
+  const { setRef: setSecondaryActionRowEntryRef, nativeTag: secondaryActionRowEntryTag } =
+    useTvNativeTag();
+  /** Rightmost secondary action: `nextFocusRightSelf` for D-pad wall (same row, last button). */
+  const { setRef: setSecondaryRowLastWallRef, nativeTag: secondaryRowLastWallTag } =
+    useTvNativeTag();
+  const { setRef: setCastRowEntryRef, nativeTag: castRowEntryTag } = useTvNativeTag();
+  const { setRef: setCrewRowEntryRef, nativeTag: crewRowEntryTag } = useTvNativeTag();
+  const { setRef: setSimilarRowEntryRef, nativeTag: similarRowEntryTag } = useTvNativeTag();
+  const tvLadderAndroid = tvDpadFocus && Platform.OS === 'android';
   /** TV: always use landscape / wide layout even if the window reports portrait. */
-  const isLandscape = breakpointLandscape || isTvTarget();
+  const isLandscape = breakpointLandscape || isTV;
 
   const isTmdbId = /^\d+$/.test(id ?? '');
 
@@ -1084,7 +1114,7 @@ export default function MovieDetailsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.center} {...tvNf}>
         <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
@@ -1092,10 +1122,24 @@ export default function MovieDetailsScreen() {
 
   if (error || !movie) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error ?? 'Movie not found'}</Text>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+      <View style={styles.center} {...tvNf}>
+        <Text style={styles.errorText} {...tvNf}>
+          {error ?? 'Movie not found'}
+        </Text>
+        <Pressable
+          {...(isTV && Platform.OS === 'android' ? tvPreferredFocusProps() : tvFocusable())}
+          focusable={tvDpadFocus ? true : undefined}
+          onFocus={() => setErrorBackFocused(true)}
+          onBlur={() => setErrorBackFocused(false)}
+          style={[
+            styles.backButton,
+            errorBackFocused && styles.backButtonGoTvFocused,
+          ]}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText} {...tvNf}>
+            Go Back
+          </Text>
         </Pressable>
       </View>
     );
@@ -1114,6 +1158,55 @@ export default function MovieDetailsScreen() {
     : fromWatched;
   const shouldShowRecommendations =
     fromWatchedParam === 'true' || displayAvailability.length === 0;
+
+  const validStreamOptionsForTv = (streamingProviders ?? []).filter(
+    (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
+  );
+  const showsTrailerInActionRow =
+    !!trailerKey &&
+    !(shouldShowRecommendations && recommendations.length > 0) &&
+    fromWatchedParam !== 'true' &&
+    !(
+      shouldShowRecommendations &&
+      recommendations.length === 0 &&
+      fromWatchedParam !== 'true'
+    );
+
+  type DetailsTvPrimary =
+    | 'stream0'
+    | 'watchlist'
+    | 'similar'
+    | 'trailer'
+    | 'cast0'
+    | 'crew0'
+    | 'back'
+    | 'none';
+
+  const detailsTvPrimary: DetailsTvPrimary = (() => {
+    if (!isTV) {
+      if (validStreamOptionsForTv.length > 0) return 'stream0';
+      if (session) return 'watchlist';
+      if (shouldShowRecommendations && recommendations.length > 0) return 'similar';
+      if (fromWatchedParam === 'true') return 'back';
+      if (
+        shouldShowRecommendations &&
+        recommendations.length === 0 &&
+        fromWatchedParam !== 'true'
+      ) {
+        return 'back';
+      }
+      if (trailerKey) return 'trailer';
+      return 'back';
+    }
+    if (validStreamOptionsForTv.length > 0) return 'stream0';
+    if (session) return 'watchlist';
+    if (shouldShowRecommendations && recommendations.length > 0) return 'similar';
+    if (showsTrailerInActionRow) return 'trailer';
+    const actorCount = movie.cast.filter((p) => p.role_type === 'actor').length;
+    if (actorCount > 0) return 'cast0';
+    if (movie.cast.filter((p) => p.role_type !== 'actor').length > 0) return 'crew0';
+    return 'none';
+  })();
 
   function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
     return [...providers].sort((a, b) => {
@@ -1186,16 +1279,75 @@ export default function MovieDetailsScreen() {
   function renderDetailsContent() {
     if (movie == null) {
       return (
-        <View style={styles.center}>
+        <View style={styles.center} {...tvNf}>
           <ActivityIndicator size="large" color="#6366f1" />
         </View>
       );
     }
 
+    const validStreamOptionsNav = (streamingProviders ?? []).filter(
+      (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
+    );
+    const hasSimilarActionBtn = shouldShowRecommendations && recommendations.length > 0;
+    const hasSecondaryActionPressables =
+      !!session || hasSimilarActionBtn || showsTrailerInActionRow;
+    const downFromStreamLadder = tvLadderAndroid
+      ? (hasSecondaryActionPressables
+          ? secondaryActionRowEntryTag
+          : castRowEntryTag)
+      : null;
+    const downFromSecondaryLadder = tvLadderAndroid
+      ? (castRowEntryTag ?? crewRowEntryTag)
+      : null;
+    const upOnCastLadder = tvLadderAndroid
+      ? (secondaryActionRowEntryTag ?? streamRowEntryTag)
+      : null;
+    const downOnCastLadder = tvLadderAndroid
+      ? (crewRowEntryTag ?? similarRowEntryTag)
+      : null;
+    const upOnCrewLadder = tvLadderAndroid
+      ? (castRowEntryTag ?? secondaryActionRowEntryTag ?? streamRowEntryTag)
+      : null;
+    const downOnCrewLadder = tvLadderAndroid ? similarRowEntryTag : null;
+    const upOnSimilarLadder = tvLadderAndroid
+      ? (crewRowEntryTag ??
+        castRowEntryTag ??
+        secondaryActionRowEntryTag ??
+        streamRowEntryTag)
+      : null;
+    const buildLadder = (
+      up: number | null,
+      down: number | null,
+    ): Record<string, unknown> | undefined => {
+      if (!tvLadderAndroid) return undefined;
+      const o = tvAndroidNavProps({
+        ...(up != null ? { nextFocusUp: up } : {}),
+        ...(down != null ? { nextFocusDown: down } : {}),
+      });
+      return Object.keys(o).length > 0 ? o : undefined;
+    };
+    const castLadderNav = buildLadder(upOnCastLadder, downOnCastLadder);
+    const crewLadderNav = buildLadder(upOnCrewLadder, downOnCrewLadder);
+    const similarLadderNav = buildLadder(upOnSimilarLadder, null);
+    const secondaryActionRowNav = buildLadder(
+      streamRowEntryTag,
+      downFromSecondaryLadder,
+    );
+
+    const lastSecondaryIsWatchlist =
+      !!session && !hasSimilarActionBtn && !showsTrailerInActionRow;
+    const lastSecondaryIsSimilar = hasSimilarActionBtn;
+    const lastSecondaryIsTrailer = showsTrailerInActionRow && !hasSimilarActionBtn;
+
     return (
       <>
-        <View>
-          <Text style={[styles.title, isLandscape && styles.titleDesktop]}>{movie.title}</Text>
+        <View {...tvNf}>
+          <Text
+            style={[styles.title, isLandscape && styles.titleDesktop]}
+            {...tvNf}
+          >
+            {movie.title}
+          </Text>
           {(omdbRatingsLoading ||
             (omdbRatingsDisplay &&
               (omdbRatingsDisplay.rt_score || omdbRatingsDisplay.metascore))) ? (
@@ -1218,8 +1370,10 @@ export default function MovieDetailsScreen() {
                   style={styles.titleRatingChip}
                   accessibilityLabel={`Rotten Tomatoes ${omdbRatingsDisplay.rt_score}`}
                 >
-                  <Text style={styles.rtTomatoEmoji}>🍅</Text>
-                  <Text style={styles.titleRatingText}>
+                  <Text style={styles.rtTomatoEmoji} {...tvNf}>
+                    🍅
+                  </Text>
+                  <Text style={styles.titleRatingText} {...tvNf}>
                     {omdbRatingsDisplay.rt_score}
                   </Text>
                 </View>
@@ -1240,7 +1394,7 @@ export default function MovieDetailsScreen() {
                       },
                     ]}
                   />
-                  <Text style={styles.titleRatingText}>
+                  <Text style={styles.titleRatingText} {...tvNf}>
                     {omdbRatingsDisplay.metascore}
                   </Text>
                 </View>
@@ -1252,17 +1406,25 @@ export default function MovieDetailsScreen() {
             (movie.runtime != null && movie.runtime > 0)) ? (
             <View style={[styles.metaRow, isLandscape && styles.metaRowDesktop]}>
               {movie.release_year != null ? (
-                <Text style={[styles.year, isLandscape && styles.yearDesktop]}>
+                <Text
+                  style={[styles.year, isLandscape && styles.yearDesktop]}
+                  {...tvNf}
+                >
                   {movie.release_year}
                 </Text>
               ) : null}
               {movie.us_certification ? (
                 <View style={styles.ratingBadge}>
-                  <Text style={styles.ratingBadgeText}>{movie.us_certification}</Text>
+                  <Text style={styles.ratingBadgeText} {...tvNf}>
+                    {movie.us_certification}
+                  </Text>
                 </View>
               ) : null}
               {movie.runtime != null && movie.runtime > 0 ? (
-                <Text style={[styles.runtimeMeta, isLandscape && styles.runtimeMetaDesktop]}>
+                <Text
+                  style={[styles.runtimeMeta, isLandscape && styles.runtimeMetaDesktop]}
+                  {...tvNf}
+                >
                   {formatRuntimeMinutes(movie.runtime)}
                 </Text>
               ) : null}
@@ -1271,12 +1433,21 @@ export default function MovieDetailsScreen() {
         </View>
 
         {movie.synopsis ? (
-          <View style={[styles.overviewCompact, isLandscape && styles.overviewCompactDesktop]}>
-            <Text style={[styles.overviewText, isLandscape && styles.overviewTextDesktop]}>{movie.synopsis}</Text>
+          <View
+            style={[styles.overviewCompact, isLandscape && styles.overviewCompactDesktop]}
+            {...tvNf}
+          >
+            <Text
+              style={[styles.overviewText, isLandscape && styles.overviewTextDesktop]}
+              {...tvNf}
+            >
+              {movie.synopsis}
+            </Text>
           </View>
         ) : null}
 
         <View
+          {...tvNf}
           style={[
             styles.whereToWatchStreamSection,
             isLandscape && styles.whereToWatchStreamSectionDesktop,
@@ -1287,40 +1458,59 @@ export default function MovieDetailsScreen() {
               styles.whereToWatchHeader,
               isLandscape && styles.whereToWatchHeaderDesktop,
             ]}
+            {...tvNf}
           >
             Where to Watch
           </Text>
-          {(() => {
-            const validOptions = (streamingProviders ?? []).filter(
-              (opt) =>
-                typeof opt.link === 'string' && opt.link.trim() !== ''
-            );
-            if (validOptions.length === 0) {
-              return (
-                <Text style={styles.streamingTvEmptyNote}>
-                  No streaming options found in your region.
-                </Text>
-              );
-            }
-            return validOptions.map((opt, idx) => (
+          {validStreamOptionsNav.length === 0 ? (
+            <Text style={styles.streamingTvEmptyNote} {...tvNf}>
+              No streaming options found in your region.
+            </Text>
+          ) : (
+            validStreamOptionsNav.map((opt, idx) => (
               <StreamingButton
                 key={`${opt.serviceId}-${idx}`}
                 provider={opt}
                 onStreamPress={handleStreamingPress}
                 isLandscape={isLandscape}
+                isPreferredEntry={detailsTvPrimary === 'stream0' && idx === 0}
+                tvTextNf={tvNf}
+                focusableExplicit={tvDpadFocus}
+                setEntryRef={idx === 0 ? setStreamRowEntryRef : undefined}
+                tvNextFocusDown={downFromStreamLadder}
+                tvLadderNav={tvLadderAndroid}
+                tvClampRightEdge={idx === validStreamOptionsNav.length - 1}
               />
-            ));
-          })()}
+            ))
+          )}
         </View>
 
-        <View style={styles.actionRow}>
+        <View style={styles.actionRow} {...tvNf}>
           {session ? (
             <Pressable
-              style={[
+              ref={
+                ((node) => {
+                  if (session) setSecondaryActionRowEntryRef(node);
+                  if (lastSecondaryIsWatchlist) setSecondaryRowLastWallRef(node);
+                }) as never
+              }
+              {...(secondaryActionRowNav as object)}
+              {...(tvLadderAndroid && lastSecondaryIsWatchlist && secondaryRowLastWallTag != null
+                ? (tvAndroidNavProps({
+                    nextFocusRightSelf: secondaryRowLastWallTag,
+                  }) as object)
+                : {})}
+              {...(detailsTvPrimary === 'watchlist' ? tvPreferredFocusProps() : tvFocusable())}
+              focusable={tvDpadFocus ? true : undefined}
+              onFocus={() => setWatchlistBtnFocused(true)}
+              onBlur={() => setWatchlistBtnFocused(false)}
+              style={({ pressed }) => [
                 styles.actionButton,
                 isLandscape && styles.actionButtonDesktop,
                 inWatchlist && styles.actionButtonRemove,
                 watchlistLoading && styles.actionButtonDisabled,
+                watchlistBtnFocused && styles.actionButtonTvFocused,
+                pressed && styles.actionButtonPressed,
               ]}
               onPress={toggleWatchlist}
               disabled={watchlistLoading}
@@ -1349,6 +1539,7 @@ export default function MovieDetailsScreen() {
                   inWatchlist && styles.actionButtonTextRemove,
                 ]}
                 numberOfLines={1}
+                {...tvNf}
               >
                 Watchlist
               </Text>
@@ -1356,39 +1547,81 @@ export default function MovieDetailsScreen() {
           ) : null}
           {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
+              ref={
+                ((node) => {
+                  if (!session && hasSimilarActionBtn) {
+                    setSecondaryActionRowEntryRef(node);
+                  }
+                  if (lastSecondaryIsSimilar) setSecondaryRowLastWallRef(node);
+                }) as never
+              }
+              {...(secondaryActionRowNav as object)}
+              {...(tvLadderAndroid && lastSecondaryIsSimilar && secondaryRowLastWallTag != null
+                ? (tvAndroidNavProps({
+                    nextFocusRightSelf: secondaryRowLastWallTag,
+                  }) as object)
+                : {})}
+              {...(detailsTvPrimary === 'similar' ? tvPreferredFocusProps() : tvFocusable())}
+              focusable={tvDpadFocus ? true : undefined}
+              onFocus={() => setSimilarBtnFocused(true)}
+              onBlur={() => setSimilarBtnFocused(false)}
               style={({ pressed }) => [
                 styles.viewSimilarButton,
                 isLandscape && styles.viewSimilarButtonDesktop,
+                similarBtnFocused && styles.viewSimilarButtonTvFocused,
                 pressed && styles.viewSimilarButtonPressed,
               ]}
               onPress={scrollToRecommendations}
             >
-              <Text style={styles.viewSimilarButtonText} numberOfLines={1}>
+              <Text style={styles.viewSimilarButtonText} numberOfLines={1} {...tvNf}>
                 Discover More Like This
               </Text>
               <Ionicons name="chevron-down" size={20} color="#ffffff" />
             </Pressable>
           ) : fromWatchedParam === 'true' ? (
-            <View style={styles.watchedBadgeStatic}>
-              <Text style={styles.watchedBadgeStaticText}>✓ Watched</Text>
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Watched
+              </Text>
             </View>
           ) : shouldShowRecommendations &&
             recommendations.length === 0 &&
             fromWatchedParam !== 'true' ? (
-            <View style={styles.watchedBadgeStatic}>
-              <Text style={styles.watchedBadgeStaticText}>✓ Movie Info</Text>
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Movie Info
+              </Text>
             </View>
           ) : trailerKey ? (
             <Pressable
+              ref={
+                ((node) => {
+                  if (!session && !hasSimilarActionBtn && showsTrailerInActionRow) {
+                    setSecondaryActionRowEntryRef(node);
+                  }
+                  if (lastSecondaryIsTrailer) setSecondaryRowLastWallRef(node);
+                }) as never
+              }
+              {...(secondaryActionRowNav as object)}
+              {...(tvLadderAndroid && lastSecondaryIsTrailer && secondaryRowLastWallTag != null
+                ? (tvAndroidNavProps({
+                    nextFocusRightSelf: secondaryRowLastWallTag,
+                  }) as object)
+                : {})}
+              {...(detailsTvPrimary === 'trailer' ? tvPreferredFocusProps() : tvFocusable())}
+              focusable={tvDpadFocus ? true : undefined}
+              onFocus={() => setTrailerActionBtnFocused(true)}
+              onBlur={() => setTrailerActionBtnFocused(false)}
               style={({ pressed }) => [
                 styles.actionButton,
                 isLandscape && styles.actionButtonDesktop,
+                trailerActionBtnFocused && styles.actionButtonTvFocused,
                 pressed && styles.actionButtonPressed,
               ]}
               onPress={() => setTrailerModalVisible(true)}
             >
               <Ionicons name="play-circle" size={18} color="#ffffff" />
-              <Text style={styles.actionButtonText} numberOfLines={1}>
+              <Text style={styles.actionButtonText} numberOfLines={1} {...tvNf}>
                 Watch Trailer
               </Text>
             </Pressable>
@@ -1396,91 +1629,101 @@ export default function MovieDetailsScreen() {
         </View>
 
         {movie.cast.filter((p) => p.role_type === 'actor').length > 0 ? (
-          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
-            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Cast</Text>
+          <View
+            style={[styles.section, isLandscape && styles.sectionDesktop]}
+            {...tvNf}
+          >
+            <Text
+              style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}
+              {...tvNf}
+            >
+              Cast
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.castScroll}
+              {...tvNf}
             >
-              {movie.cast
-                .filter((p) => p.role_type === 'actor')
-                .map((person, idx) => (
-                  <Pressable
+              {(() => {
+                const castActors = movie.cast.filter((p) => p.role_type === 'actor');
+                return castActors.map((person, idx) => (
+                  <DetailsCastCard
                     key={`${person.id}-${idx}`}
+                    person={person}
+                    isLandscape={isLandscape}
+                    tvNf={tvNf}
+                    dpad={tvDpadFocus}
+                    isPreferredEntry={detailsTvPrimary === 'cast0' && idx === 0}
+                    setEntryRef={idx === 0 ? setCastRowEntryRef : undefined}
+                    ladderNav={castLadderNav}
+                    tvClampRightEdge={idx === castActors.length - 1}
+                    tvLadder={tvLadderAndroid}
                     onPress={() =>
                       router.push({
                         pathname: '/person/[id]',
                         params: { id: person.id },
                       })
                     }
-                    style={({ pressed }) => [
-                      styles.castCard,
-                      isLandscape && styles.castCardDesktop,
-                      { opacity: pressed ? 0.7 : 1 },
-                    ]}
-                  >
-                    {person.headshot_url ? (
-                      <Image
-                        source={{ uri: person.headshot_url }}
-                        style={[styles.castPhoto, isLandscape && styles.castPhotoDesktop]}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.castPhotoPlaceholder, isLandscape && styles.castPhotoPlaceholderDesktop]}>
-                        <Text style={styles.castInitial}>{person.name.charAt(0)}</Text>
-                      </View>
-                    )}
-                    <Text style={[styles.castName, isLandscape && styles.castNameDesktop]} numberOfLines={1}>
-                      {person.name}
-                    </Text>
-                    {person.character ? (
-                      <Text style={[styles.castCharacter, isLandscape && styles.castCharacterDesktop]} numberOfLines={1}>
-                        {person.character}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                ))}
+                  />
+                ));
+              })()}
             </ScrollView>
           </View>
         ) : null}
 
         {movie.filming_locations && movie.filming_locations.length > 0 ? (
-          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
-            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Filming Locations</Text>
-            <Text style={styles.filmingLocationsText}>
+          <View
+            style={[styles.section, isLandscape && styles.sectionDesktop]}
+            {...tvNf}
+          >
+            <Text
+              style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}
+              {...tvNf}
+            >
+              Filming Locations
+            </Text>
+            <Text style={styles.filmingLocationsText} {...tvNf}>
               {movie.filming_locations.join(', ')}
             </Text>
           </View>
         ) : null}
 
         {movie.cast.filter((p) => p.role_type !== 'actor').length > 0 ? (
-          <View style={[styles.section, isLandscape && styles.sectionDesktop]}>
-            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>Crew</Text>
-            <View style={styles.crewGrid}>
-              {movie.cast
-                .filter((p) => p.role_type !== 'actor')
-                .map((person, idx) => (
-                  <Pressable
+          <View
+            style={[styles.section, isLandscape && styles.sectionDesktop]}
+            {...tvNf}
+          >
+            <Text
+              style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}
+              {...tvNf}
+            >
+              Crew
+            </Text>
+            <View style={styles.crewGrid} {...tvNf}>
+              {(() => {
+                const crewPeople = movie.cast.filter((p) => p.role_type !== 'actor');
+                return crewPeople.map((person, idx) => (
+                  <DetailsCrewItem
                     key={`${person.id}-crew-${idx}`}
+                    person={person}
+                    isLandscape={isLandscape}
+                    tvNf={tvNf}
+                    dpad={tvDpadFocus}
+                    isPreferredEntry={detailsTvPrimary === 'crew0' && idx === 0}
+                    setEntryRef={idx === 0 ? setCrewRowEntryRef : undefined}
+                    ladderNav={crewLadderNav}
+                    tvClampRightEdge={idx === crewPeople.length - 1}
+                    tvLadder={tvLadderAndroid}
                     onPress={() =>
                       router.push({
                         pathname: '/person/[id]',
                         params: { id: person.id },
                       })
                     }
-                    style={({ pressed }) => [
-                      styles.crewItem,
-                      isLandscape && styles.crewItemDesktop,
-                      { opacity: pressed ? 0.7 : 1 },
-                    ]}
-                  >
-                    <Text style={[styles.crewRole, isLandscape && styles.crewRoleDesktop]}>
-                      {person.job ?? person.role_type}
-                    </Text>
-                    <Text style={[styles.crewName, isLandscape && styles.crewNameDesktop]}>{person.name}</Text>
-                  </Pressable>
-                ))}
+                  />
+                ));
+              })()}
             </View>
           </View>
         ) : null}
@@ -1495,8 +1738,12 @@ export default function MovieDetailsScreen() {
                 isLandscape &&
                 styles.recommendationsSectionTightTopDesktop,
             ]}
+            {...tvNf}
           >
-            <Text style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}>
+            <Text
+              style={[styles.sectionTitle, isLandscape && styles.sectionTitleDesktop]}
+              {...tvNf}
+            >
               You May Also Like
             </Text>
             <FlatList
@@ -1505,38 +1752,23 @@ export default function MovieDetailsScreen() {
               keyExtractor={(rec) => String(rec.id)}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.recommendationsScrollContent}
-              renderItem={({ item: rec }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.recommendationCard,
-                    pressed && styles.recommendationCardPressed,
-                  ]}
+              {...tvNf}
+              renderItem={({ item: rec, index }) => (
+                <DetailsRecommendationCard
+                  rec={rec}
+                  tvNf={tvNf}
+                  dpad={tvDpadFocus}
+                  setEntryRef={index === 0 ? setSimilarRowEntryRef : undefined}
+                  ladderNav={similarLadderNav}
+                  tvClampRightEdge={index === recommendations.length - 1}
+                  tvLadder={tvLadderAndroid}
                   onPress={() =>
                     router.push({
                       pathname: '/movie/[id]',
                       params: { id: String(rec.id) },
                     })
                   }
-                >
-                  {rec.poster_path ? (
-                    <Image
-                      source={{
-                        uri: `https://image.tmdb.org/t/p/w342${rec.poster_path}`,
-                      }}
-                      style={styles.recommendationPoster}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.recommendationPosterPlaceholder}>
-                      <Text style={styles.recommendationPosterInitial}>
-                        {rec.title.charAt(0)}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.recommendationTitle} numberOfLines={2}>
-                    {rec.title}
-                  </Text>
-                </Pressable>
+                />
               )}
             />
           </View>
@@ -1561,48 +1793,58 @@ export default function MovieDetailsScreen() {
       <SafeAreaView
         style={styles.safeAreaWrapper}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
+        {...tvNf}
       >
-        <Pressable
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.push('/');
-            }
-          }}
-          style={({ pressed }) => [
-            {
-              position: 'absolute',
-              top: 50,
-              left: 20,
-              zIndex: 999,
-              elevation: 10,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={24}
-            color="white"
-            style={{ marginLeft: -2 }}
-          />
-        </Pressable>
-        <View style={styles.wrapper}>
-          <SafeAreaView style={styles.safeHeader}>
+        {!isTV ? (
+          <Pressable
+            {...(detailsTvPrimary === 'back' ? tvPreferredFocusProps() : tvFocusable())}
+            focusable={tvDpadFocus ? true : undefined}
+            onFocus={() => setFloatingBackFocused(true)}
+            onBlur={() => setFloatingBackFocused(false)}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.push('/');
+              }
+            }}
+            style={({ pressed }) => [
+              {
+                position: 'absolute',
+                top: 50,
+                left: 20,
+                zIndex: 999,
+                elevation: 10,
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.7 : 1,
+              },
+              floatingBackFocused && styles.backButtonFloatingTvFocused,
+            ]}
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color="white"
+              style={{ marginLeft: -2 }}
+            />
+          </Pressable>
+        ) : null}
+        <View style={styles.wrapper} {...tvNf}>
+          <SafeAreaView style={styles.safeHeader} {...tvNf}>
             <MovieDetailsHeader hideBackButton />
           </SafeAreaView>
 
           {isLandscape ? (
           /* Landscape: Poster fixed left, only details scroll */
-          <View style={[styles.mainContainer, styles.mainContainerLandscape]}>
-            <View style={styles.posterSection}>
+          <View style={[styles.mainContainer, styles.mainContainerLandscape]} {...tvNf}>
+            <View style={styles.posterSection} {...tvNf}>
               {movie.poster_url ? (
                 <Image
                   source={{ uri: movie.poster_url }}
@@ -1610,17 +1852,20 @@ export default function MovieDetailsScreen() {
                   resizeMode="contain"
                 />
               ) : (
-                <View style={styles.posterHeroPlaceholder}>
-                  <Text style={styles.posterPlaceholderText}>?</Text>
+                <View style={styles.posterHeroPlaceholder} {...tvNf}>
+                  <Text style={styles.posterPlaceholderText} {...tvNf}>
+                    ?
+                  </Text>
                 </View>
               )}
             </View>
-            <View style={styles.detailsSection}>
+            <View style={styles.detailsSection} {...tvNf}>
               <ScrollView
                 ref={scrollViewRef}
                 style={styles.detailsScroll}
                 contentContainerStyle={styles.detailsScrollContent}
                 showsVerticalScrollIndicator={false}
+                {...tvNf}
               >
                 {renderDetailsContent()}
               </ScrollView>
@@ -1633,8 +1878,9 @@ export default function MovieDetailsScreen() {
             style={styles.mainScroll}
             contentContainerStyle={styles.mainScrollContent}
             showsVerticalScrollIndicator={false}
+            {...tvNf}
           >
-            <View style={styles.posterColumn}>
+            <View style={styles.posterColumn} {...tvNf}>
               {movie.poster_url ? (
                 <Image
                   source={{ uri: movie.poster_url }}
@@ -1642,12 +1888,14 @@ export default function MovieDetailsScreen() {
                   resizeMode="contain"
                 />
               ) : (
-                <View style={styles.posterHeroPlaceholder}>
-                  <Text style={styles.posterPlaceholderText}>?</Text>
+                <View style={styles.posterHeroPlaceholder} {...tvNf}>
+                  <Text style={styles.posterPlaceholderText} {...tvNf}>
+                    ?
+                  </Text>
                 </View>
               )}
             </View>
-            <View style={styles.infoColumn}>
+            <View style={styles.infoColumn} {...tvNf}>
               {renderDetailsContent()}
             </View>
           </ScrollView>
@@ -1662,9 +1910,16 @@ export default function MovieDetailsScreen() {
         presentationStyle="fullScreen"
         onRequestClose={() => setTrailerModalVisible(false)}
       >
-        <View style={styles.trailerModalContainer}>
+        <View style={styles.trailerModalContainer} {...tvNf}>
           <Pressable
-            style={styles.trailerModalClose}
+            {...(isTV && Platform.OS === 'android' ? tvPreferredFocusProps() : tvFocusable())}
+            focusable={tvDpadFocus ? true : undefined}
+            onFocus={() => setTrailerCloseFocused(true)}
+            onBlur={() => setTrailerCloseFocused(false)}
+            style={[
+              styles.trailerModalClose,
+              trailerCloseFocused && styles.trailerModalCloseTvFocused,
+            ]}
             onPress={() => setTrailerModalVisible(false)}
           >
             <Ionicons name="close" size={32} color="#ffffff" />
@@ -1752,6 +2007,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+  },
+  backButtonGoTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+  },
+  backButtonFloatingTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    overflow: 'visible',
   },
   safeAreaWrapper: {
     flex: 1,
@@ -1857,7 +2121,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   streamingTvButtonFocused: {
-    borderColor: '#ffffff',
+    borderColor: ELECTRIC_CYAN,
     borderWidth: 3,
     transform: [{ scale: 1.05 }],
     overflow: 'visible',
@@ -1986,6 +2250,13 @@ const styles = StyleSheet.create({
   actionButtonDisabled: {
     opacity: 0.7,
   },
+  actionButtonTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    transform: [{ scale: 1.02 }],
+    zIndex: 2,
+    overflow: 'visible',
+  },
   actionButtonText: {
     color: '#ffffff',
     fontSize: 14,
@@ -2010,6 +2281,13 @@ const styles = StyleSheet.create({
   },
   viewSimilarButtonPressed: {
     opacity: 0.9,
+  },
+  viewSimilarButtonTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    transform: [{ scale: 1.02 }],
+    zIndex: 2,
+    overflow: 'visible',
   },
   viewSimilarButtonText: {
     color: '#ffffff',
@@ -2064,6 +2342,11 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 10,
     padding: 8,
+  },
+  trailerModalCloseTvFocused: {
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
   },
   trailerModalPlayer: {
     flex: 1,
@@ -2238,6 +2521,12 @@ const styles = StyleSheet.create({
   recommendationCardPressed: {
     opacity: 0.85,
   },
+  recommendationCardTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    borderRadius: 10,
+    padding: 2,
+  },
   recommendationPoster: {
     width: 120,
     height: 180,
@@ -2267,6 +2556,12 @@ const styles = StyleSheet.create({
     width: 90,
     alignItems: 'center',
     marginRight: 16,
+  },
+  castCardTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
+    borderRadius: 12,
+    padding: 3,
   },
   castCardDesktop: {
     width: 100,
@@ -2331,6 +2626,10 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: '#2d2d2d',
+  },
+  crewItemTvFocused: {
+    borderWidth: 3,
+    borderColor: ELECTRIC_CYAN,
   },
   crewItemDesktop: {
     padding: 14,
@@ -2494,25 +2793,279 @@ const styles = StyleSheet.create({
   },
 });
 
+/** Android TV: spread on static `Text` so copy is not in the focus graph. */
+type AndroidTvNf = { focusable?: boolean; collapsable?: boolean };
+
+function DetailsCastCard({
+  person,
+  isLandscape,
+  tvNf,
+  dpad,
+  isPreferredEntry = false,
+  setEntryRef,
+  ladderNav,
+  tvClampRightEdge = false,
+  tvLadder = false,
+  onPress,
+}: {
+  person: Person;
+  isLandscape: boolean;
+  tvNf: AndroidTvNf;
+  dpad: boolean;
+  isPreferredEntry?: boolean;
+  setEntryRef?: TvRowEntryRefSetter;
+  ladderNav?: Record<string, unknown>;
+  tvClampRightEdge?: boolean;
+  tvLadder?: boolean;
+  onPress: () => void;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
+  const setMerged: TvRowEntryRefSetter = (node) => {
+    setLocalRef(node);
+    setEntryRef?.(node);
+  };
+  const rightWall =
+    tvLadder && tvClampRightEdge && localTag != null
+      ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
+      : undefined;
+  return (
+    <Pressable
+      ref={setMerged as never}
+      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
+      focusable={dpad ? true : undefined}
+      {...(ladderNav ?? {})}
+      {...(rightWall ?? {})}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.castCard,
+        isLandscape && styles.castCardDesktop,
+        isFocused && styles.castCardTvFocused,
+        { opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      {person.headshot_url ? (
+        <Image
+          source={{ uri: person.headshot_url }}
+          style={[styles.castPhoto, isLandscape && styles.castPhotoDesktop]}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={[
+            styles.castPhotoPlaceholder,
+            isLandscape && styles.castPhotoPlaceholderDesktop,
+          ]}
+        >
+          <Text style={styles.castInitial} {...tvNf}>
+            {person.name.charAt(0)}
+          </Text>
+        </View>
+      )}
+      <Text
+        style={[styles.castName, isLandscape && styles.castNameDesktop]}
+        numberOfLines={1}
+        {...tvNf}
+      >
+        {person.name}
+      </Text>
+      {person.character ? (
+        <Text
+          style={[styles.castCharacter, isLandscape && styles.castCharacterDesktop]}
+          numberOfLines={1}
+          {...tvNf}
+        >
+          {person.character}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function DetailsCrewItem({
+  person,
+  isLandscape,
+  tvNf,
+  dpad,
+  isPreferredEntry = false,
+  setEntryRef,
+  ladderNav,
+  tvClampRightEdge = false,
+  tvLadder = false,
+  onPress,
+}: {
+  person: Person;
+  isLandscape: boolean;
+  tvNf: AndroidTvNf;
+  dpad: boolean;
+  isPreferredEntry?: boolean;
+  setEntryRef?: TvRowEntryRefSetter;
+  ladderNav?: Record<string, unknown>;
+  tvClampRightEdge?: boolean;
+  tvLadder?: boolean;
+  onPress: () => void;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
+  const setMerged: TvRowEntryRefSetter = (node) => {
+    setLocalRef(node);
+    setEntryRef?.(node);
+  };
+  const rightWall =
+    tvLadder && tvClampRightEdge && localTag != null
+      ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
+      : undefined;
+  return (
+    <Pressable
+      ref={setMerged as never}
+      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
+      focusable={dpad ? true : undefined}
+      {...(ladderNav ?? {})}
+      {...(rightWall ?? {})}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.crewItem,
+        isLandscape && styles.crewItemDesktop,
+        isFocused && styles.crewItemTvFocused,
+        { opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      <Text style={[styles.crewRole, isLandscape && styles.crewRoleDesktop]} {...tvNf}>
+        {person.job ?? person.role_type}
+      </Text>
+      <Text style={[styles.crewName, isLandscape && styles.crewNameDesktop]} {...tvNf}>
+        {person.name}
+      </Text>
+    </Pressable>
+  );
+}
+
+function DetailsRecommendationCard({
+  rec,
+  tvNf,
+  dpad,
+  setEntryRef,
+  ladderNav,
+  tvClampRightEdge = false,
+  tvLadder = false,
+  onPress,
+}: {
+  rec: TMDBRecommendation;
+  tvNf: AndroidTvNf;
+  dpad: boolean;
+  setEntryRef?: TvRowEntryRefSetter;
+  ladderNav?: Record<string, unknown>;
+  tvClampRightEdge?: boolean;
+  tvLadder?: boolean;
+  onPress: () => void;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
+  const setMerged: TvRowEntryRefSetter = (node) => {
+    setLocalRef(node);
+    setEntryRef?.(node);
+  };
+  const rightWall =
+    tvLadder && tvClampRightEdge && localTag != null
+      ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
+      : undefined;
+  return (
+    <Pressable
+      ref={setMerged as never}
+      {...tvFocusable()}
+      focusable={dpad ? true : undefined}
+      {...(ladderNav ?? {})}
+      {...(rightWall ?? {})}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.recommendationCard,
+        isFocused && styles.recommendationCardTvFocused,
+        pressed && styles.recommendationCardPressed,
+      ]}
+    >
+      {rec.poster_path ? (
+        <Image
+          source={{
+            uri: `https://image.tmdb.org/t/p/w342${rec.poster_path}`,
+          }}
+          style={styles.recommendationPoster}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.recommendationPosterPlaceholder}>
+          <Text style={styles.recommendationPosterInitial} {...tvNf}>
+            {rec.title.charAt(0)}
+          </Text>
+        </View>
+      )}
+      <Text style={styles.recommendationTitle} numberOfLines={2} {...tvNf}>
+        {rec.title}
+      </Text>
+    </Pressable>
+  );
+}
+
 type StreamingButtonProps = {
   provider: StreamingOption;
   onStreamPress: (url: string) => void | Promise<void>;
   isLandscape: boolean;
+  isPreferredEntry?: boolean;
+  /** Pass parent `tvNf` so the label is not a focus target on TV. */
+  tvTextNf?: AndroidTvNf;
+  /** `shouldUseTvDpadFocus()` from parent; sets `focusable` explicitly. */
+  focusableExplicit?: boolean;
+  setEntryRef?: TvRowEntryRefSetter;
+  /** First column of a lower row, for `nextFocusDown` from the whole actions strip. */
+  tvNextFocusDown?: number | null;
+  /** When true, apply `tvNextFocusDown` on Android. */
+  tvLadderNav?: boolean;
+  /** When true, trap D-pad Right on the last stream button. */
+  tvClampRightEdge?: boolean;
 };
 
 function StreamingButton({
   provider,
   onStreamPress,
   isLandscape,
+  isPreferredEntry = false,
+  tvTextNf = {},
+  focusableExplicit = false,
+  setEntryRef,
+  tvNextFocusDown = null,
+  tvLadderNav = false,
+  tvClampRightEdge = false,
 }: StreamingButtonProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
+  const mergedRef: TvRowEntryRefSetter = (node) => {
+    setLocalRef(node);
+    setEntryRef?.(node);
+  };
   const platformName =
     provider.serviceName.trim() !== '' ? provider.serviceName.trim() : 'service';
   const label = `Watch on ${platformName}`;
+  const downNav =
+    tvLadderNav && tvNextFocusDown != null
+      ? tvAndroidNavProps({ nextFocusDown: tvNextFocusDown })
+      : undefined;
+  const rightWall =
+    tvLadderNav && tvClampRightEdge && localTag != null
+      ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
+      : undefined;
 
   return (
     <Pressable
-      focusable={true}
+      ref={mergedRef as never}
+      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
+      focusable={focusableExplicit ? true : undefined}
+      {...(downNav ?? {})}
+      {...(rightWall ?? {})}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={() => void onStreamPress(provider.link)}
@@ -2531,6 +3084,7 @@ function StreamingButton({
           isLandscape && styles.streamingTvButtonTextDesktop,
         ]}
         numberOfLines={1}
+        {...tvTextNf}
       >
         {label}
       </Text>

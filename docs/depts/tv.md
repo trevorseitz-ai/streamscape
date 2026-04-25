@@ -70,3 +70,29 @@ TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus 
 **Why:** React Native destroys the physical DOM nodes during live re-sorts. If the native Android TV spatial engine is holding focus on a node when it is destroyed, the engine panics and throws the focus to the top-left of the screen (typically the **Sidebar**).
 
 **The Fix:** Lock the sort order when the component mounts or when a search query is executed. When a user clicks an item, apply a **visual toggle** (e.g. change the border color, opacity, or add a checkmark icon) via state, but **do not** move the item in the array. Defer the actual re-sorting of the list until the next time the user mounts the screen.
+
+## Spatial Engine Routing & Focus Graphs
+
+### 1. The Left-Edge Ladder (Vertical Navigation)
+
+**Rule:** When navigating vertically between distinct horizontal lists (e.g. from a Cast row down to a Crew row), focus **must** snap to the first item (index 0) of the target row.
+
+**Implementation:** Capture the native tag of the first item in each row. Apply `tvNextFocusUp` and `tvNextFocusDown` to every item in a row, pointing them directly to the native tags of the adjacent rows. Do not rely on the spatial proximity engine for jumping between distinct sections.
+
+### 2. The Right-Edge Wall (Horizontal Navigation)
+
+**Rule:** Horizontal lists must not diagonally wrap to other sections when the user reaches the end of the list.
+
+**Implementation:** For the last item in a horizontal list (`index === array.length - 1`), capture its native tag and set `tvNextFocusRight={itsOwnNativeTag}`. This traps the D-pad and prevents diagonal drift.
+
+### 3. No Nested Pressables
+
+**Rule:** Never wrap a `Pressable` inside another `Pressable`, and avoid wrapping custom button components if that obscures the root interactive element.
+
+**Implementation:** Android TV focus graphs break when interactable elements are nested. Apply TV navigation props (`hasTVPreferredFocus`, `tvNextFocus*`) directly to the root native interactive component.
+
+### 4. Avoid Fallback Race Conditions
+
+**Rule:** Do not use `?? fallbackTag` in `tvNextFocus*` assignments if the primary target **exists** on the screen (even if its tag is not ready yet).
+
+**Implementation:** Native tags initialize as `null` for a few milliseconds. If you use a fallback, the spatial engine can permanently wire the UI to that fallback before the primary tag loads. Let the primary tag stay `null` until it mounts; the engine will wire it correctly once the tag populates.
