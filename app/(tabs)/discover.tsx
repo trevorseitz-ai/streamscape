@@ -3,8 +3,10 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   type ReactNode,
+  type ComponentRef,
 } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
@@ -14,11 +16,11 @@ import {
   ActivityIndicator,
   Pressable,
   FlatList,
-  Switch,
   Image,
   useWindowDimensions,
   TouchableOpacity,
   Platform,
+  findNodeHandle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
@@ -69,7 +71,9 @@ const GENRES = [
 const HORIZONTAL_PADDING = 20;
 const GRID_GAP_PHONE = 12;
 const GRID_GAP_TV = 20;
-/** Discover TV: nav + horizontal buffers (see `DiscoverTvHorizontalMovieRow` math). */
+/** TV: exactly five posters per row (horizontal row scrolls when there are more). */
+const DISCOVER_TV_GRID_COLUMNS = 5;
+/** Discover TV: nav + horizontal buffers (content shell padding; includes side inset for width math). */
 /** Matches Home’s 20px inset from the main column edge (nav + buffer). */
 const DISCOVER_TV_CONTENT_BUFFER = 20;
 const DISCOVER_TV_RIGHT_MARGIN = 20;
@@ -176,16 +180,28 @@ async function fetchDiscoverFromTMDB(
 }
 
 type ListItem =
-  | { type: 'row'; movies: DiscoverResult[]; key: string }
+  | { type: 'row'; movies: DiscoverResult[]; key: string; movieRowIndex: number }
   | { type: 'divider'; title: string; key: string };
 
 type DiscoverTvHorizontalRowProps = {
   movies: DiscoverResult[];
   router: ReturnType<typeof useRouter>;
-  /** Inner width for five-across math (after shell padding); ≤0 uses window fallback. */
-  usableWidth: number;
+  /** Pixel width/height of one poster cell; must match 5× `rowGap` ladder math. */
+  posterWidth: number;
+  posterHeight: number;
+  rowGap: number;
+  /** Ordinal of this row among all movie rows (0-based). */
+  movieRowIndex: number;
+  /** First cell of the next row (Z-pattern: right on last item → first of next). */
+  nextRowEntryTag: number | null;
+  /** Last row’s last cell tag for `nextFocusRightSelf` (right-edge wall on bottom-right). */
+  lastRowLastCellWallTag: number | null;
+  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
+  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
   renderMovieFooter?: (movie: DiscoverResult) => ReactNode;
-  isLastVerticalListRow?: boolean;
+  isLastMovieRow: boolean;
+  /** Bumps when row entry/exit native tags change so cells re-apply D-pad links. */
+  wrapNavVersion: number;
   discoverSidebarLeftTag?: number | null;
   mainContentEntryNavTag?: number | null;
 };
@@ -197,7 +213,13 @@ function DiscoverTvPosterCell({
   onPress,
   footer,
   colIndex,
-  isLastVerticalRow,
+  rowLen,
+  isLastMovieRow,
+  nextRowEntryTag,
+  lastRowLastCellWallTag,
+  setRowEntryRef,
+  setRowExitRef,
+  rowRefIndex,
   discoverSidebarLeftTag,
   mainContentEntryNavTag,
 }: {
@@ -207,12 +229,20 @@ function DiscoverTvPosterCell({
   onPress: () => void;
   footer: ReactNode | null;
   colIndex: number;
-  isLastVerticalRow: boolean;
+  rowLen: number;
+  isLastMovieRow: boolean;
+  nextRowEntryTag: number | null;
+  lastRowLastCellWallTag: number | null;
+  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
+  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
+  rowRefIndex: number;
   discoverSidebarLeftTag: number | null;
   mainContentEntryNavTag: number | null;
 }) {
   const [isFocused, setIsFocused] = useState(false);
   const [posterLoadFailed, setPosterLoadFailed] = useState(false);
+  /** Native tag of this cell’s `Pressable` (self-trap when cross-row target not registered yet). */
+  const [localTag, setLocalTag] = useState<number | null>(null);
 
   useEffect(() => {
     setPosterLoadFailed(false);
@@ -220,6 +250,40 @@ function DiscoverTvPosterCell({
 
   const showPlaceholder = !movie.poster_url || posterLoadFailed;
   const useNav = Platform.OS === 'android';
+  const isLastInRow = colIndex === rowLen - 1;
+  const isFirstInRow = colIndex === 0;
+  /** Z-pattern: right from last col → first of next row, or self until that tag exists. */
+  const rightCarriage =
+    isLastInRow && !isLastMovieRow
+      ? (nextRowEntryTag ?? localTag)
+      : null;
+  /** Bottom-right: right wall; prefer shared ref tag else local so first frame is trapped. */
+  const rightWallSelf =
+    isLastInRow && isLastMovieRow
+      ? (lastRowLastCellWallTag ?? localTag)
+      : null;
+  /** Every row’s first cell: left goes to sidebar, or self-trap if sidebar tag not ready. */
+  const leftToSidebar =
+    isFirstInRow ? (discoverSidebarLeftTag ?? localTag) : null;
+
+  const pressableRef = useCallback(
+    (node: ComponentRef<typeof Pressable> | null) => {
+      if (Platform.OS === 'android') {
+        setLocalTag(node ? findNodeHandle(node) : null);
+      } else {
+        setLocalTag(null);
+      }
+      if (isFirstInRow) setRowEntryRef(rowRefIndex)(node);
+      if (isLastInRow) setRowExitRef(rowRefIndex)(node);
+    },
+    [
+      isFirstInRow,
+      isLastInRow,
+      rowRefIndex,
+      setRowEntryRef,
+      setRowExitRef,
+    ]
+  );
 
   return (
     <View
@@ -230,14 +294,21 @@ function DiscoverTvPosterCell({
       collapsable={false}
     >
       <Pressable
+        ref={pressableRef}
         {...tvFocusable()}
         focusable={true}
         {...(useNav
           ? tvAndroidNavProps({
-              ...(colIndex === 0 && discoverSidebarLeftTag != null
-                ? { nextFocusLeft: discoverSidebarLeftTag }
+              ...(isFirstInRow && leftToSidebar != null
+                ? { nextFocusLeft: leftToSidebar }
                 : {}),
-              ...(isLastVerticalRow && mainContentEntryNavTag != null
+              ...(isLastInRow && !isLastMovieRow && rightCarriage != null
+                ? { nextFocusRight: rightCarriage }
+                : {}),
+              ...(isLastInRow && isLastMovieRow && rightWallSelf != null
+                ? { nextFocusRightSelf: rightWallSelf }
+                : {}),
+              ...(isLastMovieRow && mainContentEntryNavTag != null
                 ? { nextFocusDown: mainContentEntryNavTag }
                 : {}),
             })
@@ -293,25 +364,21 @@ function DiscoverTvPosterCell({
 function DiscoverTvHorizontalMovieRow({
   movies,
   router,
-  usableWidth,
+  posterWidth,
+  posterHeight,
+  rowGap,
+  movieRowIndex,
+  nextRowEntryTag,
+  lastRowLastCellWallTag,
+  setRowEntryRef,
+  setRowExitRef,
   renderMovieFooter,
-  isLastVerticalListRow = false,
+  isLastMovieRow,
+  wrapNavVersion,
   discoverSidebarLeftTag = null,
   mainContentEntryNavTag = null,
 }: DiscoverTvHorizontalRowProps) {
-  const { width } = useWindowDimensions();
-  const { posterWidth, posterHeight } = useMemo(() => {
-    const fromWindow =
-      width -
-      TV_SIDEBAR_WIDTH -
-      DISCOVER_TV_CONTENT_BUFFER -
-      DISCOVER_TV_RIGHT_MARGIN;
-    const USABLE_WIDTH = usableWidth > 0 ? usableWidth : fromWindow;
-    const POSTER_WIDTH = (USABLE_WIDTH - DISCOVER_TV_GAP * 4) / 5;
-    const POSTER_HEIGHT = POSTER_WIDTH * 1.5;
-    return { posterWidth: POSTER_WIDTH, posterHeight: POSTER_HEIGHT };
-  }, [width, usableWidth]);
-
+  const rowLen = movies.length;
   return (
     <View style={discoverTvRowStyles.rowWrap}>
       <FlatList
@@ -323,8 +390,9 @@ function DiscoverTvHorizontalMovieRow({
         style={discoverTvRowStyles.rowFlatList}
         contentContainerStyle={{
           paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
-          gap: DISCOVER_TV_GAP,
+          gap: rowGap,
         }}
+        extraData={wrapNavVersion}
         renderItem={({ item, index: colIndex }) => (
           <DiscoverTvPosterCell
             movie={item}
@@ -333,7 +401,13 @@ function DiscoverTvHorizontalMovieRow({
             onPress={() => router.push(`/movie/${item.id}`)}
             footer={renderMovieFooter?.(item) ?? null}
             colIndex={colIndex}
-            isLastVerticalRow={isLastVerticalListRow}
+            rowLen={rowLen}
+            isLastMovieRow={isLastMovieRow}
+            nextRowEntryTag={nextRowEntryTag}
+            lastRowLastCellWallTag={lastRowLastCellWallTag}
+            setRowEntryRef={setRowEntryRef}
+            setRowExitRef={setRowExitRef}
+            rowRefIndex={movieRowIndex}
             discoverSidebarLeftTag={discoverSidebarLeftTag}
             mainContentEntryNavTag={mainContentEntryNavTag}
           />
@@ -439,6 +513,24 @@ export default function DiscoverScreen() {
       DISCOVER_TV_RIGHT_MARGIN
     );
   }, [isTV, tvDiscoverShellW, screenWidth]);
+  /**
+   * Five columns: inner width = shell minus left/right padding; four gaps between five cells.
+   * Same math as: (width - PADDING*2 - GAP*(COLUMNS-1)) / COLUMNS with PADDING = buffer per side.
+   */
+  const discoverTvGridLayout = useMemo(() => {
+    if (!isTV) {
+      return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP };
+    }
+    const COLUMNS = DISCOVER_TV_GRID_COLUMNS;
+    const rowGap = DISCOVER_TV_GAP;
+    const inner = Math.max(0, tvRowUsableWidth);
+    const itemWidth = Math.max(
+      0,
+      (inner - rowGap * (COLUMNS - 1)) / COLUMNS
+    );
+    const itemHeight = itemWidth * 1.5;
+    return { itemWidth, itemHeight, rowGap, columns: COLUMNS };
+  }, [isTV, tvRowUsableWidth]);
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
   const discoverPosterLayout = useMemo(
@@ -698,12 +790,15 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
+    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : MOVIES_PER_HORIZONTAL_ROW;
+    let movieRowIndex = 0;
 
-    for (let i = 0; i < phase1Movies.length; i += MOVIES_PER_HORIZONTAL_ROW) {
+    for (let i = 0; i < phase1Movies.length; i += perRow) {
       items.push({
         type: 'row',
-        movies: phase1Movies.slice(i, i + MOVIES_PER_HORIZONTAL_ROW),
+        movies: phase1Movies.slice(i, i + perRow),
         key: `p1-${i}`,
+        movieRowIndex: movieRowIndex++,
       });
     }
 
@@ -711,29 +806,55 @@ export default function DiscoverScreen() {
       if (phase1Movies.length > 0) {
         items.push({ type: 'divider', title: dividerTitle, key: 'phase-divider' });
       }
-      for (let i = 0; i < phase2Movies.length; i += MOVIES_PER_HORIZONTAL_ROW) {
+      for (let i = 0; i < phase2Movies.length; i += perRow) {
         items.push({
           type: 'row',
-          movies: phase2Movies.slice(i, i + MOVIES_PER_HORIZONTAL_ROW),
+          movies: phase2Movies.slice(i, i + perRow),
           key: `p2-${i}`,
+          movieRowIndex: movieRowIndex++,
         });
       }
     }
 
-    if (isTV) {
-      const rowsOnly: ListItem[] = [];
-      for (const it of items) {
-        if (it.type === 'row') {
-          rowsOnly.push(it);
-          if (rowsOnly.length >= 2) {
-            break;
-          }
-        }
-      }
-      return rowsOnly;
-    }
     return items;
   }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV]);
+
+  const totalMovieRows = useMemo(
+    () => listData.filter((x) => x.type === 'row').length,
+    [listData]
+  );
+  const rowEntryTags = useRef<(number | null)[]>([]);
+  const rowExitTags = useRef<(number | null)[]>([]);
+  const [wrapNavVersion, setWrapNavVersion] = useState(0);
+  const setRowEntryRef = useCallback(
+    (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => {
+      if (Platform.OS !== 'android') return;
+      const t = node ? findNodeHandle(node) : null;
+      const arr = rowEntryTags.current;
+      while (arr.length <= rowIdx) arr.push(null);
+      if (arr[rowIdx] === t) return;
+      arr[rowIdx] = t;
+      setWrapNavVersion((n) => n + 1);
+    },
+    []
+  );
+  const setRowExitRef = useCallback(
+    (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => {
+      if (Platform.OS !== 'android') return;
+      const t = node ? findNodeHandle(node) : null;
+      const arr = rowExitTags.current;
+      while (arr.length <= rowIdx) arr.push(null);
+      if (arr[rowIdx] === t) return;
+      arr[rowIdx] = t;
+      setWrapNavVersion((n) => n + 1);
+    },
+    []
+  );
+  useLayoutEffect(() => {
+    rowEntryTags.current = new Array(totalMovieRows).fill(null);
+    rowExitTags.current = new Array(totalMovieRows).fill(null);
+    setWrapNavVersion((n) => n + 1);
+  }, [totalMovieRows]);
 
   // Auth guard: blackout when not logged in (after all hooks)
   if (!session) {
@@ -897,8 +1018,9 @@ export default function DiscoverScreen() {
 
       {hasMovies && (
         <FlatList
-          key="discover-poster-grid"
+          key={isTV ? 'discover-tv-grid-5' : 'discover-poster-grid'}
           data={listData}
+          extraData={isTV ? wrapNavVersion : undefined}
           keyExtractor={(item) => item.key}
           contentContainerStyle={[
             styles.resultsContent,
@@ -943,7 +1065,7 @@ export default function DiscoverScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item, index: rowIndex }) => {
+          renderItem={({ item }) => {
             if (item.type === 'divider') {
               return (
                 <View style={styles.phaseDivider}>
@@ -969,13 +1091,28 @@ export default function DiscoverScreen() {
               ) : null;
 
             if (isTV) {
+              const movieRowIndex = item.movieRowIndex;
+              const isLastMovieRow = movieRowIndex === totalMovieRows - 1;
+              const nextRowEntryTag =
+                rowEntryTags.current[movieRowIndex + 1] ?? null;
+              const lastRowLastCellWallTag = isLastMovieRow
+                ? (rowExitTags.current[movieRowIndex] ?? null)
+                : null;
               return (
                 <DiscoverTvHorizontalMovieRow
                   movies={item.movies}
                   router={router}
-                  usableWidth={tvRowUsableWidth}
+                  posterWidth={discoverTvGridLayout.itemWidth}
+                  posterHeight={discoverTvGridLayout.itemHeight}
+                  rowGap={discoverTvGridLayout.rowGap}
+                  movieRowIndex={movieRowIndex}
+                  nextRowEntryTag={nextRowEntryTag}
+                  lastRowLastCellWallTag={lastRowLastCellWallTag}
+                  setRowEntryRef={setRowEntryRef}
+                  setRowExitRef={setRowExitRef}
                   renderMovieFooter={renderDiscoverFooter}
-                  isLastVerticalListRow={rowIndex === listData.length - 1}
+                  isLastMovieRow={isLastMovieRow}
+                  wrapNavVersion={wrapNavVersion}
                   discoverSidebarLeftTag={discoverSidebarLeftTag}
                   mainContentEntryNavTag={mainContentEntryNativeTag}
                 />
@@ -1038,7 +1175,7 @@ const styles = StyleSheet.create({
   },
   /**
    * TV: fills space beside sidebar (`flex:1`), left/right from constants.
-   * Poster math: `usableWidth = onLayout.width - CONTENT_BUFFER - RIGHT_MARGIN`.
+   * Poster math: inner width = `onLayout.width - CONTENT_BUFFER - RIGHT_MARGIN` (see `tvRowUsableWidth`).
    */
   discoverTvContentWrap: {
     flex: 1,

@@ -96,3 +96,22 @@ TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus 
 **Rule:** Do not use `?? fallbackTag` in `tvNextFocus*` assignments if the primary target **exists** on the screen (even if its tag is not ready yet).
 
 **Implementation:** Native tags initialize as `null` for a few milliseconds. If you use a fallback, the spatial engine can permanently wire the UI to that fallback before the primary tag loads. Let the primary tag stay `null` until it mounts; the engine will wire it correctly once the tag populates.
+
+### 5. The Typewriter Wrap (Carriage Return)
+
+**Rule:** In a multi-row grid, reaching the far-right edge of a row should wrap focus to the first item of the next row down.
+
+**Implementation:** Capture the entry tag of the next row (`nextRowEntryTag`). On the last item of the current row, set `tvNextFocusRight={nextRowEntryTag ?? localTag}`.
+
+### 6. Universal Left-Edge Sidebar Escape
+
+**Rule:** The left-most column of any content grid or list must always serve as an escape hatch to the main Sidebar navigation. Do not implement “reverse wrap” (left wrapping to the end of the previous row).
+
+**Implementation:** For `index === 0` of every row, strictly set `tvNextFocusLeft={sidebarTag ?? localTag}`. This keeps “left” from any row’s first cell moving focus to the menu, no matter how far the user has scrolled.
+
+### 7. The Self-Trap Fallback (Ghost Tags)
+
+**Rule:** Never leave a cross-row `tvNextFocus*` target as `null` or `undefined` when the user can still move in that direction.
+
+**Implementation:** Native engine tags can take a moment to register. If you point an item at `nextRowTag` and that tag is still `null`, the Android TV engine falls back to proximity routing and the focus can jump diagonally. Always fall back to the component’s own tag (`?? localTag`) to create a short-lived “invisible wall” until the cross-row tag is ready.
+
