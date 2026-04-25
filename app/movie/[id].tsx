@@ -13,6 +13,7 @@ import {
   Modal,
   Dimensions,
   FlatList,
+  findNodeHandle,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,6 +42,7 @@ import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
+import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
 
@@ -410,6 +412,11 @@ export default function MovieDetailsScreen() {
   const [watchlistBtnFocused, setWatchlistBtnFocused] = useState(false);
   const [similarBtnFocused, setSimilarBtnFocused] = useState(false);
   const [trailerActionBtnFocused, setTrailerActionBtnFocused] = useState(false);
+  /** “Owned” / library; toggled in UI, persisted in DB when storage exists. */
+  const [isInLibrary, setIsInLibrary] = useState(false);
+  const [libraryBtnFocused, setLibraryBtnFocused] = useState(false);
+  /** Instant `findNodeHandle` for trailer row self-trap before `useTvNativeTag` commits. */
+  const [trailerPressableLocalTag, setTrailerPressableLocalTag] = useState<number | null>(null);
   const [trailerCloseFocused, setTrailerCloseFocused] = useState(false);
   const [tmdbMovieId, setTmdbMovieId] = useState<number | null>(null);
   const [recommendations, setRecommendations] = useState<TMDBRecommendation[]>(
@@ -505,13 +512,14 @@ export default function MovieDetailsScreen() {
   } = useSearch();
   const { setTitle } = useMovie();
   const { isLandscape: breakpointLandscape, height: viewportHeight } = useBreakpoint();
+  const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
   const isTV = isTvTarget();
   const tvNf =
     isTV && Platform.OS === 'android'
       ? ({ focusable: false, collapsable: false } as const)
       : {};
   const tvDpadFocus = shouldUseTvDpadFocus();
-  /** Android D-pad: row-1 = streams, row-2 = watchlist / trailer; separate vertical links. */
+  /** Android D-pad: streams → trailer (if any) → secondary row → cast / crew; explicit tags in `buildLadder`. */
   const { setRef: setStreamRowEntryRef, nativeTag: streamRowEntryTag } = useTvNativeTag();
   const { setRef: setSecondaryActionRowEntryRef, nativeTag: secondaryActionRowEntryTag } =
     useTvNativeTag();
@@ -521,11 +529,29 @@ export default function MovieDetailsScreen() {
   const { setRef: setCastRowEntryRef, nativeTag: castRowEntryTag } = useTvNativeTag();
   const { setRef: setCrewRowEntryRef, nativeTag: crewRowEntryTag } = useTvNativeTag();
   const { setRef: setSimilarRowEntryRef, nativeTag: similarRowEntryTag } = useTvNativeTag();
+  /** Trailer row (single “Watch trailer” under streaming) — first/only focus in that row. */
+  const { setRef: setTrailerRowEntryRef, nativeTag: trailerRowEntryTag } = useTvNativeTag();
+  /** Left self-trap on the first control in the secondary action row. */
+  const { setRef: setFirstSecondaryLocalRef, nativeTag: firstSecondaryLocalTag } = useTvNativeTag();
+  /** Right self-trap on the last control in the secondary action row. */
+  const { setRef: setLastSecondaryLocalRef, nativeTag: lastSecondaryLocalTag } = useTvNativeTag();
   const tvLadderAndroid = tvDpadFocus && Platform.OS === 'android';
   /** TV: always use landscape / wide layout even if the window reports portrait. */
   const isLandscape = breakpointLandscape || isTV;
+  const mediaDetailsSidebarLeftTag =
+    isTV && Platform.OS === 'android'
+      ? (sidebarSlotNativeTags['index'] ??
+        sidebarSlotNativeTags['discover'] ??
+        sidebarSlotNativeTags['watchlist'] ??
+        sidebarSlotNativeTags['library'] ??
+        null)
+      : null;
 
   const isTmdbId = /^\d+$/.test(id ?? '');
+
+  useEffect(() => {
+    if (!trailerKey) setTrailerPressableLocalTag(null);
+  }, [trailerKey]);
 
   useEffect(() => {
     return () => {
@@ -569,7 +595,7 @@ export default function MovieDetailsScreen() {
   useEffect(() => {
     if (!session) return;
 
-    async function checkIfInWatchlist() {
+    async function checkWatchlistAndLibrary() {
       let mediaId: string | null = supabaseMediaId;
 
       if (!mediaId && isTmdbId && id) {
@@ -583,19 +609,31 @@ export default function MovieDetailsScreen() {
 
       if (!mediaId) {
         setInWatchlist(false);
+        setIsInLibrary(false);
         return;
       }
 
-      const { data } = await supabase
-        .from('watchlist')
-        .select('id')
-        .eq('user_id', session.user.id)
-        .eq('media_id', mediaId)
-        .maybeSingle();
-      setInWatchlist(!!data);
+      const userId = session.user.id;
+      const [watchlistResult, libraryResult] = await Promise.all([
+        supabase
+          .from('watchlist')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('media_id', mediaId)
+          .maybeSingle(),
+        supabase
+          .from('user_library')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('media_id', mediaId)
+          .maybeSingle(),
+      ]);
+
+      setInWatchlist(!!watchlistResult.data);
+      setIsInLibrary(!!libraryResult.data);
     }
 
-    checkIfInWatchlist();
+    void checkWatchlistAndLibrary();
   }, [session, supabaseMediaId, isTmdbId, id]);
 
   async function findSupabaseMediaId(
@@ -776,6 +814,52 @@ export default function MovieDetailsScreen() {
       setWatchlistLoading(false);
     }
   }
+
+  const handleLibraryPress = useCallback(() => {
+    if (!session) return;
+    const wasInLibrary = isInLibrary;
+    setIsInLibrary((v) => !v);
+
+    const syncLibrary = async () => {
+      const userId = session.user.id;
+      try {
+        const mediaRowId = await resolveMediaRowId(true);
+        if (!mediaRowId) {
+          setIsInLibrary(wasInLibrary);
+          Alert.alert('Could not save', 'Missing movie data. Please try again.');
+          return;
+        }
+
+        if (!wasInLibrary) {
+          const { error } = await supabase.from('user_library').insert({
+            user_id: userId,
+            media_id: mediaRowId,
+          });
+          if (error) {
+            if (error.code === '23505') {
+              return;
+            }
+            throw error;
+          }
+        } else {
+          const { error } = await supabase
+            .from('user_library')
+            .delete()
+            .eq('user_id', userId)
+            .eq('media_id', mediaRowId);
+          if (error) throw error;
+        }
+      } catch (e) {
+        if (__DEV__) {
+          console.error('[MovieDetails] Library sync error:', e);
+        }
+        setIsInLibrary(wasInLibrary);
+        Alert.alert('Could not update', 'Your library could not be updated. Please try again.');
+      }
+    };
+
+    void syncLibrary();
+  }, [session, isInLibrary]);
 
   async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
@@ -1162,16 +1246,6 @@ export default function MovieDetailsScreen() {
   const validStreamOptionsForTv = (streamingProviders ?? []).filter(
     (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
   );
-  const showsTrailerInActionRow =
-    !!trailerKey &&
-    !(shouldShowRecommendations && recommendations.length > 0) &&
-    fromWatchedParam !== 'true' &&
-    !(
-      shouldShowRecommendations &&
-      recommendations.length === 0 &&
-      fromWatchedParam !== 'true'
-    );
-
   type DetailsTvPrimary =
     | 'stream0'
     | 'watchlist'
@@ -1185,6 +1259,7 @@ export default function MovieDetailsScreen() {
   const detailsTvPrimary: DetailsTvPrimary = (() => {
     if (!isTV) {
       if (validStreamOptionsForTv.length > 0) return 'stream0';
+      if (trailerKey) return 'trailer';
       if (session) return 'watchlist';
       if (shouldShowRecommendations && recommendations.length > 0) return 'similar';
       if (fromWatchedParam === 'true') return 'back';
@@ -1195,13 +1270,12 @@ export default function MovieDetailsScreen() {
       ) {
         return 'back';
       }
-      if (trailerKey) return 'trailer';
       return 'back';
     }
     if (validStreamOptionsForTv.length > 0) return 'stream0';
+    if (trailerKey) return 'trailer';
     if (session) return 'watchlist';
     if (shouldShowRecommendations && recommendations.length > 0) return 'similar';
-    if (showsTrailerInActionRow) return 'trailer';
     const actorCount = movie.cast.filter((p) => p.role_type === 'actor').length;
     if (actorCount > 0) return 'cast0';
     if (movie.cast.filter((p) => p.role_type !== 'actor').length > 0) return 'crew0';
@@ -1289,30 +1363,45 @@ export default function MovieDetailsScreen() {
       (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
     );
     const hasSimilarActionBtn = shouldShowRecommendations && recommendations.length > 0;
-    const hasSecondaryActionPressables =
-      !!session || hasSimilarActionBtn || showsTrailerInActionRow;
+    const hasStreams = validStreamOptionsNav.length > 0;
+    const hasTrailer = !!trailerKey;
+    const hasSecondaryActions = !!session || hasSimilarActionBtn;
     const downFromStreamLadder = tvLadderAndroid
-      ? (hasSecondaryActionPressables
+      ? (hasTrailer
+          ? trailerRowEntryTag
+          : hasSecondaryActions
+            ? secondaryActionRowEntryTag
+            : castRowEntryTag)
+      : null;
+    const downFromTrailerRow = tvLadderAndroid
+      ? (hasSecondaryActions
           ? secondaryActionRowEntryTag
           : castRowEntryTag)
       : null;
     const downFromSecondaryLadder = tvLadderAndroid
       ? (castRowEntryTag ?? crewRowEntryTag)
       : null;
+    const upAboveSecondary = tvLadderAndroid
+      ? (hasTrailer ? trailerRowEntryTag : streamRowEntryTag)
+      : null;
     const upOnCastLadder = tvLadderAndroid
-      ? (secondaryActionRowEntryTag ?? streamRowEntryTag)
+      ? (secondaryActionRowEntryTag ?? trailerRowEntryTag ?? streamRowEntryTag)
       : null;
     const downOnCastLadder = tvLadderAndroid
       ? (crewRowEntryTag ?? similarRowEntryTag)
       : null;
     const upOnCrewLadder = tvLadderAndroid
-      ? (castRowEntryTag ?? secondaryActionRowEntryTag ?? streamRowEntryTag)
+      ? (castRowEntryTag ??
+        secondaryActionRowEntryTag ??
+        trailerRowEntryTag ??
+        streamRowEntryTag)
       : null;
     const downOnCrewLadder = tvLadderAndroid ? similarRowEntryTag : null;
     const upOnSimilarLadder = tvLadderAndroid
       ? (crewRowEntryTag ??
         castRowEntryTag ??
         secondaryActionRowEntryTag ??
+        trailerRowEntryTag ??
         streamRowEntryTag)
       : null;
     const buildLadder = (
@@ -1330,14 +1419,15 @@ export default function MovieDetailsScreen() {
     const crewLadderNav = buildLadder(upOnCrewLadder, downOnCrewLadder);
     const similarLadderNav = buildLadder(upOnSimilarLadder, null);
     const secondaryActionRowNav = buildLadder(
-      streamRowEntryTag,
+      upAboveSecondary,
       downFromSecondaryLadder,
     );
-
-    const lastSecondaryIsWatchlist =
-      !!session && !hasSimilarActionBtn && !showsTrailerInActionRow;
-    const lastSecondaryIsSimilar = hasSimilarActionBtn;
-    const lastSecondaryIsTrailer = showsTrailerInActionRow && !hasSimilarActionBtn;
+    const trailerRowNav = buildLadder(
+      hasStreams ? streamRowEntryTag : null,
+      downFromTrailerRow,
+    );
+    const lastWallIsSimilar = hasSimilarActionBtn;
+    const lastWallIsLibrary = !!session && !hasSimilarActionBtn;
 
     return (
       <>
@@ -1485,19 +1575,64 @@ export default function MovieDetailsScreen() {
           )}
         </View>
 
+        {trailerKey ? (
+          <View
+            style={styles.trailerButtonRow}
+            {...tvNf}
+          >
+            <Pressable
+              ref={
+                ((node) => {
+                  setTrailerRowEntryRef(node);
+                  if (Platform.OS === 'android') {
+                    setTrailerPressableLocalTag(node ? findNodeHandle(node) : null);
+                  } else {
+                    setTrailerPressableLocalTag(null);
+                  }
+                }) as never
+              }
+              {...(tvLadderAndroid ? (trailerRowNav as object) : {})}
+              {...(tvLadderAndroid
+                ? (tvAndroidNavProps({
+                    nextFocusLeft: mediaDetailsSidebarLeftTag ?? trailerRowEntryTag ?? trailerPressableLocalTag,
+                    nextFocusRightSelf: trailerRowEntryTag ?? trailerPressableLocalTag,
+                  }) as object)
+                : {})}
+              {...(detailsTvPrimary === 'trailer' ? tvPreferredFocusProps() : tvFocusable())}
+              focusable={tvDpadFocus ? true : undefined}
+              onFocus={() => setTrailerActionBtnFocused(true)}
+              onBlur={() => setTrailerActionBtnFocused(false)}
+              onPress={() => setTrailerModalVisible(true)}
+              android_ripple={null}
+              style={({ pressed }) => [
+                styles.actionButton,
+                isLandscape && styles.actionButtonDesktop,
+                styles.trailerButtonRowInner,
+                trailerActionBtnFocused && styles.actionButtonTvFocused,
+                pressed && styles.actionButtonPressed,
+              ]}
+            >
+              <Ionicons name="play-circle" size={18} color="#ffffff" />
+              <Text style={styles.actionButtonText} numberOfLines={1} {...tvNf}>
+                Watch Trailer
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.actionRow} {...tvNf}>
           {session ? (
             <Pressable
               ref={
                 ((node) => {
+                  setFirstSecondaryLocalRef(node);
                   if (session) setSecondaryActionRowEntryRef(node);
-                  if (lastSecondaryIsWatchlist) setSecondaryRowLastWallRef(node);
                 }) as never
               }
               {...(secondaryActionRowNav as object)}
-              {...(tvLadderAndroid && lastSecondaryIsWatchlist && secondaryRowLastWallTag != null
+              {...(tvLadderAndroid
                 ? (tvAndroidNavProps({
-                    nextFocusRightSelf: secondaryRowLastWallTag,
+                    nextFocusLeft: mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag,
                   }) as object)
                 : {})}
               {...(detailsTvPrimary === 'watchlist' ? tvPreferredFocusProps() : tvFocusable())}
@@ -1545,20 +1680,81 @@ export default function MovieDetailsScreen() {
               </Text>
             </Pressable>
           ) : null}
+          {session ? (
+            <Pressable
+              ref={
+                (lastWallIsLibrary
+                  ? (node) => {
+                      setLastSecondaryLocalRef(node);
+                      setSecondaryRowLastWallRef(node);
+                    }
+                  : undefined) as never
+              }
+              {...(secondaryActionRowNav as object)}
+              {...(tvLadderAndroid && lastWallIsLibrary
+                ? (tvAndroidNavProps({
+                    nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag,
+                  }) as object)
+                : {})}
+              {...(tvFocusable())}
+              focusable={tvDpadFocus ? true : undefined}
+              onFocus={() => setLibraryBtnFocused(true)}
+              onBlur={() => setLibraryBtnFocused(false)}
+              style={({ pressed }) => [
+                styles.actionButton,
+                isLandscape && styles.actionButtonDesktop,
+                isInLibrary && {
+                  backgroundColor: 'transparent',
+                  borderWidth: 2,
+                  borderColor: ELECTRIC_CYAN,
+                },
+                libraryBtnFocused && styles.actionButtonTvFocused,
+                pressed && styles.actionButtonPressed,
+              ]}
+              onPress={handleLibraryPress}
+              accessibilityRole="button"
+              accessibilityLabel={isInLibrary ? 'In your library' : 'Add to Library'}
+            >
+              <Ionicons
+                name={isInLibrary ? 'checkmark-circle' : 'add-circle-outline'}
+                size={20}
+                color={isInLibrary ? ELECTRIC_CYAN : '#ffffff'}
+              />
+              <Text
+                style={[
+                  styles.actionButtonText,
+                  isInLibrary && { color: ELECTRIC_CYAN },
+                ]}
+                numberOfLines={1}
+                {...tvNf}
+              >
+                {isInLibrary ? 'In Library' : 'Add to Library'}
+              </Text>
+            </Pressable>
+          ) : null}
           {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
               ref={
                 ((node) => {
                   if (!session && hasSimilarActionBtn) {
+                    setFirstSecondaryLocalRef(node);
                     setSecondaryActionRowEntryRef(node);
                   }
-                  if (lastSecondaryIsSimilar) setSecondaryRowLastWallRef(node);
+                  if (lastWallIsSimilar) {
+                    setLastSecondaryLocalRef(node);
+                    setSecondaryRowLastWallRef(node);
+                  }
                 }) as never
               }
               {...(secondaryActionRowNav as object)}
-              {...(tvLadderAndroid && lastSecondaryIsSimilar && secondaryRowLastWallTag != null
+              {...(tvLadderAndroid
                 ? (tvAndroidNavProps({
-                    nextFocusRightSelf: secondaryRowLastWallTag,
+                    ...(!session && hasSimilarActionBtn
+                      ? { nextFocusLeft: mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag }
+                      : {}),
+                    ...(lastWallIsSimilar
+                      ? { nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag }
+                      : {}),
                   }) as object)
                 : {})}
               {...(detailsTvPrimary === 'similar' ? tvPreferredFocusProps() : tvFocusable())}
@@ -1592,39 +1788,6 @@ export default function MovieDetailsScreen() {
                 ✓ Movie Info
               </Text>
             </View>
-          ) : trailerKey ? (
-            <Pressable
-              ref={
-                ((node) => {
-                  if (!session && !hasSimilarActionBtn && showsTrailerInActionRow) {
-                    setSecondaryActionRowEntryRef(node);
-                  }
-                  if (lastSecondaryIsTrailer) setSecondaryRowLastWallRef(node);
-                }) as never
-              }
-              {...(secondaryActionRowNav as object)}
-              {...(tvLadderAndroid && lastSecondaryIsTrailer && secondaryRowLastWallTag != null
-                ? (tvAndroidNavProps({
-                    nextFocusRightSelf: secondaryRowLastWallTag,
-                  }) as object)
-                : {})}
-              {...(detailsTvPrimary === 'trailer' ? tvPreferredFocusProps() : tvFocusable())}
-              focusable={tvDpadFocus ? true : undefined}
-              onFocus={() => setTrailerActionBtnFocused(true)}
-              onBlur={() => setTrailerActionBtnFocused(false)}
-              style={({ pressed }) => [
-                styles.actionButton,
-                isLandscape && styles.actionButtonDesktop,
-                trailerActionBtnFocused && styles.actionButtonTvFocused,
-                pressed && styles.actionButtonPressed,
-              ]}
-              onPress={() => setTrailerModalVisible(true)}
-            >
-              <Ionicons name="play-circle" size={18} color="#ffffff" />
-              <Text style={styles.actionButtonText} numberOfLines={1} {...tvNf}>
-                Watch Trailer
-              </Text>
-            </Pressable>
           ) : null}
         </View>
 
@@ -2101,6 +2264,15 @@ const styles = StyleSheet.create({
   whereToWatchStreamSectionDesktop: {
     marginTop: 12,
     marginBottom: 8,
+  },
+  /** Single “Watch trailer” control below streaming, above secondary actions. */
+  trailerButtonRow: {
+    width: '100%',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  trailerButtonRowInner: {
+    minWidth: 200,
   },
   streamingTvButton: {
     width: '100%',

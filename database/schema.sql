@@ -97,6 +97,16 @@ CREATE TABLE watchlist (
     UNIQUE(user_id, media_id)
 );
 
+-- User library: owned / long-term collection (distinct from watchlist)
+CREATE TABLE user_library (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    media_id UUID NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, media_id)
+);
+
 -- Watched history: Movies the user has marked as watched
 CREATE TABLE watched_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -127,6 +137,8 @@ CREATE INDEX idx_media_cast_crew_person ON media_cast_crew(person_id);
 
 CREATE INDEX idx_watchlist_user ON watchlist(user_id);
 CREATE INDEX idx_watchlist_media ON watchlist(media_id);
+CREATE INDEX idx_user_library_user ON user_library(user_id);
+CREATE INDEX idx_user_library_media ON user_library(media_id);
 CREATE INDEX idx_watched_history_user ON watched_history(user_id);
 
 -- =============================================================================
@@ -140,6 +152,7 @@ ALTER TABLE media_availability ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_cast_crew ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_library ENABLE ROW LEVEL SECURITY;
 ALTER TABLE watched_history ENABLE ROW LEVEL SECURITY;
 
 -- Media, People, Platforms, Media_Availability, Media_Cast_Crew: Public read
@@ -160,6 +173,11 @@ CREATE POLICY "Users can view own watchlist" ON watchlist FOR SELECT USING (auth
 CREATE POLICY "Users can insert own watchlist" ON watchlist FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own watchlist" ON watchlist FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Users can delete own watchlist" ON watchlist FOR DELETE USING (auth.uid() = user_id);
+
+-- User library: own rows only
+CREATE POLICY "Users can view own user_library" ON user_library FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own user_library" ON user_library FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete own user_library" ON user_library FOR DELETE USING (auth.uid() = user_id);
 
 -- Watched history: Users can only access their own
 CREATE POLICY "Users can view own watched history" ON watched_history FOR SELECT USING (auth.uid() = user_id);

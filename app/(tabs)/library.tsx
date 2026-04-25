@@ -8,8 +8,8 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -24,13 +24,14 @@ import { useCountry } from '../../lib/country-context';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
-interface WatchedMovie {
+/** Row from `user_library` with embedded `media` (same join shape as watchlist). */
+interface LibraryMovie {
+  libraryRowId: string;
   id: string;
-  tmdb_id: number;
+  tmdb_id: number | null;
   title: string;
   poster_url: string | null;
-  watched_at: string;
-  personal_rating: number | null;
+  added_at: string;
   vote_average: number | null;
 }
 
@@ -39,7 +40,7 @@ interface ProviderLogo {
   logo_url: string;
 }
 
-function formatWatchedDate(iso: string): string {
+function formatAddedAt(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, {
     year: 'numeric',
@@ -48,10 +49,10 @@ function formatWatchedDate(iso: string): string {
   });
 }
 
-export default function WatchedScreen() {
+export default function LibraryScreen() {
   const router = useRouter();
   const { selectedCountry } = useCountry();
-  const [movies, setMovies] = useState<WatchedMovie[]>([]);
+  const [libraryMovies, setLibraryMovies] = useState<LibraryMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
@@ -59,7 +60,7 @@ export default function WatchedScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const hasFetchedOnce = useRef(false);
 
-  const enrichWithTmdbVotes = useCallback(async (rows: WatchedMovie[]): Promise<WatchedMovie[]> => {
+  const enrichWithTmdbVotes = useCallback(async (rows: LibraryMovie[]): Promise<LibraryMovie[]> => {
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
     if (!apiKey || rows.length === 0) {
       return rows.map((row) => ({ ...row, vote_average: null }));
@@ -67,6 +68,9 @@ export default function WatchedScreen() {
 
     return Promise.all(
       rows.map(async (row) => {
+        if (row.tmdb_id == null) {
+          return { ...row, vote_average: null };
+        }
         try {
           const res = await fetch(`${TMDB_BASE}/movie/${row.tmdb_id}`, {
             headers: { Authorization: `Bearer ${apiKey}` },
@@ -85,32 +89,37 @@ export default function WatchedScreen() {
     );
   }, []);
 
-  const fetchHistory = useCallback(async (userId: string) => {
+  const fetchLibrary = useCallback(async (userId: string) => {
     const { data, error } = await supabase
-      .from('watched_history')
-      .select('id, tmdb_id, title, poster_url, watched_at, personal_rating')
+      .from('user_library')
+      .select('id, created_at, media_id, media (id, tmdb_id, title, poster_url, release_year)')
       .eq('user_id', userId)
-      .order('watched_at', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Watched list fetch error:', error);
-      setMovies([]);
+      console.error('Library fetch error:', error);
+      setLibraryMovies([]);
       return;
     }
 
-    const base: WatchedMovie[] = (data ?? []).map((row) => ({
-      id: row.id as string,
-      tmdb_id: row.tmdb_id as number,
-      title: row.title as string,
-      poster_url: (row.poster_url as string | null) ?? null,
-      watched_at: row.watched_at as string,
-      personal_rating:
-        row.personal_rating != null ? Number(row.personal_rating) : null,
-      vote_average: null,
-    }));
+    const base: LibraryMovie[] = (data ?? [])
+      .map((row: Record<string, unknown>) => {
+        const m = row.media as Record<string, unknown> | null;
+        if (!m) return null;
+        return {
+          libraryRowId: row.id as string,
+          id: m.id as string,
+          tmdb_id: (m.tmdb_id as number | null) ?? null,
+          title: m.title as string,
+          poster_url: (m.poster_url as string | null) ?? null,
+          added_at: row.created_at as string,
+          vote_average: null,
+        };
+      })
+      .filter((m): m is LibraryMovie => m !== null);
 
     const enriched = await enrichWithTmdbVotes(base);
-    setMovies(enriched);
+    setLibraryMovies(enriched);
   }, [enrichWithTmdbVotes]);
 
   useEffect(() => {
@@ -135,7 +144,7 @@ export default function WatchedScreen() {
   }, [session]);
 
   useEffect(() => {
-    const tmdbIds = movies
+    const tmdbIds = libraryMovies
       .map((m) => m.tmdb_id)
       .filter((id): id is number => id != null);
 
@@ -187,7 +196,7 @@ export default function WatchedScreen() {
     return () => {
       cancelled = true;
     };
-  }, [movies, selectedCountry, enabledServiceIds]);
+  }, [libraryMovies, selectedCountry, enabledServiceIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -197,15 +206,15 @@ export default function WatchedScreen() {
         if (s) {
           const isInitial = !hasFetchedOnce.current;
           if (isInitial) setLoading(true);
-          await fetchHistory(s.user.id);
+          await fetchLibrary(s.user.id);
           hasFetchedOnce.current = true;
         } else {
-          setMovies([]);
+          setLibraryMovies([]);
         }
         setLoading(false);
       };
       run();
-    }, [fetchHistory])
+    }, [fetchLibrary])
   );
 
   useEffect(() => {
@@ -213,7 +222,7 @@ export default function WatchedScreen() {
       (_event, s) => {
         setSession(s);
         if (!s) {
-          setMovies([]);
+          setLibraryMovies([]);
           hasFetchedOnce.current = false;
         }
       }
@@ -224,23 +233,25 @@ export default function WatchedScreen() {
   const onRefresh = useCallback(async () => {
     if (!session) return;
     setRefreshing(true);
-    await fetchHistory(session.user.id);
+    await fetchLibrary(session.user.id);
     setRefreshing(false);
-  }, [session, fetchHistory]);
+  }, [session, fetchLibrary]);
 
   const handleMoviePress = useCallback(
-    (item: WatchedMovie) => {
+    (item: LibraryMovie) => {
+      if (item.tmdb_id == null) return;
       router.push({
         pathname: '/movie/[id]',
-        params: { id: String(item.tmdb_id), fromWatched: 'true' },
+        params: { id: String(item.tmdb_id) },
       });
     },
     [router]
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: WatchedMovie }) => {
-      const { personal_rating, vote_average } = item;
+    ({ item }: { item: LibraryMovie }) => {
+      const tmdb = item.tmdb_id;
+      const { vote_average } = item;
 
       return (
         <Pressable
@@ -265,14 +276,14 @@ export default function WatchedScreen() {
             <Text style={styles.movieTitle} numberOfLines={2}>
               {item.title}
             </Text>
-            <Text style={styles.watchedDate}>
-              Watched on {formatWatchedDate(item.watched_at)}
+            <Text style={styles.addedDate}>
+              Added {formatAddedAt(item.added_at)}
             </Text>
           </View>
 
           <View style={styles.providerIcons}>
-            {(providerLogos[item.tmdb_id] ?? []).length > 0
-              ? (providerLogos[item.tmdb_id] ?? []).map((p) => (
+            {tmdb != null && (providerLogos[tmdb] ?? []).length > 0
+              ? (providerLogos[tmdb] ?? []).map((p) => (
                   <Image
                     key={p.provider_id}
                     source={{ uri: p.logo_url }}
@@ -283,15 +294,8 @@ export default function WatchedScreen() {
               : null}
           </View>
 
-          {/* Ratings Column (Right-Aligned, Stacked) */}
           <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 13, color: '#e5e7eb', fontWeight: '500' }}>
-              You:{' '}
-              <Text style={{ color: '#818cf8', fontWeight: 'bold' }}>
-                {personal_rating != null ? `${personal_rating}/10` : '—'}
-              </Text>
-            </Text>
-            <Text style={{ fontSize: 13, color: '#9ca3af', marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: '#9ca3af' }}>
               TMDB:{' '}
               {vote_average != null ? `${vote_average.toFixed(1)}/10` : '—'}
             </Text>
@@ -311,15 +315,15 @@ export default function WatchedScreen() {
             Tap "Sign In" in the top-right to get started
           </Text>
         </View>
-      ) : !loading && movies.length === 0 ? (
+      ) : !loading && libraryMovies.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>No movies watched yet</Text>
+          <Text style={styles.emptyText}>No titles in your library</Text>
           <Text style={styles.emptySubtext}>
-            Start tracking your cinematic journey!
+            Add movies from a title’s details page
           </Text>
         </View>
       ) : null,
-    [loading, session, movies.length]
+    [loading, session, libraryMovies.length]
   );
 
   if (loading) {
@@ -335,12 +339,12 @@ export default function WatchedScreen() {
   return (
     <SafeAreaView style={styles.wrapper}>
       <FlatList
-        data={movies}
-        keyExtractor={(item) => item.id}
+        data={libraryMovies}
+        keyExtractor={(item) => item.libraryRowId}
         renderItem={renderItem}
         contentContainerStyle={[
           styles.content,
-          movies.length === 0 && styles.contentEmpty,
+          libraryMovies.length === 0 && styles.contentEmpty,
         ]}
         ListEmptyComponent={ListEmptyComponent}
         refreshControl={
@@ -447,7 +451,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
-  watchedDate: {
+  addedDate: {
     fontSize: 13,
     color: '#9ca3af',
     marginTop: 4,

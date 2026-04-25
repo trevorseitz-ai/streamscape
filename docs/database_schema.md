@@ -1,6 +1,6 @@
 # 🗃️ Database Schema (Auto-generated)
 
-*Last Updated: 4/22/2026, 11:55:01 AM*
+*Last Updated: 4/23/2026*
 
 ---
 
@@ -52,6 +52,22 @@
 | `media_id` | uuid |
 | `watched` | boolean |
 | `added_at` | timestamp with time zone |
+
+## 📋 Table: user_library
+
+User-owned collection (distinct from the watchlist). One row per user per `media` row.
+
+| Column | Type |
+| :--- | :--- |
+| `id` | uuid (primary key, default `gen_random_uuid()`) |
+| `user_id` | uuid (foreign key → `auth.users(id)`) |
+| `media_id` | uuid (foreign key → `media(id)`, **ON DELETE CASCADE**) |
+| `created_at` | timestamp with time zone |
+
+**Constraints**
+
+- `UNIQUE (user_id, media_id)` — a user can save a given title at most once.
+- The foreign key on `media_id` **must** reference `media(id)` with **ON DELETE CASCADE** so library rows are removed when a `media` row is deleted from the master table.
 
 ## 📋 Table: streaming_cache
 
@@ -156,4 +172,14 @@
 | `updated_at` | timestamp with time zone |
 | `access_type` | character varying |
 | `direct_url` | text |
+
+---
+
+## Relational query rules (PostgREST / Supabase)
+
+These rules apply to nested `.select('..., related_table(...))` queries from the app.
+
+1. **Explicit foreign keys:** PostgREST only exposes embeds / joins like `.select('..., media(*)')` when a **declared foreign key** exists between the tables involved. Without that constraint, the join is not available to the client.
+
+2. **Type parity:** Defining a foreign key fails if column types do not match exactly (for example, `user_library.media_id` must be the same type as `media.id` — both `uuid`, not `text` on one side and `uuid` on the other). Keep types aligned when adding or migrating join columns.
 

@@ -115,3 +115,15 @@ TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus 
 
 **Implementation:** Native engine tags can take a moment to register. If you point an item at `nextRowTag` and that tag is still `null`, the Android TV engine falls back to proximity routing and the focus can jump diagonally. Always fall back to the component’s own tag (`?? localTag`) to create a short-lived “invisible wall” until the cross-row tag is ready.
 
+---
+
+## TV Performance & State Management
+
+### The Optimistic UI Pattern
+
+**Rule:** TV interfaces must respond instantly to remote clicks. Never wait for a network request to resolve before updating a visual toggle (for example a Watchlist or Library button).
+
+**Implementation:** When a user toggles an action, immediately update the local React state (e.g. `setIsInLibrary(!isInLibrary)`) so the cyan focus/active ring reflects the new intent. Fire the database sync in the background. Wrap the database call in a `try`/`catch` block; if the network fails, revert the state to its previous value and show an `Alert`.
+
+**State decoupling:** Keep discrete list states (like Watchlist vs. Library) completely decoupled in the UI unless the product explicitly requires them to be mutually exclusive.
+
