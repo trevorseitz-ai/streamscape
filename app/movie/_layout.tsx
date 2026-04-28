@@ -1,7 +1,9 @@
 import { Stack } from 'expo-router';
 import { MovieProvider } from '../../lib/movie-context';
+import { isTvTarget } from '../../lib/isTv';
 
 export default function MovieLayout() {
+  const isTV = isTvTarget();
   return (
     <MovieProvider>
       <Stack
@@ -12,7 +14,7 @@ export default function MovieLayout() {
         <Stack.Screen
           name="[id]"
           options={{
-            headerShown: true,
+            headerShown: !isTV,
             headerStyle: { backgroundColor: '#0f0f0f' },
             headerTintColor: '#ffffff',
             headerShadowVisible: false,

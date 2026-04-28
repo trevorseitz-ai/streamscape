@@ -28,6 +28,33 @@
 
 ---
 
+## Locked layout constants (540p logical height — above-the-fold)
+
+Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`, `app/(tabs)/index.tsx`, `MovieCard.tsx`.
+
+| Token | Value |
+|-------|--------|
+| `TV_SIDEBAR_WIDTH` | **100px** |
+| `TV_HERO_HEIGHT` | **220px** |
+| `TV_POSTER_WIDTH` | **140px** |
+| `TV_POSTER_HEIGHT` | **210px** |
+| `TV_GAP` | **12px** |
+
+Hero banner (copy + backdrop inside **220px** height):
+
+- **Hero layout:** **`heroShellTv`** uses **`flexDirection: 'row'`**, **`justifyContent: 'space-between'`**, horizontal padding **40**, vertical padding **20**. **Left:** **`heroContentTv`** (`flex: 1`, **`paddingRight: 40`**). **Right:** fixed **`391×220`** image column (**`heroTvImageColumn`**). No dark overlay on TV (`heroOverlay` is phone-only).
+
+| Token | Value |
+|-------|--------|
+| `TV_HERO_TITLE_FONT` | **18px** |
+| `TV_HERO_META_FONT` | **12px** (year + rating line) |
+| `TV_HERO_IMAGE_WIDTH` | **391px** (paired with **`TV_HERO_HEIGHT`** **220px** in code) |
+| `TV_HERO_RESIZE_MODE` | **`'cover'`** (backdrop fills fixed 16:9 slot; no letterboxing) |
+
+Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, `TV_GRID_COLUMNS` **5**, poster tile title **13px**, year **11px**, section header **22px**.
+
+---
+
 ## 🔐 Environment Variables
 
 Before running the emulator, duplicate `.env.example`, rename it to `.env`, and populate it with your active API keys and Supabase credentials.

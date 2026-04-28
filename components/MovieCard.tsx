@@ -15,7 +15,6 @@ import * as Haptics from 'expo-haptics';
 import { useWatchlistStatus } from '../lib/watchlist-status-context';
 import { tvFocusable } from '../lib/tvFocus';
 import { isTvTarget, shouldUseTvDpadFocus } from '../lib/isTv';
-import { tvBodyFontSize } from '../lib/tvTypography';
 import { useTvSearchFocusBridge } from '../lib/tv-search-focus-context';
 
 export interface Movie {
@@ -55,6 +54,10 @@ interface MovieCardProps {
 /** ReelDive TV: Electric Cyan (art.md) */
 const ELECTRIC_CYAN = '#00F5FF';
 const TV_FOCUS_BORDER_WIDTH = 3;
+
+/** Poster tile typography — see `/tv.md` (`TV_TITLE_FONT`, `TV_YEAR_FONT`). */
+const TV_TILE_TITLE_PX = 13;
+const TV_TILE_YEAR_PX = 11;
 
 function triggerHaptic() {
   if (Platform.OS === 'web') return;
@@ -132,25 +135,17 @@ export function MovieCard({
     fixedPosterWidth > 0 &&
     fixedPosterHeight > 0;
 
-  /** TV + Discover: border/focus live on Pressable; inner surface fills the box. */
-  const tvPosterPressableBounds =
-    hasFixedPosterSize && tvPosterFocus
-      ? {
-          width: fixedPosterWidth,
-          height: fixedPosterHeight,
-          justifyContent: 'center' as const,
-          alignItems: 'center' as const,
-        }
-      : null;
-
-  const posterContainerStyle = [
-    styles.posterContainer,
-    hasFixedPosterSize && tvPosterFocus
-      ? { width: '100%' as const, height: '100%' as const }
-      : hasFixedPosterSize
-        ? { width: fixedPosterWidth, height: fixedPosterHeight }
-        : null,
-  ];
+  /**
+   * Fixed poster: outer shell stays `overflow: 'visible'` so the TV focus ring on `Pressable`
+   * isn’t clipped; image crops inside `posterClipInner`.
+   */
+  const posterContainerStyle =
+    hasFixedPosterSize && fixedPosterWidth != null && fixedPosterHeight != null
+      ? [
+          styles.posterShellFixedOuter,
+          { width: fixedPosterWidth, height: fixedPosterHeight },
+        ]
+      : styles.posterContainer;
 
   const cardWidthStyle = hasFixedPosterSize
     ? { width: fixedPosterWidth, maxWidth: fixedPosterWidth }
@@ -158,22 +153,27 @@ export function MovieCard({
 
   const showPosterPlaceholder = !movie.poster_url || posterLoadFailed;
 
+  const posterRaster = !showPosterPlaceholder ? (
+    <Image
+      source={{ uri: movie.poster_url as string }}
+      style={{ width: '100%', height: '100%' }}
+      resizeMode="cover"
+      onError={() => setPosterLoadFailed(true)}
+    />
+  ) : (
+    <View style={styles.posterPlaceholder}>
+      <Text style={styles.placeholderTitle} numberOfLines={3}>
+        {movie.title}
+      </Text>
+    </View>
+  );
+
   const posterInner = (
     <>
-      {!showPosterPlaceholder ? (
-        /* Crop to 2:3 box; cover avoids stretch/squish with TV fixed poster bounds. */
-        <Image
-          source={{ uri: movie.poster_url as string }}
-          style={styles.poster}
-          resizeMode="cover"
-          onError={() => setPosterLoadFailed(true)}
-        />
+      {hasFixedPosterSize && fixedPosterWidth != null && fixedPosterHeight != null ? (
+        <View style={styles.posterClipInner}>{posterRaster}</View>
       ) : (
-        <View style={styles.posterPlaceholder}>
-          <Text style={styles.placeholderTitle} numberOfLines={3}>
-            {movie.title}
-          </Text>
-        </View>
+        posterRaster
       )}
       {hasSession && tmdbId != null && !isTV && (
         <>
@@ -216,9 +216,26 @@ export function MovieCard({
 
   const titleStyle = [
     styles.title,
-    isTV && { marginTop: 0, fontSize: tvBodyFontSize(14) },
+    isTV && { marginTop: 0, fontSize: TV_TILE_TITLE_PX },
   ];
-  const yearStyle = [styles.year, isTV && { fontSize: tvBodyFontSize(12) }];
+  const yearStyle = [styles.year, isTV && { fontSize: TV_TILE_YEAR_PX }];
+
+  /** Home/TV grids: prevent flex parents from stretching fixed poster tiles. */
+  const tvCardFlexLock =
+    isTV && tvPosterFocus
+      ? hasFixedPosterSize &&
+          fixedPosterWidth != null &&
+          fixedPosterHeight != null
+        ? {
+            width: fixedPosterWidth,
+            maxWidth: fixedPosterWidth,
+            minWidth: fixedPosterWidth,
+            flexGrow: 0,
+            flexShrink: 0,
+            alignSelf: 'flex-start',
+          }
+        : { flexGrow: 0, flexShrink: 0 }
+      : null;
 
   const hasTvAndroidNavProps =
     Platform.OS === 'android' &&
@@ -263,6 +280,7 @@ export function MovieCard({
           styles.card,
           isTV && styles.cardTv,
           cardWidthStyle,
+          tvCardFlexLock,
           { position: 'relative', overflow: 'visible' },
           styles.posterPressable,
           isFocused && styles.posterFocusedTv,
@@ -274,7 +292,10 @@ export function MovieCard({
         >
           {posterInner}
         </View>
-        <View style={styles.titleBlockTv} focusable={isTV && Platform.OS === 'android' ? false : undefined}>
+        <View
+          style={styles.titleBlockTv}
+          focusable={isTV && Platform.OS === 'android' ? false : undefined}
+        >
           <Text style={titleStyle} numberOfLines={2}>
             {movie.title}
           </Text>
@@ -363,9 +384,18 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     padding: 4,
   },
-  poster: {
-    width: '100%',
-    height: '100%',
+  /** Fixed tile: outer box — focus ring draws outside; no clipping here. */
+  posterShellFixedOuter: {
+    position: 'relative',
+    borderRadius: 8,
+    backgroundColor: '#1f1f1f',
+    overflow: 'visible',
+  },
+  /** Clips raster only (inside outer shell). */
+  posterClipInner: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   posterPlaceholder: {
     width: '100%',

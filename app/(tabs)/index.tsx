@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
@@ -28,31 +28,46 @@ import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { supabase } from '../../lib/supabase';
 import { TvFocusGuideView } from '../../components/TvFocusGuideView';
+import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 /** TV focus ring (art.md) */
 const ELECTRIC_CYAN = '#00F5FF';
 
+/** Locked TV Home layout — see `docs/depts/tv.md` / `tv.md`. */
+const TV_HERO_HEIGHT_PX = 220;
+/** Fixed hero backdrop column — design width **391** at height **220** (~16:9). */
+const TV_HERO_IMAGE_WIDTH_PX = 391;
+/** Hero banner copy + image fit — see `docs/depts/tv.md`. */
+const TV_HERO_TITLE_FONT = 18;
+const TV_HERO_META_FONT = 12;
+const TV_FIXED_POSTER_WIDTH = 140;
+const TV_FIXED_POSTER_HEIGHT = 210;
+const TV_GRID_COLUMNS = 5;
+const TV_GAP = 12;
+const TV_SECTION_HEADER_FONT = 22;
+
 interface TrendingMovie extends Movie {
   backdrop_url: string | null;
 }
 
 const MAIN_HORIZONTAL_PADDING = 20;
+/** TV Home: inset inside green `ScrollView` — 10px from sidebar-adjacent edge and from right screen edge (via content column). */
+const TV_HOME_CONTENT_PAD_X = 10;
 const TRENDING_GAP_PHONE = 10;
-const TRENDING_GAP_TV = 20;
+const TRENDING_GAP_TV = TV_GAP;
 
 export default function HomeScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
   const { width, height } = useWindowDimensions();
+  /** TV detection: `Platform.isTV`, or `expoConfig.extra.isTV` — see `lib/isTv.ts`. Web is never TV. */
   const isTV = isTvTarget();
   const windowWidth = Dimensions.get('window').width;
   const screenBg = isTV ? '#121212' : '#0f0f0f';
-  const horizontalPad = isTV
-    ? Math.min(80, Math.max(48, windowWidth * 0.04))
-    : MAIN_HORIZONTAL_PADDING;
-  const heroHeight = height * (isTV ? 0.45 : 0.4);
+  const horizontalPad = isTV ? TV_HOME_CONTENT_PAD_X : MAIN_HORIZONTAL_PADDING;
+  const heroHeight = isTV ? TV_HERO_HEIGHT_PX : height * 0.4;
 
   /** Android TV: non-Pressable surfaces must not participate in the focus graph. */
   const tvNf = isTV && Platform.OS === 'android' ? ({ focusable: false, collapsable: false } as const) : {};
@@ -62,13 +77,15 @@ export default function HomeScreen() {
     supabase.auth.signOut();
   }, []);
 
+  /** Use stable `refetch` — entire `status` identity updates whenever watchlists change (would churn `useFocusEffect`). */
+  const refetchWatchlistStatus = status?.refetch;
   useFocusEffect(
     useCallback(() => {
-      status?.refetch();
+      refetchWatchlistStatus?.();
       supabase.auth.getSession().then(({ data: { session: s } }) => {
         setSession(s);
       });
-    }, [status])
+    }, [refetchWatchlistStatus])
   );
 
   useEffect(() => {
@@ -171,7 +188,7 @@ export default function HomeScreen() {
   /** TV: fixed 5 columns to match real layout & focus [R,C] math. Phone: 3 or 2. */
   const gridColumnCount = (() => {
     if (isTV) {
-      return 5;
+      return TV_GRID_COLUMNS;
     }
     return width >= 430 ? 3 : 2;
   })();
@@ -187,7 +204,16 @@ export default function HomeScreen() {
   const trendingGridCount = trendingGridMovies.length;
   const numTrendingGridRows =
     trendingGridCount > 0 ? Math.ceil(trendingGridCount / gridColumnCount) : 0;
-  const trendingContentWidth = width - horizontalPad * 2;
+  /**
+   * TV: usable row width beside the left rail (`Discover` uses the same shell − sidebar math).
+   * Phone: full window minus horizontal padding only.
+   */
+  const tvRowUsableWidth = useMemo(() => {
+    const pad = horizontalPad * 2;
+    if (!isTV) return Math.max(0, width - pad);
+    return Math.max(0, width - TV_SIDEBAR_WIDTH - pad);
+  }, [isTV, width, horizontalPad]);
+  const trendingContentWidth = tvRowUsableWidth;
   const trendingCardWidth =
     (trendingContentWidth - trendingGap * (gridColumnCount - 1)) / gridColumnCount;
 
@@ -256,22 +282,28 @@ export default function HomeScreen() {
 
   const mainColumn = (
     <>
-      <HeaderWrapper
-        {...(isTV && Platform.OS === 'android' ? tvNf : {})}
-        style={[styles.safeHeader, { backgroundColor: screenBg }]}
-      >
-        <HomeHeader
-          session={session}
-          onLogout={handleLogout}
-          onLogin={() => router.push('/login')}
-        />
-      </HeaderWrapper>
+      {!isTV ? (
+        <HeaderWrapper style={[styles.safeHeader, { backgroundColor: screenBg }]}>
+          <HomeHeader
+            session={session}
+            onLogout={handleLogout}
+            onLogin={() => router.push('/login')}
+          />
+        </HeaderWrapper>
+      ) : null}
       <ScrollView
         {...(isTV && Platform.OS === 'android' ? { focusable: false } : {})}
         style={styles.mainScroll}
         contentContainerStyle={[
           styles.mainContentContainer,
-          { paddingHorizontal: horizontalPad },
+          isTV
+            ? {
+                paddingLeft: TV_HOME_CONTENT_PAD_X,
+                paddingRight: TV_HOME_CONTENT_PAD_X,
+                paddingTop: 3,
+                paddingBottom: 60,
+              }
+            : { paddingHorizontal: horizontalPad },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -308,7 +340,14 @@ export default function HomeScreen() {
         ) : null}
         {/* Hero #1 Trending */}
         {trendingLoading ? (
-          <View style={[styles.heroSkeleton, { height: heroHeight }]} {...tvNf}>
+          <View
+            style={[
+              styles.heroSkeleton,
+              { height: heroHeight },
+              isTV && { marginBottom: 3, width: '100%', alignSelf: 'stretch' },
+            ]}
+            {...tvNf}
+          >
             <ActivityIndicator size="large" color="#6366f1" />
             <Text
               style={[
@@ -320,47 +359,14 @@ export default function HomeScreen() {
             </Text>
           </View>
         ) : heroMovie ? (
+          /* Branch order: heroMovie → `isTV ?` TV hero : phone hero — never reversed */
           isTV ? (
             <View
-              style={[
-                styles.heroShell,
-                { height: heroHeight },
-                isTV && styles.heroShellTvSpacing,
-              ]}
+              style={styles.heroShellTv}
               {...tvNf}
               collapsable={false}
             >
-              <View
-                style={styles.heroMediaClip}
-                pointerEvents="box-none"
-                {...tvNf}
-              >
-                <Pressable
-                  focusable={false}
-                  onPress={openHeroMovie}
-                  style={StyleSheet.absoluteFill}
-                >
-                  {heroMovie.backdrop_url ? (
-                    <Image
-                      source={{ uri: heroMovie.backdrop_url }}
-                      style={styles.heroBackdrop}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <View style={styles.heroBackdropPlaceholder} {...tvNf} />
-                  )}
-                </Pressable>
-                <View
-                  style={styles.heroOverlay}
-                  pointerEvents="none"
-                  {...tvNf}
-                />
-              </View>
-              <View
-                style={styles.heroContent}
-                pointerEvents="box-none"
-                {...tvNf}
-              >
+              <View style={styles.heroContentTv} pointerEvents="box-none" {...tvNf}>
                 <View style={styles.heroBadge} {...tvNf}>
                   <Text
                     style={[
@@ -368,13 +374,13 @@ export default function HomeScreen() {
                       isTV && { fontSize: tvFontSize(11) },
                     ]}
                   >
-                    #1 Trending Today
+                    #1 Trending Now
                   </Text>
                 </View>
                 <Text
                   style={[
                     styles.heroTitle,
-                    isTV && { fontSize: tvTitleFontSize(26) },
+                    isTV && { fontSize: TV_HERO_TITLE_FONT },
                   ]}
                 >
                   {heroMovie.title}
@@ -384,7 +390,7 @@ export default function HomeScreen() {
                     <Text
                       style={[
                         styles.heroYear,
-                        isTV && { fontSize: tvBodyFontSize(14) },
+                        isTV && { fontSize: TV_HERO_META_FONT },
                       ]}
                     >
                       {heroMovie.release_year}
@@ -395,7 +401,7 @@ export default function HomeScreen() {
                       <Text
                         style={[
                           styles.heroRatingStar,
-                          isTV && { fontSize: tvFontSize(13) },
+                          isTV && { fontSize: TV_HERO_META_FONT },
                         ]}
                       >
                         ★
@@ -403,7 +409,7 @@ export default function HomeScreen() {
                       <Text
                         style={[
                           styles.heroRatingText,
-                          isTV && { fontSize: tvBodyFontSize(14) },
+                          isTV && { fontSize: TV_HERO_META_FONT },
                         ]}
                       >
                         {(Math.round(heroMovie.vote_average * 10) / 10).toFixed(1)}
@@ -448,6 +454,23 @@ export default function HomeScreen() {
                   >
                     View Details
                   </Text>
+                </Pressable>
+              </View>
+              <View style={styles.heroTvImageColumn} {...tvNf}>
+                <Pressable
+                  focusable={false}
+                  onPress={openHeroMovie}
+                  style={StyleSheet.absoluteFill}
+                >
+                  {heroMovie.backdrop_url ? (
+                    <Image
+                      source={{ uri: heroMovie.backdrop_url }}
+                      style={styles.heroBackdropTvInner}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.heroBackdropPlaceholderTv} {...tvNf} />
+                  )}
                 </Pressable>
               </View>
             </View>
@@ -556,7 +579,10 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { fontSize: tvTitleFontSize(20) },
+                    {
+                      fontSize: TV_SECTION_HEADER_FONT,
+                      marginBottom: 8,
+                    },
                   ]}
                 >
                   Trending Now
@@ -566,12 +592,17 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>Trending Now</Text>
             )}
             <View
-              style={[
-                styles.trendingGrid,
+              style={
                 isTV
-                  ? { rowGap: 10, columnGap: trendingGap }
-                  : { gap: trendingGap },
-              ]}
+                  ? {
+                      width: '100%',
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-start',
+                      justifyContent: 'flex-start',
+                    }
+                  : [styles.trendingGrid, { gap: trendingGap }]
+              }
               {...tvNf}
             >
               {trendingGridMovies.map((movie, idx) => {
@@ -586,15 +617,26 @@ export default function HomeScreen() {
                 const isLeftCol = colIndex === 0;
                 const isBottomRow =
                   trendingGridCount > 0 && rowIndex === numTrendingGridRows - 1;
+                const isLastCol = colIndex === gridColumnCount - 1;
                 return (
                   <View
                     key={movie.id}
-                    style={{ width: trendingCardWidth }}
+                    style={
+                      isTV
+                        ? {
+                            width: trendingCardWidth,
+                            marginRight: isLastCol ? 0 : 12,
+                            marginBottom: 20,
+                          }
+                        : { width: trendingCardWidth }
+                    }
                     {...tvNf}
                   >
                     <MovieCard
                       movie={movie}
                       onPress={() => handleMoviePress(movie)}
+                      posterWidth={isTV ? TV_FIXED_POSTER_WIDTH : undefined}
+                      posterHeight={isTV ? TV_FIXED_POSTER_HEIGHT : undefined}
                       tvClampFocusRight={isRightEdge}
                       onTvPosterNavTag={
                         isFirstGridPoster && isTV && Platform.OS === 'android'
@@ -715,7 +757,10 @@ const styles = StyleSheet.create({
   bottomHalfTv: {
     flex: 0,
     flexGrow: 0,
-    marginTop: 8,
+    /** Was 8 — reduce gap vs Hero by ~75% (≈2). */
+    marginTop: 2,
+    /** Overrides `bottomHalf.paddingTop` (12) → ~75% reduction for TV band. */
+    paddingTop: 3,
   },
   safeHeader: {
     backgroundColor: '#0f0f0f',
@@ -743,25 +788,59 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 12,
   },
-  /** TV: `overflow: 'visible'` so the View Details focus ring is not clipped. */
+  /** Phone hero outer-only — do not compose with `heroShellTv`. */
   heroShell: {
     borderRadius: 16,
     marginBottom: 12,
     position: 'relative',
     overflow: 'visible',
   },
-  /**
-   * Extra bottom margin on TV so the hero’s layout box ends clearly above the “Trending Now”
-   * block (avoids D-pad spatial search treating row 1 as under/overlapping the hero).
-   */
-  heroShellTvSpacing: {
-    marginBottom: 28,
+  /** TV hero shell only — flex row + pad + gap below trending grid. */
+  heroShellTv: {
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingVertical: 20,
+    marginBottom: 7,
+    position: 'relative',
   },
   /** Clips backdrop only; keeps rounded corners without clipping the focus ring. */
   heroMediaClip: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 16,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  /** TV: left stack — fills remaining row width with gap before image. */
+  heroContentTv: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 40,
+    justifyContent: 'flex-end',
+  },
+  /** Fixed-size backdrop slot (`391×220`). */
+  heroTvImageColumn: {
+    width: TV_HERO_IMAGE_WIDTH_PX,
+    height: TV_HERO_HEIGHT_PX,
+    borderRadius: 12,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  heroBackdropTvInner: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    opacity: 1,
+  },
+  heroBackdropPlaceholderTv: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a1a',
   },
   heroContainer: {
     borderRadius: 16,
@@ -868,6 +947,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'flex-start',
     justifyContent: 'flex-start',
   },
   trendingEmpty: {

@@ -33,6 +33,8 @@ export default function TabLayout() {
     <Tabs
       tabBar={isTV ? (props) => <TvSidebarTabBar {...props} /> : undefined}
       screenOptions={({ route }) => ({
+        /** Navigator default — hide React Navigation header for every tab (TV uses `TvSidebarTabBar`). */
+        headerShown: false,
         ...(isTV
           ? {
               tabBarPosition: 'left',
@@ -79,13 +81,15 @@ export default function TabLayout() {
             }),
         tabBarActiveTintColor: '#6366f1',
         tabBarInactiveTintColor: '#6b7280',
-        tabBarIcon: ({ color, size, focused }) => (
-          <Ionicons
-            name={getTabIcon(route.name, focused)}
-            size={size}
-            color={color}
-          />
-        ),
+        tabBarIcon: isTV
+          ? () => null
+          : ({ color, size, focused }) => (
+              <Ionicons
+                name={getTabIcon(route.name, focused)}
+                size={size}
+                color={color}
+              />
+            ),
         ...(!isTV
           ? {
               tabBarLabelStyle: {
@@ -101,16 +105,15 @@ export default function TabLayout() {
               ),
             }
           : {}),
-        headerShown: false,
       })}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="search" options={{ title: 'Search' }} />
-      <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist' }} />
-      <Tabs.Screen name="library" options={{ title: 'Library' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      <Tabs.Screen name="discover" options={{ title: 'Discover' }} />
-      <Tabs.Screen name="account" options={{ title: 'Account' }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', headerShown: false }} />
+      <Tabs.Screen name="search" options={{ title: 'Search', headerShown: false }} />
+      <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist', headerShown: false }} />
+      <Tabs.Screen name="library" options={{ title: 'Library', headerShown: false }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile', headerShown: false }} />
+      <Tabs.Screen name="discover" options={{ title: 'Discover', headerShown: false }} />
+      <Tabs.Screen name="account" options={{ title: 'Account', headerShown: false }} />
     </Tabs>
   );
 

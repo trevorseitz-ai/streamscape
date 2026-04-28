@@ -4,13 +4,13 @@
 export const tvScale = 0.7;
 
 /** Fixed rail width (aligned with `TV_SIDEBAR_WIDTH` in TvSidebarTabBar). */
-export const TV_RAIL_WIDTH_BASE = 160;
+export const TV_RAIL_WIDTH_BASE = 100;
 
 /**
  * Fixed left rail width in px (see TvSidebarTabBar `TV_SIDEBAR_WIDTH`).
  */
 export function getTvSidebarWidthPx(_windowWidth?: number): number {
-  return 160;
+  return TV_RAIL_WIDTH_BASE;
 }
 
 export function getTvSidebarPaddingH(windowWidth: number): number {

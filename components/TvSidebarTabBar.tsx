@@ -26,7 +26,7 @@ import {
 } from '../lib/tvUiScale';
 
 /** Fixed left rail width (~10% on 1080p landscape); do not stretch with parent flex. */
-export const TV_SIDEBAR_WIDTH = 160;
+export const TV_SIDEBAR_WIDTH = 100;
 
 export function getTvSidebarWidthForWindow(_windowWidth?: number): number {
   return TV_SIDEBAR_WIDTH;

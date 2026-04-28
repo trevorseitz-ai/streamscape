@@ -1944,7 +1944,7 @@ export default function MovieDetailsScreen() {
     <>
       <Stack.Screen
         options={{
-          headerShown: true,
+          headerShown: !isTV,
           headerLeft: undefined,
           headerBackVisible: true,
           title: movie?.title ?? '',

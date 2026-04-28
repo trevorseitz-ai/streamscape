@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSearch } from '../lib/search-context';
 import { CountrySelector } from './CountrySelector';
 import { tvFocusable } from '../lib/tvFocus';
+import { isTvTarget } from '../lib/isTv';
 
 interface HeaderRightProps {
   routeName?: string;
@@ -31,6 +32,11 @@ export function HeaderRight({
   onSearchClose,
 }: HeaderRightProps) {
   const { setIsSearching, setSearchResult, setSearchError } = useSearch();
+
+  /** Native stack headers are hidden on TV; guard anyway so no stray chrome (e.g. overflow actions). */
+  if (isTvTarget()) {
+    return null;
+  }
 
   const showSearch =
     routeName === 'index' ||
