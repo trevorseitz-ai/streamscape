@@ -35,10 +35,8 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 /** TV focus ring (art.md) */
 const ELECTRIC_CYAN = '#00F5FF';
 
-/** Locked TV Home layout — see `docs/depts/tv.md` / `tv.md`. */
+/** Locked TV Home layout — see `docs/depts/tv.md` / `tv.md`. `TV_HERO_HEIGHT_PX` = skeleton / phone hero height hint. */
 const TV_HERO_HEIGHT_PX = 220;
-/** Fixed hero backdrop column — design width **391** at height **220** (~16:9). */
-const TV_HERO_IMAGE_WIDTH_PX = 391;
 /** Hero banner copy + image fit — see `docs/depts/tv.md`. */
 const TV_HERO_TITLE_FONT = 18;
 const TV_HERO_META_FONT = 12;
@@ -366,6 +364,7 @@ export default function HomeScreen() {
               {...tvNf}
               collapsable={false}
             >
+              <View style={{ flex: 1 }} {...tvNf} />
               <View style={styles.heroContentTv} pointerEvents="box-none" {...tvNf}>
                 <View style={styles.heroBadge} {...tvNf}>
                   <Text
@@ -473,6 +472,7 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
               </View>
+              <View style={{ flex: 1 }} {...tvNf} />
             </View>
           ) : (
             <Pressable
@@ -795,7 +795,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'visible',
   },
-  /** TV hero shell only — flex row + pad + gap below trending grid. */
+  /** TV: 4 equal columns (spacer | text | image | spacer); pad is vertical only. */
   heroShellTv: {
     width: '100%',
     alignSelf: 'stretch',
@@ -803,9 +803,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 40,
+    alignItems: 'stretch',
     paddingVertical: 20,
     marginBottom: 7,
     position: 'relative',
@@ -817,20 +815,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
-  /** TV: left stack — fills remaining row width with gap before image. */
+  /** TV: col 2 of 4 — typography. */
   heroContentTv: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 40,
+    paddingHorizontal: 10,
     justifyContent: 'flex-end',
   },
-  /** Fixed-size backdrop slot (`391×220`). */
+  /** TV: col 3 of 4 — 16:9 backdrop in its quarter. */
   heroTvImageColumn: {
-    width: TV_HERO_IMAGE_WIDTH_PX,
-    height: TV_HERO_HEIGHT_PX,
+    flex: 1,
+    minWidth: 0,
+    width: '100%',
+    aspectRatio: 16 / 9,
     borderRadius: 12,
     overflow: 'hidden',
-    flexShrink: 0,
   },
   heroBackdropTvInner: {
     ...StyleSheet.absoluteFillObject,
