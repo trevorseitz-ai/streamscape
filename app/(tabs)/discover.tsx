@@ -41,6 +41,10 @@ import { tvScale } from '../../lib/tvUiScale';
 import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
+import {
+  fetchFilmShowTopTrendingDiscoverMovies,
+  enrichWithTmdbImages,
+} from '../../lib/film-show-rapid-discover';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -88,9 +92,13 @@ interface DiscoverResult {
   id: string;
   title: string;
   poster_url: string | null;
+  /** Present when hydrated from RapidAPI + TMDB enrichment. */
+  backdrop_url?: string | null;
   release_year: number | null;
   vote_average: number | null;
   platforms: Array<{ name: string; access_type: string }>;
+  /** RapidAPI ids.TMDB — used for enrichment only when present. */
+  tmdb_id?: number | null;
 }
 
 interface TMDBDiscoverResponse {
@@ -542,6 +550,8 @@ export default function DiscoverScreen() {
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
   const [phase1Movies, setPhase1Movies] = useState<DiscoverResult[]>([]);
   const [phase2Movies, setPhase2Movies] = useState<DiscoverResult[]>([]);
+  /** Mount-time pool — RapidAPI Film & Show top/trending list (~100 rows), same shape as Discover list; prefetch / inspection. */
+  const [prefetchedTop100Trending, setPrefetchedTop100Trending] = useState<DiscoverResult[]>([]);
   const [fetchPhase, setFetchPhase] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -550,8 +560,16 @@ export default function DiscoverScreen() {
   const [providerIds, setProviderIds] = useState<number[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [rapidListHydrating, setRapidListHydrating] = useState<boolean>(() =>
+    Boolean(
+      process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim() &&
+        process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim()
+    )
+  );
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
+  /** True while the default grid is the RapidAPI top list (no TMDB discover pagination). */
+  const rapidDiscoverListActiveRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const genreListRef = useRef<FlatList>(null);
@@ -591,6 +609,40 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
+  useEffect(() => {
+    const key = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
+    const host = process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim();
+    if (!key || !host) {
+      setRapidListHydrating(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRapidListHydrating(true);
+
+    (async () => {
+      try {
+        const mappedMovies = await fetchFilmShowTopTrendingDiscoverMovies(key, host);
+        if (cancelled) return;
+        const enrichedMovies = await enrichWithTmdbImages(mappedMovies);
+        if (cancelled) return;
+        rapidDiscoverListActiveRef.current = true;
+        setPrefetchedTop100Trending(enrichedMovies);
+        setPhase1Movies(enrichedMovies);
+
+        console.log("🚀 ENRICHED DATA SUCCESS. First movie:", JSON.stringify(enrichedMovies[0], null, 2));
+      } catch (e) {
+        console.warn('[Discover] RapidAPI Film and Show top list prefetch failed:', e);
+      } finally {
+        if (!cancelled) setRapidListHydrating(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /** Extra bottom padding so the next row peeks (phone). TV uses a fixed large inset. */
   const verticalPeekPadding = useMemo(() => {
     if (isTV) return 0;
@@ -605,15 +657,11 @@ export default function DiscoverScreen() {
     [providerIds]
   );
 
-  const selectedGenresKey = useMemo(
-    () => selectedGenres.join(','),
-    [selectedGenres]
-  );
-
   const fetchMovies = useCallback(
     async (year: number | null, monet: MonetizationType, genres: number[]) => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
+      rapidDiscoverListActiveRef.current = false;
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -653,6 +701,8 @@ export default function DiscoverScreen() {
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading) return;
+    /** RapidAPI top list is fixed length — do not TMDB-pagination from scroll. */
+    if (rapidDiscoverListActiveRef.current) return;
 
     if (page >= totalPages) {
       if (fetchPhase === 1) {
@@ -716,10 +766,6 @@ export default function DiscoverScreen() {
     },
     [fetchMovies]
   );
-
-  useEffect(() => {
-    triggerFetch(selectedYear, monetization, selectedGenres);
-  }, [selectedYear, selectedGenresKey, monetization, providerIdsString, selectedCountry, triggerFetch]);
 
   const handleYearSelect = (year: number) => {
     const nextYear = selectedYear === year ? null : year;
@@ -986,7 +1032,7 @@ export default function DiscoverScreen() {
         />
       </View>
 
-      {!hasMovies && !loading && (
+      {!hasMovies && !loading && !rapidListHydrating && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🎬</Text>
           <Text style={styles.emptyText}>
@@ -997,13 +1043,15 @@ export default function DiscoverScreen() {
         </View>
       )}
 
-      {loading && !hasMovies && (
+      {(loading || rapidListHydrating) && !hasMovies && (
         <View style={[styles.centered, { paddingHorizontal: contentPadX }]}>
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
-            {selectedYear != null
-              ? `Discovering ${selectedYear} movies for your region...`
-              : 'Discovering movies for your region...'}
+            {rapidListHydrating && !loading
+              ? 'Loading top picks…'
+              : selectedYear != null
+                ? `Discovering ${selectedYear} movies for your region...`
+                : 'Discovering movies for your region...'}
           </Text>
         </View>
       )}

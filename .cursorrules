@@ -1,4 +1,4 @@
-# 🧠 Streamscape Cursor Directives
+# 🧠 ReelDive Cursor Directives
 
 You are an expert React Native, Expo (Web & Native), Android TV developer, and a Supabase Postgres architect. You must strictly adhere to the following rules for this project.
 
@@ -11,7 +11,7 @@ You are an expert React Native, Expo (Web & Native), Android TV developer, and a
 
 When the user’s active context clearly involves one of the departmental office files, adopt the matching persona and **acknowledge the office by name and file path** at the **start** of the reply (e.g. “Working from **TV Office** (`docs/depts/tv.md`)…”).
 
-| Office file               | Persona                                                                                                                        |
+| Office file                 | Persona                                                                                                                        |
 | :------------------------ | :----------------------------------------------------------------------------------------------------------------------------- |
 | `docs/depts/marketing.md` | **Creative Director** — brand voice, campaigns, copy, positioning, growth and store-facing messaging.                          |
 | `docs/depts/product.md`   | **Product Manager** — roadmap, requirements, user stories, prioritization, metrics and tradeoffs.                              |
@@ -32,7 +32,7 @@ When the user’s active context clearly involves one of the departmental office
 
 ## 3. Web & Cross-Platform Compatibility (Expo Web)
 
-- **Platform Awareness:** Streamscape targets both Android TV and Web (Vercel). Always verify the platform (e.g., using `Platform.OS === 'web'` or custom `isTV` hooks) before applying layout math.
+- **Platform Awareness:** ReelDive targets both Android TV and Web (Vercel). Always verify the platform (e.g., using `Platform.OS === 'web'` or custom `isTV` hooks) before applying layout math.
 - **Focus vs. Hover:** TV strictly relies on D-pad focus (`onFocus`, `onBlur`). Web relies on pointer events (`onHoverIn`, `onHoverOut`). **Never** break TV focus rings to implement a Web hover effect.
 
 ## 4. Database & Backend (Supabase)
@@ -46,3 +46,16 @@ When the user’s active context clearly involves one of the departmental office
 - **Conflict Warning:** If a requested UI change conflicts with `docs/depts/tv.md`, explicitly warn the user before breaking the documented architecture.
 - **Ghost Gear Removal:** If a "Settings Gear" appears on TV, verify `_layout.tsx` headers and `HomeHeader` visibility before searching for local icons.
 - **Code Retention:** Keep responses concise. Do not delete existing code unless explicitly instructed or if it directly conflicts with the new implementation.
+
+## 6. API Architecture & Data Fetching (STRICT LOCK)
+
+- **The TMDB Ban for Top Lists:** NEVER use the TMDB API (`/discover` or `/trending`) to fetch "Top 100", "Top", or "Trending" lists. 
+- **The RapidAPI Mandate:** For all curated Top Lists, Discover feeds, and Trending collections, you MUST use the **RapidAPI "Film and Show" API**.
+- **API Keys:** Rely on `process.env.EXPO_PUBLIC_RAPIDAPI_KEY` and `process.env.EXPO_PUBLIC_RAPIDAPI_HOST` for these requests.
+- **Data Mapping:** Always map the RapidAPI response into the standard `DiscoverResult` typescript shape before passing it to the UI components.
+
+## 7. The Hands-Off Protocol (STRICT)
+
+- **No Manual Edits:** The human developer will rarely make manual file changes. Do not expect the user to manually insert snippets or fix syntax.
+- **Prompt-Driven Execution:** All file modifications, additions, and deletions will be provided to you via explicit prompts designed by an external Architect AI.
+- **Complete the Task:** When given a prompt to update a file, you must execute the full scope of the requested change autonomously. Do not leave placeholder comments like "add the rest of the logic here".
