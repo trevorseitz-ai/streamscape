@@ -1,5 +1,9 @@
 # 📺 TV App Office (Lean-back Experience)
 
+> **Shared viewport bucketing** for poster rows used with window-based sizing: import **`bucketViewportWidth`** from **[`components/MovieRow.tsx`](../../components/MovieRow.tsx)** ([Shared components](shared.md)). TV-specific tokens below remain authoritative for rail/bounds.
+
+---
+
 ## 🚀 Running the TV Emulator
 
 ### Prerequisites

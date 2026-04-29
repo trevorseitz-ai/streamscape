@@ -1,5 +1,7 @@
 # 🌐 Web App Office
 
+> **Shared layout primitives:** Viewport **`bucketViewportWidth`** is defined and owned by **[`MovieRow.tsx`](../../components/MovieRow.tsx)** — see [Shared components](shared.md).
+
 ## Universal Web Strategy
 
 - **Route logic:** Uses the shared `app/(tabs)` routes ([`_layout.tsx`](../../app/%28tabs%29/_layout.tsx)). Platform-specific UI is gated via `Platform.OS === 'web'`.
