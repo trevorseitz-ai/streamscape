@@ -26,6 +26,10 @@ function getTabIcon(routeName: string, focused: boolean) {
 }
 
 export default function TabLayout() {
+  /**
+   * Shell is binary: TV rail vs default bottom tabs. No breakpoint-based tab tree swap here.
+   * No auth redirects (`router.replace`); those live in routed screens guarded with `useEffect`.
+   */
   const isTV = isTvTarget();
   const tvDpad = shouldUseTvDpadFocus();
 

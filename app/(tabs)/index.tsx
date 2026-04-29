@@ -65,6 +65,7 @@ export default function HomeScreen() {
   const windowWidth = Dimensions.get('window').width;
   const screenBg = isTV ? '#121212' : '#0f0f0f';
   const horizontalPad = isTV ? TV_HOME_CONTENT_PAD_X : MAIN_HORIZONTAL_PADDING;
+  const tvRailWidth = isTV && Platform.OS !== 'web' ? TV_SIDEBAR_WIDTH : 0;
   const heroHeight = isTV ? TV_HERO_HEIGHT_PX : height * 0.4;
 
   /** Android TV: non-Pressable surfaces must not participate in the focus graph. */
@@ -209,8 +210,8 @@ export default function HomeScreen() {
   const tvRowUsableWidth = useMemo(() => {
     const pad = horizontalPad * 2;
     if (!isTV) return Math.max(0, width - pad);
-    return Math.max(0, width - TV_SIDEBAR_WIDTH - pad);
-  }, [isTV, width, horizontalPad]);
+    return Math.max(0, width - tvRailWidth - pad);
+  }, [isTV, width, horizontalPad, tvRailWidth]);
   const trendingContentWidth = tvRowUsableWidth;
   const trendingCardWidth =
     (trendingContentWidth - trendingGap * (gridColumnCount - 1)) / gridColumnCount;

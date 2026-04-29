@@ -29,6 +29,18 @@ const PHONE_HORIZONTAL_INSET = 20;
 
 export type MoviePosterLayoutVariant = 'tv' | 'phone';
 
+/** Ignores ±1px `useWindowDimensions` jitter (e.g. mobile browser chrome). */
+export function bucketViewportWidth(rawWidth: number): number {
+  if (rawWidth > 900) {
+    console.warn(
+      '[bucketViewportWidth] Unusually wide window:',
+      rawWidth,
+      '(desktop layout or missing viewport meta — expect ~390 on phones)'
+    );
+  }
+  return Math.floor(rawWidth / 10) * 10;
+}
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -38,12 +50,13 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * Five tiles across with four gaps. TV uses 80px side padding and 24px gap;
- * phone uses 20px inset and 20px gap.
+ * TV: five tiles across with four gaps. Phone: `phoneColumns` across (Discover breakpoints 3–5).
  */
 export function getMoviePosterLayout(
   screenWidth: number,
-  variant: MoviePosterLayoutVariant = 'phone'
+  variant: MoviePosterLayoutVariant = 'phone',
+  /** Phone variant only — number of posters per horizontal band (defaults to 5). */
+  phoneColumns = 5
 ) {
   if (variant === 'tv') {
     const SIDE_PADDING = TV_MOVIE_SIDE_PADDING;
@@ -59,8 +72,9 @@ export function getMoviePosterLayout(
   }
   const SIDE_PADDING = MOVIE_POSTER_EDGE_INSET;
   const GAP = MOVIE_POSTER_GAP;
+  const cols = Math.max(1, phoneColumns);
   const POSTER_WIDTH =
-    (screenWidth - SIDE_PADDING * 2 - GAP * 4) / 5;
+    (screenWidth - SIDE_PADDING * 2 - GAP * (cols - 1)) / cols;
   return {
     posterWidth: POSTER_WIDTH,
     posterHeight: POSTER_WIDTH * 1.5,
@@ -85,6 +99,13 @@ export type MoviePosterRowProps = {
   /** When this horizontal band is the last in its section, D-pad down can loop to this target. */
   tvIsLastSubRow?: boolean;
   tvRowDownLoopNavTag?: number | null;
+  /** Phone: poster width math for N tiles per band (Discover); defaults to 5. */
+  phoneColumnCount?: number;
+  /**
+   * Phone: spread posters across usable width (~columnWrapper parity for horizontal rows).
+   * Parent list cannot use FlatList numColumns due to heterogeneous row/divider cells.
+   */
+  distributePosterRow?: boolean;
 };
 
 /**
@@ -98,13 +119,21 @@ export function MoviePosterRow({
   tvSidebarLeftNavTag = null,
   tvIsLastSubRow = false,
   tvRowDownLoopNavTag = null,
+  phoneColumnCount,
+  distributePosterRow = false,
 }: MoviePosterRowProps) {
-  const { width } = useWindowDimensions();
+  const { width: rawWidth } = useWindowDimensions();
+  const width = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
   const isTV = isTvTarget();
   const variant: MoviePosterLayoutVariant = isTV ? 'tv' : 'phone';
+  const phoneCols =
+    variant === 'phone' ? (phoneColumnCount ?? TV_POSTER_COLUMNS) : undefined;
   const layout = useMemo(
-    () => getMoviePosterLayout(width, variant),
-    [width, variant]
+    () =>
+      variant === 'phone'
+        ? getMoviePosterLayout(width, 'phone', phoneCols)
+        : getMoviePosterLayout(width, variant),
+    [width, variant, phoneCols]
   );
 
   const listPadding =
@@ -124,10 +153,18 @@ export function MoviePosterRow({
         style={styles.posterRowFlatList}
         contentContainerStyle={[
           styles.posterRowContent,
-          {
-            paddingHorizontal: listPadding,
-            gap: layout.gap,
-          },
+          distributePosterRow && !isTV
+            ? {
+                paddingHorizontal: 10,
+                gap: layout.gap,
+                flexGrow: 1,
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+              }
+            : {
+                paddingHorizontal: listPadding,
+                gap: layout.gap,
+              },
         ]}
         renderItem={({ item: movie, index }) => {
           const isRightEdge =
@@ -181,6 +218,9 @@ export type MovieRowProps = {
   /** TV Android: passed to horizontal `MoviePosterRow`s (left rail + optional down loop). */
   tvSidebarLeftNavTag?: number | null;
   tvRowDownLoopNavTag?: number | null;
+  /** Discover horizontal: tiles per band + poster sizing / row distribution. */
+  phonePosterColumns?: number;
+  distributePosterRow?: boolean;
 };
 
 /**
@@ -196,8 +236,11 @@ export function MovieRow({
   wrapWithHorizontalInset = true,
   tvSidebarLeftNavTag = null,
   tvRowDownLoopNavTag = null,
+  phonePosterColumns,
+  distributePosterRow = false,
 }: MovieRowProps) {
-  const { width } = useWindowDimensions();
+  const { width: rawWidth } = useWindowDimensions();
+  const width = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
   const isTV = isTvTarget();
 
   const listPad = wrapWithHorizontalInset !== false;
@@ -253,6 +296,14 @@ export function MovieRow({
             tvSidebarLeftNavTag={isTV ? tvSidebarLeftNavTag : null}
             tvIsLastSubRow={isTV && i === chunks.length - 1}
             tvRowDownLoopNavTag={isTV ? tvRowDownLoopNavTag : null}
+            phoneColumnCount={
+              phonePosterColumns != null
+                ? Math.max(1, phonePosterColumns)
+                : TV_POSTER_COLUMNS
+            }
+            distributePosterRow={
+              !!distributePosterRow && phonePosterColumns != null && !isTV
+            }
           />
         ))}
       </View>

@@ -26,9 +26,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import {
   MovieRow,
+  bucketViewportWidth,
   getMoviePosterLayout,
   MOVIE_POSTER_EDGE_INSET,
-  MOVIES_PER_HORIZONTAL_ROW,
 } from '../../components/MovieRow';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { getSavedProviderIds } from '../../lib/provider-preferences';
@@ -48,6 +48,26 @@ import {
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+
+/** Local Discover auth snapshot — aligns Supabase Session with tri-state Discover UI. */
+type DiscoverLocalSession =
+  | { user: { id: string; email?: string | null } }
+  | null
+  | undefined;
+
+function discoverAuthKey(s: DiscoverLocalSession): string {
+  if (s === undefined) return '__pending__';
+  if (s === null) return '__signed_out__';
+  return `uid:${s.user.id}`;
+}
+
+function mergeDiscoverAuth(
+  prev: DiscoverLocalSession,
+  next: DiscoverLocalSession
+): DiscoverLocalSession {
+  if (discoverAuthKey(prev) === discoverAuthKey(next)) return prev;
+  return next;
+}
 
 const CURRENT_YEAR = new Date().getFullYear();
 const START_YEAR = 1980;
@@ -252,6 +272,11 @@ function DiscoverTvPosterCell({
   /** Native tag of this cell’s `Pressable` (self-trap when cross-row target not registered yet). */
   const [localTag, setLocalTag] = useState<number | null>(null);
 
+  const cellWrapStyle = useMemo(
+    () => [discoverTvPosterStyles.posterCellWrap, { width: posterWidth, flexShrink: 0 }],
+    [posterWidth]
+  );
+
   useEffect(() => {
     setPosterLoadFailed(false);
   }, [movie.id, movie.poster_url]);
@@ -293,14 +318,17 @@ function DiscoverTvPosterCell({
     ]
   );
 
+  const posterPressStyle = useMemo(
+    () => [
+      discoverTvPosterStyles.posterPressable,
+      { width: posterWidth, height: posterHeight },
+      ...(isFocused ? [discoverTvPosterStyles.posterPressableFocused] : []),
+    ],
+    [posterWidth, posterHeight, isFocused]
+  );
+
   return (
-    <View
-      style={[
-        discoverTvPosterStyles.posterCellWrap,
-        { width: posterWidth, flexShrink: 0 },
-      ]}
-      collapsable={false}
-    >
+    <View style={cellWrapStyle} collapsable={false}>
       <Pressable
         ref={pressableRef}
         {...tvFocusable()}
@@ -337,11 +365,7 @@ function DiscoverTvPosterCell({
         }}
         onPress={onPress}
         android_ripple={null}
-        style={[
-          discoverTvPosterStyles.posterPressable,
-          { width: posterWidth, height: posterHeight },
-          isFocused && discoverTvPosterStyles.posterPressableFocused,
-        ]}
+        style={posterPressStyle}
       >
         {!showPlaceholder ? (
           <Image
@@ -387,6 +411,13 @@ function DiscoverTvHorizontalMovieRow({
   mainContentEntryNavTag = null,
 }: DiscoverTvHorizontalRowProps) {
   const rowLen = movies.length;
+  const rowContentStyle = useMemo(
+    () => ({
+      paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
+      gap: rowGap,
+    }),
+    [rowGap]
+  );
   return (
     <View style={discoverTvRowStyles.rowWrap}>
       <FlatList
@@ -396,10 +427,7 @@ function DiscoverTvHorizontalMovieRow({
         showsHorizontalScrollIndicator={false}
         removeClippedSubviews={false}
         style={discoverTvRowStyles.rowFlatList}
-        contentContainerStyle={{
-          paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
-          gap: rowGap,
-        }}
+        contentContainerStyle={rowContentStyle}
         extraData={wrapNavVersion}
         renderItem={({ item, index: colIndex }) => (
           <DiscoverTvPosterCell
@@ -477,26 +505,46 @@ const discoverTvPosterStyles = StyleSheet.create({
 export default function DiscoverScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
+  /** Keep focus callback stable: `status` from context changes identity when watchlists update; if it is a `useFocusEffect` dep, the effect re-runs while the screen stays focused (bad on mobile web). */
+  const watchlistRefetchRef = useRef(status?.refetch);
+  watchlistRefetchRef.current = status?.refetch;
   const { selectedCountry } = useCountry();
-  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  /** `undefined` = auth not resolved yet — do not treat as signed-out or gate on this for redirects. */
+  const [session, setSession] = useState<DiscoverLocalSession>(undefined);
+
+  useEffect(() => {
+    console.log('🍏 [Discover] MOUNTED on platform:', Platform.OS);
+    return () => console.log('🍎 [Discover] UNMOUNTED');
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      status?.refetch();
-      supabase.auth.getSession().then(({ data: { session: s } }) => {
-        setSession(s);
+      watchlistRefetchRef.current?.();
+      supabase.auth.getSession().then(({ data: { session: incoming } }) => {
+        setSession((prev) =>
+          mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
+        );
       });
       getSavedProviderIds().then(setProviderIds);
-    }, [status])
+    }, [])
   );
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, s) => setSession(s)
+      (_event, s) =>
+        setSession((prev) => mergeDiscoverAuth(prev, s as DiscoverLocalSession))
     );
     return () => subscription.unsubscribe();
   }, []);
-  const { width: screenWidth } = useWindowDimensions();
+
+  const { width: rawWidth } = useWindowDimensions();
+  const screenWidth = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
+  const numColumns = useMemo(() => {
+    if (screenWidth > 1024) return 5;
+    if (screenWidth > 768) return 4;
+    return 3;
+  }, [screenWidth]);
+
   const { isLandscape } = useBreakpoint();
   const isTV = isTvTarget();
   const { sidebarSlotNativeTags, mainContentEntryNativeTag } = useTvSearchFocusBridge();
@@ -505,6 +553,9 @@ export default function DiscoverScreen() {
   /** TV: shell `discoverTvContentWrap` supplies 20 / 20 horizontal padding — no extra horizontal inset here. */
   const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
   const [tvDiscoverShellW, setTvDiscoverShellW] = useState(0);
+  /** TV rail applies only on native TV builds — never on mobile web (bottom tabs / no rail). */
+  const discoverTvSidebarOffset =
+    isTV && Platform.OS !== 'web' ? TV_SIDEBAR_WIDTH : 0;
   const tvRowUsableWidth = useMemo(() => {
     if (!isTV) return 0;
     if (tvDiscoverShellW > 0) {
@@ -516,11 +567,16 @@ export default function DiscoverScreen() {
     }
     return (
       screenWidth -
-      TV_SIDEBAR_WIDTH -
+      discoverTvSidebarOffset -
       DISCOVER_TV_CONTENT_BUFFER -
       DISCOVER_TV_RIGHT_MARGIN
     );
-  }, [isTV, tvDiscoverShellW, screenWidth]);
+  }, [
+    isTV,
+    tvDiscoverShellW,
+    screenWidth,
+    discoverTvSidebarOffset,
+  ]);
   /**
    * Five columns: inner width = shell minus left/right padding; four gaps between five cells.
    * Same math as: (width - PADDING*2 - GAP*(COLUMNS-1)) / COLUMNS with PADDING = buffer per side.
@@ -542,8 +598,8 @@ export default function DiscoverScreen() {
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
   const discoverPosterLayout = useMemo(
-    () => getMoviePosterLayout(screenWidth, 'phone'),
-    [screenWidth]
+    () => getMoviePosterLayout(screenWidth, 'phone', numColumns),
+    [screenWidth, numColumns]
   );
 
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
@@ -560,16 +616,13 @@ export default function DiscoverScreen() {
   const [providerIds, setProviderIds] = useState<number[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [rapidListHydrating, setRapidListHydrating] = useState<boolean>(() =>
-    Boolean(
-      process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim() &&
-        process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim()
-    )
-  );
+  const [rapidListHydrating, setRapidListHydrating] = useState(false);
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
   /** True while the default grid is the RapidAPI top list (no TMDB discover pagination). */
   const rapidDiscoverListActiveRef = useRef(false);
+  /** Ensures Rapid Top-100 logic runs once per mount (protects Strict Mode oddities & accidental re-invocation). */
+  const rapidTop100FetchedRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const genreListRef = useRef<FlatList>(null);
@@ -601,47 +654,19 @@ export default function DiscoverScreen() {
     genreListRef.current?.scrollToOffset({ offset: nextX, animated: true });
   }, [genreScrollX, genreContentWidth, screenWidth]);
 
-  useEffect(() => {
-    getSavedProviderIds().then(setProviderIds);
-  }, []);
-
-  useEffect(() => {
-    phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
-  }, [phase1Movies]);
-
-  useEffect(() => {
-    const key = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
-    const host = process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim();
-    if (!key || !host) {
-      setRapidListHydrating(false);
-      return;
-    }
-
-    let cancelled = false;
-    setRapidListHydrating(true);
-
-    (async () => {
-      try {
-        const mappedMovies = await fetchFilmShowTopTrendingDiscoverMovies(key, host);
-        if (cancelled) return;
-        const enrichedMovies = await enrichWithTmdbImages(mappedMovies);
-        if (cancelled) return;
-        rapidDiscoverListActiveRef.current = true;
-        setPrefetchedTop100Trending(enrichedMovies);
-        setPhase1Movies(enrichedMovies);
-
-        console.log("🚀 ENRICHED DATA SUCCESS. First movie:", JSON.stringify(enrichedMovies[0], null, 2));
-      } catch (e) {
-        console.warn('[Discover] RapidAPI Film and Show top list prefetch failed:', e);
-      } finally {
-        if (!cancelled) setRapidListHydrating(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  /** Fixed web shell — responsive min height below tablet width. */
+  const webDiscoverLoadingAreaStyle = useMemo(
+    () =>
+      Platform.OS !== 'web'
+        ? undefined
+        : ({
+            minHeight: screenWidth < 768 ? 300 : 400,
+            width: '100%' as const,
+            maxWidth: 720,
+            alignSelf: 'center' as const,
+          } as const),
+    [screenWidth]
+  );
 
   /** Extra bottom padding so the next row peeks (phone). TV uses a fixed large inset. */
   const verticalPeekPadding = useMemo(() => {
@@ -651,6 +676,72 @@ export default function DiscoverScreen() {
     const rowHeight = posterH + titleAndMeta + gridGap;
     return Math.round(rowHeight * 0.5);
   }, [discoverPosterLayout.posterHeight, gridGap, isTV]);
+
+  useEffect(() => {
+    getSavedProviderIds().then(setProviderIds);
+  }, []);
+
+  useEffect(() => {
+    phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
+  }, [phase1Movies]);
+
+  const signedOutStable = discoverAuthKey(session) === '__signed_out__';
+  /** Logged-out: allow a future sign-in to trigger the curated prefetch again. */
+  useEffect(() => {
+    if (!signedOutStable) return;
+    rapidTop100FetchedRef.current = false;
+    rapidDiscoverListActiveRef.current = false;
+  }, [signedOutStable]);
+
+  const sessionUserId = session?.user?.id ?? null;
+
+  /**
+   * Curated Top 100 — gated on resolved session with a real user (`session` !== `undefined` and `.user`).
+   */
+  useEffect(() => {
+    const key = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
+    const host = process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim();
+    if (!key || !host) {
+      setRapidListHydrating(false);
+      return;
+    }
+
+    if (!sessionUserId) {
+      console.log('⏸️ [Discover] Fetch paused: No active session.');
+      setRapidListHydrating(false);
+      rapidDiscoverListActiveRef.current = false;
+      return;
+    }
+
+    if (rapidTop100FetchedRef.current) return;
+    rapidTop100FetchedRef.current = true;
+
+    let cancelled = false;
+    rapidDiscoverListActiveRef.current = true;
+    setRapidListHydrating(true);
+
+    (async () => {
+      try {
+        const mappedMovies = await fetchFilmShowTopTrendingDiscoverMovies(key, host);
+        if (cancelled) return;
+        const enrichedMovies = await enrichWithTmdbImages(mappedMovies);
+        if (cancelled) return;
+        setPrefetchedTop100Trending(enrichedMovies);
+        setPhase1Movies(enrichedMovies);
+
+        console.log("🚀 ENRICHED DATA SUCCESS. First movie:", JSON.stringify(enrichedMovies[0], null, 2));
+      } catch (e) {
+        console.warn('[Discover] RapidAPI Film and Show top list prefetch failed:', e);
+        rapidDiscoverListActiveRef.current = false;
+      } finally {
+        if (!cancelled) setRapidListHydrating(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUserId]);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -701,7 +792,10 @@ export default function DiscoverScreen() {
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading) return;
-    /** RapidAPI top list is fixed length — do not TMDB-pagination from scroll. */
+    /**
+     * Same guard on Web and native: infinite scroll must not append TMDB /discover pages into the
+     * fixed curated RapidAPI list while `rapidDiscoverListActiveRef` is true.
+     */
     if (rapidDiscoverListActiveRef.current) return;
 
     if (page >= totalPages) {
@@ -836,7 +930,7 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
-    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : MOVIES_PER_HORIZONTAL_ROW;
+    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : numColumns;
     let movieRowIndex = 0;
 
     for (let i = 0; i < phase1Movies.length; i += perRow) {
@@ -863,7 +957,7 @@ export default function DiscoverScreen() {
     }
 
     return items;
-  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns]);
 
   const totalMovieRows = useMemo(
     () => listData.filter((x) => x.type === 'row').length,
@@ -902,8 +996,20 @@ export default function DiscoverScreen() {
     setWrapNavVersion((n) => n + 1);
   }, [totalMovieRows]);
 
-  // Auth guard: blackout when not logged in (after all hooks)
-  if (!session) {
+  /** Auth still resolving — never show signed-out UI or fire Rapid prefetch on `undefined`. */
+  if (session === undefined) {
+    return (
+      <View style={styles.blackout}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={[styles.blackoutText, { marginTop: 16, fontSize: 14 }]}>
+          Checking session…
+        </Text>
+      </View>
+    );
+  }
+
+  // Auth resolved: explicit signed-out (`null`).
+  if (session === null) {
     return (
       <View style={styles.blackout}>
         <TouchableOpacity
@@ -1044,7 +1150,13 @@ export default function DiscoverScreen() {
       )}
 
       {(loading || rapidListHydrating) && !hasMovies && (
-        <View style={[styles.centered, { paddingHorizontal: contentPadX }]}>
+        <View
+          style={[
+            styles.centered,
+            webDiscoverLoadingAreaStyle,
+            { paddingHorizontal: contentPadX },
+          ]}
+        >
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
             {rapidListHydrating && !loading
@@ -1065,8 +1177,11 @@ export default function DiscoverScreen() {
       ) : null}
 
       {hasMovies && (
+        /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
         <FlatList
-          key={isTV ? 'discover-tv-grid-5' : 'discover-poster-grid'}
+          key={
+            isTV ? 'discover-tv-grid-5' : `discover-poster-grid-${numColumns}`
+          }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}
           keyExtractor={(item) => item.key}
@@ -1173,6 +1288,8 @@ export default function DiscoverScreen() {
                 phoneLayout="horizontal"
                 wrapWithHorizontalInset={false}
                 tvSidebarLeftNavTag={discoverSidebarLeftTag}
+                phonePosterColumns={numColumns}
+                distributePosterRow={!isTV}
                 renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
               />
             );
@@ -1369,6 +1486,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9ca3af',
     marginTop: 12,
+    textAlign: 'center' as const,
+    maxWidth: 480,
   },
   errorText: {
     fontSize: 14,

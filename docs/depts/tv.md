@@ -40,9 +40,9 @@ Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`
 | `TV_POSTER_HEIGHT` | **210px** |
 | `TV_GAP` | **12px** |
 
-Hero banner (~fold height follows **16:9 image** in col 3):
+Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, `TV_GRID_COLUMNS` **5**, poster tile title **13px**, year **11px**, section header **22px**.
 
-- **Hero Layout** uses a **4-column flex row** (**1:1:1:1**). **Col 1 & 4:** empty spacers (`flex: 1`). **Col 2:** **`heroContentTv`** (typography). **Col 3:** **`heroTvImageColumn`** — **`aspectRatio: 16/9`**, **`resizeMode: 'cover'`**. Horizontal padding on the shell is **removed**; **`heroContentTv`** uses **`paddingHorizontal: 10`** inside its cell. No TV overlay (`heroOverlay` is phone-only).
+Type tokens for the Hero text column:
 
 | Token | Value |
 |-------|--------|
@@ -50,7 +50,50 @@ Hero banner (~fold height follows **16:9 image** in col 3):
 | `TV_HERO_META_FONT` | **12px** (year + rating line) |
 | `TV_HERO_RESIZE_MODE` | **`'cover'`** (backdrop in col 3) |
 
-Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, `TV_GRID_COLUMNS` **5**, poster tile title **13px**, year **11px**, section header **22px**.
+---
+
+## Hero Layout Standards
+
+The TV **Hero** above the scroll region uses a **4-column flex row** with equal width distribution (**1 : 1 : 1 : 1**) — typically four sibling views in a **`flexDirection: 'row'`** layout, each with **`flex: 1`** so columns share space proportionally across **1080p** and **4K**.
+
+| Column | Role |
+|:------:|------|
+| **1 & 4** | **Empty spacer** columns (**`flex: 1`**, no substantive content). They symmetrically sandwich the Hero so headline and artwork stay visually centered instead of glued to screen edges. |
+| **2** | **Content / text** container (title, meta, primary actions — e.g. **`heroContentTv`**). Horizontal padding stays **inside** this column (see **`TV_HOME_CONTENT_PADDING`** / **10px**); the outer shell does not add contradictory horizontal gutters on TV. |
+| **3** | **Image / backdrop** container — **`aspectRatio: 16 / 9`** and **`resizeMode`**: **`cover`**. Image views use **`width: '100%'`** within the column; the column participates in **`flex: 1`**. Shell-level TV overlay patterns (`heroOverlay`) remain **phone-only**. |
+
+**Image sizing mandate:** Do **not** prescribe fixed pixel widths for Hero images (historic one-off widths such as **391px** are obsolete). Prefer **`flex: 1`**, **`width: '100%'`**, and **aspect-ratio** constraints so scaling tracks the column, not arbitrary absolute dimensions.
+
+---
+
+## Hero component constraints
+
+**Never use absolute positioning** for Hero elements (text block, backdrop frame, badges). Rely on the **4-column flex architecture** so symmetry and proportional scaling hold across **1080p** and **4K** displays and under Focus scaling without manual coordinate math.
+
+---
+
+## Data Sourcing & Enrichment Mandate
+
+This section is the **hybrid API contract** for curated rails (Discover default list, Home-style featured rows, etc.). TV inherits the same data rules as touch targets unless a screen documents a deliberate exception.
+
+### Primary curated source
+
+**RapidAPI “Film & Show”** (Film & Show ratings hub) is the **absolute authority** for **Top 100**, **Trending**, and **Featured** lists when presenting the **default curated** experience.
+
+### Enrichment role (TMDB)
+
+**TMDB** is strictly a **metadata provider** in this pipeline—not the list curator. Rows from RapidAPI include **`ids.TMDB`** / **`tmdb_id`**. The client may **`GET https://api.themoviedb.org/3/movie/{tmdb_id}`** to hydrate **high-resolution posters and backdrops** when the Rapid feed lacks ready-to-render image URLs (**`poster_path` / `backdrop_path`** → full **`image.tmdb.org`** **`w500`** URLs in **`lib/film-show-rapid-discover.ts`**).
+
+### Logic gates (Discover)
+
+**`rapidDiscoverListActiveRef`** (see **`app/(tabs)/discover.tsx`**) gates **infinite scroll / pagination**:
+
+- While **true**, the grid is sourced from the **curated RapidAPI** payload; **`loadMore` / `onEndReached`** must **not** append generic TMDB **`/discover`** results into that rail or replace it mid-scroll.
+- The ref clears when the user invokes **filtered** TMDB discover (e.g. **year**, **genre**, **monetization** changes that call **`fetchMovies`**), restoring normal TMDB pagination.
+
+### Persisted experience
+
+Upserts into **`media`** and watchlists (**Supabase**) follow existing product flows once a title is opened or saved.
 
 ---
 
@@ -66,20 +109,21 @@ Before running the emulator, duplicate `.env.example`, rename it to `.env`, and 
 
 | Service | Role | Key variable(s) |
 |--------|------|-----------------|
-| **TMDB** | The metadata engine. Handles search, discovery, trending, posters, and cast/crew data. | `EXPO_PUBLIC_TMDB_API_KEY` (client), `TMDB_API_KEY` (server / Node) |
-| **RapidAPI** | The streaming bridge. Provides live “where to watch” deep links and regional availability by TMDB id. | `EXPO_PUBLIC_RAPIDAPI_KEY` *(no underscore between `RAPID` and `API`)* |
+| **RapidAPI “Film & Show”** | Curated **Top / Trend / Featured** lists — see **Data Sourcing & Enrichment Mandate** (above). | `EXPO_PUBLIC_RAPIDAPI_KEY`, `EXPO_PUBLIC_RAPIDAPI_HOST` |
+| **TMDB** | Metadata backbone: detail, cast/crew, search, **`/discover`** when filters demand it — and **per-id** enrichment for RapidAPI rows (**`/movie/{tmdb_id}`**). Never the curator for default top/trend lists. | `EXPO_PUBLIC_TMDB_API_KEY` (client), `TMDB_API_KEY` (server / Node) |
+| **RapidAPI (streaming)** | The streaming bridge. Provides live “where to watch” deep links and regional availability by TMDB id. | `EXPO_PUBLIC_RAPIDAPI_KEY` *(no underscore between `RAPID` and `API`)* — host varies by product |
 | **Supabase** | The source of truth. Manages auth, user watchlists, and caches canonical media rows synced from TMDB. | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` |
 | **OMDB** | Ratings provider. Optional fetch for IMDb, Rotten Tomatoes, and Metacritic scores. | `EXPO_PUBLIC_OMDB_API_KEY` |
 
-### 2. Data synchronization logic
+### 2. Additional synchronization logic
 
-- **Discovery flow:** TMDB results from `/discover` or `/search` are mapped to the UI. When a title is interacted with, it is upserted into the Supabase `media` table to ensure persistent state.
-- **Live links:** The movie screen uses [`lib/streaming-rapid.ts`](../../lib/streaming-rapid.ts) to fetch real-time outbound links (e.g. Netflix, Max) via the `streaming-availability` RapidAPI host.
-- **UI context:** The TV app primarily consumes **TMDB** for browsing but relies on **Supabase** for the ReelDive personalized experience (watchlists and watched history).
+- **Filtered Discover:** TMDB **`/discover`** applies when users opt into genre/year/watch-provider filters (**`fetchMovies`** in **`app/(tabs)/discover.tsx`**).
+- **Live links:** The movie screen uses [`lib/streaming-rapid.ts`](../../lib/streaming-rapid.ts) for outbound links via the **`streaming-availability`** RapidAPI host.
+- **UI context:** Browsing mixes curated RapidAPI grids with TMDB-driven filtered discovery; personalization still flows through **Supabase** (watchlists, history).
 
 ### 3. Environment configuration
 
-Before booting the emulator, ensure the `.env` file follows the **RapidAPI** naming convention (`EXPO_PUBLIC_RAPIDAPI_KEY` — no extra underscore) so it matches the logic in `lib/streaming-rapid.ts`.
+Before booting the emulator, ensure the **RapidAPI** naming convention (**`EXPO_PUBLIC_RAPIDAPI_KEY`** — no extra underscore) matches `lib/streaming-rapid.ts`. Curated Film & Show requests also require **`EXPO_PUBLIC_RAPIDAPI_HOST`** (the hub **`X-RapidAPI-Host`** value).
 
 ---
 

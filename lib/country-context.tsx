@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'reeldive_country';
@@ -32,6 +39,11 @@ async function loadAndMigrateCountry(): Promise<CountryCode | null> {
 export function CountryProvider({ children }: { children: React.ReactNode }) {
   const [selectedCountry, setSelectedCountryState] = useState<CountryCode>('US');
 
+  const setSelectedCountry = useCallback((country: CountryCode) => {
+    setSelectedCountryState(country);
+    void AsyncStorage.setItem(STORAGE_KEY, country);
+  }, []);
+
   useEffect(() => {
     loadAndMigrateCountry()
       .then((country) => {
@@ -42,15 +54,13 @@ export function CountryProvider({ children }: { children: React.ReactNode }) {
       .catch((e) => console.warn('[country-context] load failed', e));
   }, []);
 
-  const setSelectedCountry = (country: CountryCode) => {
-    setSelectedCountryState(country);
-    AsyncStorage.setItem(STORAGE_KEY, country);
-  };
-
-  const value: CountryContextValue = {
-    selectedCountry,
-    setSelectedCountry,
-  };
+  const value = useMemo(
+    (): CountryContextValue => ({
+      selectedCountry,
+      setSelectedCountry,
+    }),
+    [selectedCountry, setSelectedCountry]
+  );
 
   return (
     <CountryContext.Provider value={value}>

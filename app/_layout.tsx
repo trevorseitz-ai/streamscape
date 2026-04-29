@@ -1,6 +1,9 @@
 /**
  * Initial route is `app/index.tsx`. Unauthenticated `Platform.isTV` users are redirected there to
  * `/tv-landing` (see app/index.tsx) instead of the phone marketing screen.
+ *
+ * Session-based redirects belong in screens via `useEffect` (see `app/index.tsx`, `discover.tsx`) —
+ * this root layout intentionally does **not** call `router.replace` during render.
  */
 import { useEffect } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { Keyboard } from 'react-native';
 import { fetchTmdb } from './tmdbFetch';
 
@@ -117,18 +117,32 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
     }
   }, [query, searchLoading]);
 
-  const value: SearchContextValue = {
-    isSearching,
-    setIsSearching,
-    query,
-    setQuery,
-    searchResult,
-    setSearchResult,
-    searchError,
-    setSearchError,
-    searchLoading,
-    handleSearch,
-  };
+  const value = useMemo(
+    (): SearchContextValue => ({
+      isSearching,
+      setIsSearching,
+      query,
+      setQuery,
+      searchResult,
+      setSearchResult,
+      searchError,
+      setSearchError,
+      searchLoading,
+      handleSearch,
+    }),
+    [
+      isSearching,
+      setIsSearching,
+      query,
+      setQuery,
+      searchResult,
+      setSearchResult,
+      searchError,
+      setSearchError,
+      searchLoading,
+      handleSearch,
+    ]
+  );
 
   return (
     <SearchContext.Provider value={value}>

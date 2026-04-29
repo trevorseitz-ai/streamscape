@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 
 interface MovieContextValue {
   title: string | null;
@@ -9,8 +9,12 @@ const MovieContext = createContext<MovieContextValue | null>(null);
 
 export function MovieProvider({ children }: { children: React.ReactNode }) {
   const [title, setTitle] = useState<string | null>(null);
+  const value = useMemo(
+    (): MovieContextValue => ({ title, setTitle }),
+    [title]
+  );
   return (
-    <MovieContext.Provider value={{ title, setTitle }}>
+    <MovieContext.Provider value={value}>
       {children}
     </MovieContext.Provider>
   );

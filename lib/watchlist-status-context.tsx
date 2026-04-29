@@ -85,14 +85,16 @@ export function WatchlistStatusProvider({
     }
   }, []);
 
+  const sessionUserId = session?.user?.id ?? null;
+
   const refetch = useCallback(async () => {
-    if (!session) return;
+    if (!sessionUserId) return;
     try {
-      await fetchStatus(session.user.id);
+      await fetchStatus(sessionUserId);
     } catch (e) {
       console.warn('[watchlist-status] refetch failed', e);
     }
-  }, [session, fetchStatus]);
+  }, [sessionUserId, fetchStatus]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -126,7 +128,7 @@ export function WatchlistStatusProvider({
 
   const toggleWatchlist = useCallback(
     async (tmdbId: number, title: string, posterUrl: string | null) => {
-      if (!session) return;
+      if (!sessionUserId) return;
 
       const nextIn = !watchlistTmdbIds.has(tmdbId);
       setWatchlistTmdbIds((prev) => {
@@ -177,9 +179,9 @@ export function WatchlistStatusProvider({
             const { count } = await supabase
               .from('watchlist')
               .select('*', { count: 'exact', head: true })
-              .eq('user_id', session.user.id);
+              .eq('user_id', sessionUserId);
             const { error } = await supabase.from('watchlist').insert({
-              user_id: session.user.id,
+              user_id: sessionUserId,
               media_id: mediaId,
               watched: false,
               sort_order: count ?? 0,
@@ -192,7 +194,7 @@ export function WatchlistStatusProvider({
           const { error } = await supabase
             .from('watchlist')
             .delete()
-            .eq('user_id', session.user.id)
+            .eq('user_id', sessionUserId)
             .eq('media_id', mediaId);
           if (error) throw error;
         }
@@ -206,12 +208,12 @@ export function WatchlistStatusProvider({
         });
       }
     },
-    [session, watchlistTmdbIds]
+    [sessionUserId, watchlistTmdbIds]
   );
 
   const toggleWatched = useCallback(
     async (tmdbId: number, title: string, posterUrl: string | null) => {
-      if (!session) return;
+      if (!sessionUserId) return;
 
       const nextWatched = !watchedTmdbIds.has(tmdbId);
       setWatchedTmdbIds((prev) => {
@@ -224,7 +226,7 @@ export function WatchlistStatusProvider({
       try {
         if (nextWatched) {
           const { error } = await supabase.from('watched_history').insert({
-            user_id: session.user.id,
+            user_id: sessionUserId,
             tmdb_id: tmdbId,
             title,
             poster_url: posterUrl,
@@ -234,7 +236,7 @@ export function WatchlistStatusProvider({
           const { error } = await supabase
             .from('watched_history')
             .delete()
-            .eq('user_id', session.user.id)
+            .eq('user_id', sessionUserId)
             .eq('tmdb_id', tmdbId);
           if (error) throw error;
         }
@@ -248,7 +250,7 @@ export function WatchlistStatusProvider({
         });
       }
     },
-    [session, watchedTmdbIds]
+    [sessionUserId, watchedTmdbIds]
   );
 
   const value = useMemo(
