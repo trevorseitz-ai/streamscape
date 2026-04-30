@@ -10,6 +10,9 @@ import {
 import { MovieCard, type Movie } from './MovieCard';
 import { isTvTarget } from '../lib/isTv';
 import { tvTitleFontSize } from '../lib/tvTypography';
+import { bucketViewportWidth } from '../lib/viewport-utils';
+
+export { bucketViewportWidth };
 
 /** Phone / non-TV horizontal rows: inset per side (20 + 20 = 40 total). */
 export const MOVIE_POSTER_EDGE_INSET = 20;
@@ -28,18 +31,6 @@ const PHONE_GRID_GAP = 10;
 const PHONE_HORIZONTAL_INSET = 20;
 
 export type MoviePosterLayoutVariant = 'tv' | 'phone';
-
-/** Ignores ±1px `useWindowDimensions` jitter (e.g. mobile browser chrome). */
-export function bucketViewportWidth(rawWidth: number): number {
-  if (rawWidth > 900) {
-    console.warn(
-      '[bucketViewportWidth] Unusually wide window:',
-      rawWidth,
-      '(desktop layout or missing viewport meta — expect ~390 on phones)'
-    );
-  }
-  return Math.floor(rawWidth / 10) * 10;
-}
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];

@@ -42,6 +42,7 @@ import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
 import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
 import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
+import { discoverPosterGridColumns } from '../../lib/viewport-utils';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -92,8 +93,6 @@ const GENRES = [
 const HORIZONTAL_PADDING = 20;
 const GRID_GAP_PHONE = 12;
 const GRID_GAP_TV = 20;
-/** TV: exactly five posters per row (horizontal row scrolls when there are more). */
-const DISCOVER_TV_GRID_COLUMNS = 5;
 /** Discover TV: nav + horizontal buffers (content shell padding; includes side inset for width math). */
 /** Matches Home’s 20px inset from the main column edge (nav + buffer). */
 const DISCOVER_TV_CONTENT_BUFFER = 20;
@@ -550,14 +549,11 @@ export default function DiscoverScreen() {
 
   const { width: rawWidth } = useWindowDimensions();
   const screenWidth = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
-  const numColumns = useMemo(() => {
-    if (screenWidth > 1024) return 5;
-    if (screenWidth > 768) return 4;
-    return 3;
-  }, [screenWidth]);
-
   const { isLandscape } = useBreakpoint();
   const isTV = isTvTarget();
+
+  /** Phone / Web Discover — wider viewports stack more posters to avoid billboard tiles on desktop & large tablets. */
+  const numColumns = useMemo(() => discoverPosterGridColumns(screenWidth), [screenWidth]);
   const { sidebarSlotNativeTags, mainContentEntryNativeTag } = useTvSearchFocusBridge();
   const discoverSidebarLeftTag =
     isTV && Platform.OS === 'android' ? (sidebarSlotNativeTags['discover'] ?? null) : null;
@@ -589,22 +585,22 @@ export default function DiscoverScreen() {
     discoverTvSidebarOffset,
   ]);
   /**
-   * Five columns: inner width = shell minus left/right padding; four gaps between five cells.
-   * Same math as: (width - PADDING*2 - GAP*(COLUMNS-1)) / COLUMNS with PADDING = buffer per side.
+   * TV grid: column count scales with usable row width (3 / 4 / 6) so 65" layouts don’t use huge cells.
+   * Inner width ≈ shell minus buffers; gaps = columns - 1.
    */
   const discoverTvGridLayout = useMemo(() => {
     if (!isTV) {
-      return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP };
+      return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP, columns: 0 };
     }
-    const COLUMNS = DISCOVER_TV_GRID_COLUMNS;
     const rowGap = DISCOVER_TV_GAP;
     const inner = Math.max(0, tvRowUsableWidth);
+    const columns = discoverPosterGridColumns(inner);
     const itemWidth = Math.max(
       0,
-      (inner - rowGap * (COLUMNS - 1)) / COLUMNS
+      (inner - rowGap * (columns - 1)) / columns
     );
     const itemHeight = itemWidth * 1.5;
-    return { itemWidth, itemHeight, rowGap, columns: COLUMNS };
+    return { itemWidth, itemHeight, rowGap, columns };
   }, [isTV, tvRowUsableWidth]);
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
@@ -717,6 +713,9 @@ export default function DiscoverScreen() {
       try {
         const mapped = await fetchDiscoverMoviesFromStreamFinder(supabase);
         if (cancelled) return;
+        if (__DEV__) {
+          console.log(`[Discover] Stream Finder hydrate: ${mapped.length} titles (cache read OK)`);
+        }
         const enriched = await enrichWithTmdbImages(mapped);
         if (cancelled) return;
         setPhase1Movies(enriched as DiscoverResult[]);
@@ -920,7 +919,7 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
-    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : numColumns;
+    const perRow = isTV ? Math.max(1, discoverTvGridLayout.columns) : numColumns;
     let movieRowIndex = 0;
 
     for (let i = 0; i < phase1Movies.length; i += perRow) {
@@ -947,7 +946,7 @@ export default function DiscoverScreen() {
     }
 
     return items;
-  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns, discoverTvGridLayout.columns]);
 
   const totalMovieRows = useMemo(
     () => listData.filter((x) => x.type === 'row').length,
@@ -1170,7 +1169,7 @@ export default function DiscoverScreen() {
         /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
         <FlatList
           key={
-            isTV ? 'discover-tv-grid-5' : `discover-poster-grid-${numColumns}`
+            isTV ? `discover-tv-grid-${discoverTvGridLayout.columns}` : `discover-poster-grid-${numColumns}`
           }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}

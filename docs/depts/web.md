@@ -1,6 +1,6 @@
 # 🌐 Web App Office
 
-> **Shared layout primitives:** Viewport **`bucketViewportWidth`** is defined and owned by **[`MovieRow.tsx`](../../components/MovieRow.tsx)** — see [Shared components](shared.md).
+> **Shared layout primitives:** **`bucketViewportWidth`** and **`discoverPosterGridColumns`** live in **`lib/viewport-utils.ts`** (re-exported from **`MovieRow.tsx`**) — see [Shared components](shared.md).
 
 ## Universal Web Strategy
 
@@ -16,8 +16,9 @@ Critical patterns from the iPhone / mobile-web sync work; regressing them risks 
 
 To avoid infinite re-renders when the mobile browser **fractionally** changes `window` width (URL bar, inset, sub-pixel layout), **do not** drive layout math from raw `useWindowDimensions()` width alone.
 
-- **Use** [`bucketViewportWidth(rawWidth)`](../../components/MovieRow.tsx) (implementation: `Math.floor(rawWidth / 10) * 10`).
-- **Rule:** Treat layout as unchanged until the bucketed width moves by **≥10px**. `MovieRow` and Discover both bucket before `getMoviePosterLayout` and related styles.
+- **Use** [`bucketViewportWidth(rawWidth)`](../../lib/viewport-utils.ts) (implementation: `Math.floor(rawWidth / 10) * 10`; re-exported from [`MovieRow.tsx`](../../components/MovieRow.tsx)).
+- **Rule:** Treat layout as unchanged until the bucketed width moves by **≥10px**. `MovieRow` and Discover both bucket before `getMoviePosterLayout`, **`discoverPosterGridColumns`**, and related styles.
+- **Stability (high-DPI / mobile web):** Fractional width jitter on phone browsers and dense displays no longer drives poster/grid math on every tick—**10px bucketing** breaks the width → layout → re-measure **feedback loop** class of bugs when combined with mount guards and stable effect deps; production Discover at **>1k** rows has validated this posture.
 
 ### Mount guards for heavy async work
 
@@ -35,23 +36,23 @@ Parent context (auth, watchlists) can update often. **One-shot** fetches must no
 - **Viewport meta:** `width=device-width`, `initial-scale=1`, plus project **scale caps** (`maximum-scale`, `user-scalable`) as set in that file. Without this, mobile Safari can stay in a **desktop-width (~980px)** logical viewport — **all bucketed breakpoints and “~430px phone” assumptions break**.
 - **Expo HTML reset:** `ScrollViewStyleReset` from `expo-router/html` is included so the document body matches Expo Router’s expected baseline for web.
 
-### Grid breakpoints (Discover, non-TV)
+### Adaptive Discover grid — 3 / 4 / 6 tiers (`bucketViewportWidth`)
 
-Chunk size for horizontal poster rows (and `getMoviePosterLayout(..., 'phone', numColumns)`) is centralized as **`numColumns`**. Use **`bucketViewportWidth`** before choosing a column count so jitter does not flip layouts.
+Chunk size for horizontal poster rows (and `getMoviePosterLayout(..., 'phone', numColumns)`) is driven by **`discoverPosterGridColumns`** in [`lib/viewport-utils.ts`](../../lib/viewport-utils.ts) after **`bucketViewportWidth`** (same module; re-exported from [`MovieRow.tsx`](../../components/MovieRow.tsx)) so jitter does not flip layouts.
 
-**Standard (responsive):**
+**Tier rules (responsive, bucketed width):**
 
 | Breakpoint (bucketed width) | Columns | Notes |
 |------------------------------|--------|--------|
-| **Mobile** — up to **768px** (e.g. **~430px** iPhone class) | **3** | Dense phone grid; rows use **`distributePosterRow`** / **`justifyContent: 'space-between'`** so three tiles read **centered and balanced** on ~**430px** width. |
-| **Tablet** — **> 768px**     | **4**  | |
-| **Desktop** — **> 1024px**   | **5**  | |
+| **Compact** — **&lt; 600px** (typical phone, e.g. **~430px**) | **3** | Dense grid; rows use **`distributePosterRow`** / **`justifyContent: 'space-between'`** where applicable. |
+| **Medium** — **600px – 899px** | **4** | Tablets / small laptop windows. |
+| **Wide** — **≥ 900px** (desktop, large browser) | **6** | Avoids oversized poster tiles on wide monitors. **Android TV Discover** uses the same density rules against **usable row width** (after sidebar + padding). |
 
-The vertical results `FlatList` **key** should continue to include **`numColumns`** so row math remounts cleanly when crossing breakpoints.
+The vertical results `FlatList` **key** should continue to include **`numColumns`** (or TV column count) so row math remounts cleanly when crossing breakpoints.
 
 ### Discover performance at scale (1,000+ mirrored titles)
 
-Production validation has been extended to **1,206** cached movie rows (**Stream Finder mirror**) with the full **16-provider** footprint. **Phone Discover** retains the dense **3-column** grid (**≤768px**) with **`bucketViewportWidth`**-stabilized layout and **mount-guarded** hydration for the curated list—the combination is **our baseline for sustaining smooth ~60fps scrolling** on modern phones (performance traces in Chromium / Safari remain the regression check).
+Production validation has been extended to **1,206** cached movie rows (**Stream Finder mirror**) with the full **16-provider** footprint. **Phone Discover** stays dense on **`~430px`** widths (**3-column** tier); **`bucketViewportWidth`** + **`discoverPosterGridColumns`** widen the grid **silently** on TV / tablet / desktop up to **6** columns (**≥900px** bucket) so scrolling stays predictable—performance traces in Chromium / Safari remain the regression check.
 
 ### Row alignment (“no dead space” on narrow screens)
 
@@ -93,6 +94,6 @@ User selections (`user_profiles.enabled_services` + local AsyncStorage) are **no
 
 ## Final state (parity checklist)
 
-- **Parity:** TV and phone/web Discover both surface the **Stream Finder curated** list as the default experience before filters.
+- **Parity:** Web, native mobile, and Android TV Discover all surface the **Stream Finder curated** list as the default experience before filters.
 - **Stability:** **`app/+html.tsx`** viewport + bucketed width + mount guards + stable session deps prevent **layout mis-scale** and **render-loop** classes of bugs on mobile web and iOS.
-- **Responsiveness & scale:** **3 / 4 / 5** column breakpoints plus horizontal-row distribution keep mobile **~430px** layouts dense; at **>1k** mirrored titles (`stream_finder_movies`), **bucketing + mount guards** stay the backbone for predictable scroll performance (**~60fps**) on phone Discover.
+- **Responsiveness & scale:** **3 / 4 / 6** column tiers ( **`discoverPosterGridColumns`** — **≥900 → 6**, **≥600 → 4**, else **3** ) plus horizontal-row distribution; at **>1k** mirrored titles (`stream_finder_movies`), **bucketing + mount guards** stay the backbone for predictable scroll performance (**~60fps**) on phone Discover.

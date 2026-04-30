@@ -10,21 +10,21 @@
 | :--- | :--- |
 | **Android TV UI** | Refining Discover/Home layouts; follow `docs/tv_layout_rules.md`. |
 | **Backend** | Supabase auth, profiles, watchlists; schema in `docs/database_schema.md`. |
-| **Cross-platform** | **Web / TV / native parity** on Discover curated feed and hybrid pipeline. **Phase 1: Discovery & Stability** — **COMPLETE**, **validated at scale** (**1,206** titles + **16** mirrored providers); see [`docs/depts/product.md`](docs/depts/product.md). |
+| **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE** on all three—Discover + hybrid data + adaptive grids; verified scale **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md). |
 
 _Update this table when priorities shift._
 
-**Milestone — Phase 1: Discovery & Stability (COMPLETE, validated at scale):** Default Discover is fed from the **Stream Finder** cache (`stream_finder_movies` + provider availability); canonical provider roster is **`GET /api/providers`** (**16** mirrored services—including mainstream and niche / premium catalogs such as **AMC+, Shudder, Criterion Channel** where offered by upstream); **TMDB** enriches imagery; **`bucketViewportWidth`** + mount guards lock in mobile-web stability; Profile provider grid and pruning match the synced catalog — detailed in **`web.md`**, **`product.md`**, **`tv.md`**.
+**Milestone — Phase 1: Discovery & Stability (**100% COMPLETE** — Web / Mobile / TV):** Same **Stream Finder** default Discover ships on browser, handset, and lean-back (**`GET /api/providers`** → **16** services; **`~1,206`** mirrored titles in Supabase checkpoints). **TMDB** enriches imagery; **`lib/viewport-utils.ts`** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards align density without layout thrash; Profile catalog + pruning match sync. Detail: **`web.md`**, **`product.md`**, **`tv.md`**.
 
 ---
 
 ## 🚧 Active Work-in-Progress
 
-- **Discover Phase 1 — Discovery & Stability:** ✅ **COMPLETE** — **validated at scale** (**1,206** titles, **16** providers); see [`docs/depts/product.md`](docs/depts/product.md).
-- **Active roadmap:** **Phase 2 — watchlist logic & deep linking** (all **16** mirrored services)—see Product office.
+- **Discover Phase 1 — Discovery & Stability:** ✅ **100% COMPLETE** — **Web**, **mobile**, and **TV**; **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md).
+- **Active roadmap:** **Phase 2 — User utility & bug squashing** (placeholder umbrella; includes watchlist sync, deep linking, polish)—see Product office.
 - **Completed:** Validated TV/Web architecture and automated the Waitlist-to-Auth migration pipeline.
 - **Current Focus:** Ensuring D-pad navigation "Focus Bridge" works across all Home screen rows.
-- **Next Step:** See **Product** office — **Phase 2**: *watchlist syncing* and *deep linking* (**16** mirrored providers → native apps); TV focus bridge and provider filtering remain in flight where noted in `tv.md` / `web.md`.
+- **Next Step:** See **Product** office — **Phase 2** (**user utility & bug squashing**): watchlist syncing, deep linking, and cross-surface polish; TV focus bridge continues per `tv.md`.
 
 ---
 
@@ -35,7 +35,8 @@ Three product surfaces; each can ship on its own URL or store listing.
 | Branch | What it is |
 | :--- | :--- |
 | **Waitlist Portal** | **https://getreeldive.com** — signup, positioning, and handoff to the app. Independent of the main Expo app origin (see Verified Ecosystem Map below). |
-| **ReelDive Web** | Browser-based **management** experience: account, libraries, discovery, and admin-style workflows on desktop/tablet. |
+| **ReelDive Web** | Browser experience: account, libraries, discovery—**shared routes** with native and TV (**`app/`**). |
+| **ReelDive Mobile** | **iOS / Android** handsets: same **Expo Router** tree, **Stream Finder** Discover, **viewport-utils** adaptive grids. |
 | **ReelDive TV** | **Android TV** lean-back client — Expo/React Native, D-pad focus, sidebar navigation, `docs/tv_layout_rules.md`. |
 
 _Add concrete URLs and repos here when they are finalized._
@@ -47,7 +48,7 @@ _Add concrete URLs and repos here when they are finalized._
 Authoritative notes on how the pieces connect in this repo and in production.
 
 - **Waitlist (frontend):** External portal at [getreeldive.com](https://getreeldive.com). No direct database write access to the waitlist from the main app; the app links out to that site.
-- **ReelDive App (shared core):** Single **Expo Router** project: **Web** and **TV** are served from one `app/` directory (shared routes and components; platform guards where needed).
+- **ReelDive App (shared core):** Single **Expo Router** project: **Web**, **mobile (native)**, and **Android TV** use one **`app/`** tree—shared routes and components with **`Platform` / `isTvTarget`** guards where needed.
 - **Authentication:** Centralized on **Supabase**. **Web** persists the session with **localStorage**; **TV / native** use **AsyncStorage** (via `lib/supabase.ts`).
 
 ---
@@ -71,7 +72,7 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 
 ### Core principles
 
-1. **Stability first — viewport bucketing.** Treat **discretized width** as a first-class rule, not an optimization. Raw **`useWindowDimensions()`** on mobile Safari and mobile-web chrome causes fractional width churn; layout driven from that signal can **re-render in a loop** when combined with context identity churn (**session**, watchlists). **Always** bucket before poster/grid math via **`bucketViewportWidth`** ([`components/MovieRow.tsx`](components/MovieRow.tsx)) — see [`docs/depts/shared.md`](docs/depts/shared.md) and [`docs/depts/web.md`](docs/depts/web.md#mobile-web-stability-standards).
+1. **Stability first — viewport bucketing.** Treat **discretized width** as a first-class rule, not an optimization. Raw **`useWindowDimensions()`** on mobile Safari and mobile-web chrome causes fractional width churn; layout driven from that signal can **re-render in a loop** when combined with context identity churn (**session**, watchlists). **Always** bucket before poster/grid math via **`bucketViewportWidth`** in [`lib/viewport-utils.ts`](lib/viewport-utils.ts) (re-exported from [`components/MovieRow.tsx`](components/MovieRow.tsx)) — see [`docs/depts/shared.md`](docs/depts/shared.md) and [`docs/depts/web.md`](docs/depts/web.md#mobile-web-stability-standards).
 2. **Mount guards for heavy work.** **`useRef`** one-shots (e.g. Stream Finder cache hydration on Discover) so expensive fetches do not re-run on every parent tick; use stable **`session?.user?.id`** or **`discoverAuthKey`** in dependency arrays instead of the full **`session`** object where applicable.
 
 ### Golden Rule — Stability first (detail)
@@ -80,17 +81,24 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 
 High-jitter viewports (**mobile Safari**, mobile browsers with chrome inset) emit frequent **`useWindowDimensions()`** deltas. Driving layout math from raw width retriggers cascading re-renders and can spiral into infinite update loops—especially when combined with contexts that churn object identity (**session**, watchlists).
 
-- **Discretize width:** Prefer **`bucketViewportWidth`** from [`components/MovieRow.tsx`](components/MovieRow.tsx) (10px buckets) before poster/grid math — see [`docs/depts/shared.md`](docs/depts/shared.md) and [`docs/depts/web.md`](docs/depts/web.md#mobile-web-stability-standards).
+- **Discretize width:** Prefer **`bucketViewportWidth`** from [`lib/viewport-utils.ts`](lib/viewport-utils.ts) (10px buckets; re-exported from [`MovieRow`](components/MovieRow.tsx)) before poster/grid math — see [`docs/depts/shared.md`](docs/depts/shared.md) and [`docs/depts/web.md`](docs/depts/web.md#mobile-web-stability-standards).
 - **Guard heavy async hydration:** **`useRef`** one-shot flags (e.g. Stream Finder default list fetch on Discover) ensure expensive work fires **once per mount**, regardless of upstream context churn; pair with stable **`session?.user?.id`** (or **`discoverAuthKey`**) in effect dependencies instead of the full **`session`** object where applicable.
 
 ### Hybrid data pillar (mandate)
 
 | Layer | Role |
 | :--- | :--- |
-| **Stream Finder API → Supabase cache** | **Primary curation** for the default Discover experience (e.g. top ~300 titles) and **streaming availability** / provider catalog (`stream_finder_movies`, `movie_availability`, `stream_finder_providers`). **`GET /api/providers`** is the **authoritative** provider roster; sync mirrors it into Supabase. Sync: `npm run sync:stream-finder` / [`lib/services/stream-finder-sync.ts`](lib/services/stream-finder-sync.ts). |
+| **Stream Finder API → Supabase cache** | **Primary curation** for the default Discover experience and **streaming availability** / provider catalog (`stream_finder_movies`, `movie_availability`, `stream_finder_providers`). **Verified deployment scale:** **~1,206** titles and **16** providers in production mirror checkpoints. **`GET /api/providers`** is the **authoritative** roster; sync: `npm run sync:stream-finder` / [`lib/services/stream-finder-sync.ts`](lib/services/stream-finder-sync.ts). |
 | **TMDB** | **Enrichment only** for the curated list — high-resolution **posters and backdrops** (and TMDB Discover when the user applies **filters**: year, genre, monetization, providers). Do not replace Stream Finder ordering for the **unfiltered** default landing. |
 
-Implementation choke points: [`lib/stream-finder-supabase.ts`](lib/stream-finder-supabase.ts) (read path), [`lib/film-show-rapid-discover.ts`](lib/film-show-rapid-discover.ts) (TMDB image enrichment for hybrid rows).
+### Triple-Platform Adaptive Strategy
+
+1. **`lib/viewport-utils.ts`** — Single source for **`bucketViewportWidth`** (10px stability) and **`discoverPosterGridColumns`** (**3 / 4 / 6** tiers). **Web**, **mobile**, and **Android TV Discover** share the same density rules: TV applies them to **usable row width** (after sidebar/padding); phone and browser use **bucketed screen width**. Prevents billboard-sized posters on 65" panels while keeping phone layouts dense.
+2. **Native Android security (TV stability)** — Config plugin **`plugins/withAndroidNetworkSecurity.js`** (wired via [`app.config.ts`](app.config.ts)) sets **`android:usesCleartextTraffic`** and **`network_security_config`** (cleartext for Metro dev, HTTPS for Supabase in `.env`). After plugin or `.env` changes, native TV builds use **`npm run tv:clean`**. Detail: [`docs/depts/tv.md`](docs/depts/tv.md).
+
+### Implementation choke points
+
+Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stream-finder-supabase.ts), [`lib/film-show-rapid-discover.ts`](lib/film-show-rapid-discover.ts).
 
 #### Data Integrity Protocol — source of truth
 

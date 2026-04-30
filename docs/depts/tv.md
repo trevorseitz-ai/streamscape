@@ -1,6 +1,24 @@
 # 📺 TV App Office (Lean-back Experience)
 
-> **Shared viewport bucketing** for poster rows used with window-based sizing: import **`bucketViewportWidth`** from **[`components/MovieRow.tsx`](../../components/MovieRow.tsx)** ([Shared components](shared.md)). TV-specific tokens below remain authoritative for rail/bounds.
+> **Shared viewport bucketing** for poster rows: **`bucketViewportWidth`** and **`discoverPosterGridColumns`** live in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) — see [Shared components](shared.md). TV-specific tokens below remain authoritative for rail/bounds.
+
+---
+
+## Success story: resolving `Network request failed` on TV
+
+The lean-back client hit **`TypeError: Network request failed`** on initial Supabase access when the native layer blocked dev traffic or the JS bundle lacked public project URLs. **Resolution (verified):**
+
+1. **Environment:** **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_ANON_KEY`** in **`.env`** (same values as Web); restart Metro **`--clear`** after changes.
+2. **Native Android security:** **[`plugins/withAndroidNetworkSecurity.js`](../../plugins/withAndroidNetworkSecurity.js)** (included from **[`app.config.ts`](../../app.config.ts)**) applies **`android:usesCleartextTraffic="true"`** and **`@xml/network_security_config`** so **Metro `http://`** works while **Supabase** stays **`https://`** in production-style configs.
+3. **Rebuild:** **`npm run tv:clean`** (**`expo prebuild --clean`** for Android + **`expo run:android`**) after plugin or env contract changes so the manifest picks up network policy.
+
+Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-request-failed).
+
+---
+
+## Discover grid: up to 6 columns (shared with Web / mobile)
+
+**Discover** on Android TV does **not** use a fixed five-column constant for the main poster grid. It uses the same **`discoverPosterGridColumns`** helper as **Web** and **phone**: **`≥900` usable row width → 6**, **`≥600 → 4`**, else **`3`**, where **usable width** is the content band after the left rail and horizontal buffers (see **`app/(tabs)/discover.tsx`**). That keeps 65" / 4K layouts from turning into single-row “billboard” tiles. **Home** TV rails may still use fixed **`TV_GRID_COLUMNS`** (5) where documented below—only **Discover** adopts the triple-platform adaptive tiers.
 
 ---
 
@@ -44,7 +62,7 @@ Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`
 | `TV_POSTER_HEIGHT` | **210px** |
 | `TV_GAP` | **12px** |
 
-Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, `TV_GRID_COLUMNS` **5**, poster tile title **13px**, year **11px**, section header **22px**.
+Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, **`TV_GRID_COLUMNS` 5** (Home rail/grid; **Discover** uses adaptive **3 / 4 / 6** via **`discoverPosterGridColumns`**), poster tile title **13px**, year **11px**, section header **22px**.
 
 Type tokens for the Hero text column:
 
@@ -101,9 +119,33 @@ Upserts into **`media`** and watchlists (**Supabase**) follow existing product f
 
 ---
 
-## 🔐 Environment Variables
+## 🔐 Environment Variables (native: mandatory `EXPO_PUBLIC_` prefix)
 
 Before running the emulator, duplicate `.env.example`, rename it to `.env`, and populate it with your active API keys and Supabase credentials.
+
+**Mandatory for Web, mobile, and TV bundles:** Any value the **JavaScript** runtime must read (Supabase URL/anon, RapidAPI, TMDB, etc.) **must** use the **`EXPO_PUBLIC_`** prefix so Metro / EAS inlines it at bundle time. **Without** that prefix, native targets see **`undefined`**, which breaks `createClient` and surfaces as **`Network request failed`**.
+
+**Client bundle (Expo):** Only **`EXPO_PUBLIC_*`** keys ship in the Web / **iOS** / **Android** / **Android TV** bundle. The TV app talks to Supabase using **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_ANON_KEY`** — set both before **`expo run:android`** / Metro start.
+
+**Do not** add **`EXPO_PUBLIC_`** to **`STREAM_FINDER_KEY`**, **`SUPABASE_SERVICE_ROLE_KEY`**, or other secrets: those are for **Node sync scripts** only (`npm run sync:stream-finder`). The ReelDive client loads Stream Finder data from **Supabase** after sync, not by calling the Stream Finder API with a private key.
+
+---
+
+## Troubleshooting: Network request failed
+
+Symptoms: Metro or device logs show **`TypeError: Network request failed`** when the app first hits Supabase (auth, Discover cache, Profile providers, watchlists).
+
+| Cause | What to check |
+|--------|----------------|
+| **Missing or wrong Supabase URL in the TV bundle** | Confirm **`.env`** defines **`EXPO_PUBLIC_SUPABASE_URL`** and **`EXPO_PUBLIC_SUPABASE_ANON_KEY`**, restart Metro with **`--clear`**, rebuild the native TV app if needed. Values must match **Project Settings → API** in the Supabase dashboard. |
+| **Localhost / laptop-only URL on a real TV** | **`http://localhost`** or **`127.0.0.1`** resolves to the TV itself, not your dev machine. Use the **public HTTPS** project URL (**`https://<project-ref>.supabase.co`**). |
+| **LAN / private IP Supabase or custom API** | A physical TV must be on the **same Wi‑Fi** as the dev machine (or routed correctly), DNS must resolve, and firewall rules must allow outbound **HTTPS**. For plain **HTTP** to a LAN server, cleartext is allowed via **`plugins/withAndroidNetworkSecurity.js`** (used from **`app.config.ts`**) — **production** endpoints should still be **HTTPS**. |
+| **Cleartext / TLS** | Android TV respects manifest + network security config. This repo sets **`android:usesCleartextTraffic="true"`** and **`network_security_config`** (system + user CAs, cleartext permitted) so **Metro (`http://`)** works during development; **Supabase Cloud** remains **HTTPS** in `.env`. |
+| **`expo-build-properties`** | Not required for basic cleartext/Metro dev: native behavior is wired through **`withAndroidNetworkSecurity`**. Add **`expo-build-properties`** only if you need extra Gradle/NDK knobs unrelated to Supabase HTTPS. |
+
+**Native rebuild after plugin / `.env` changes:** run **`npm run tv:clean`** from the repo root (**`expo prebuild --clean`** for Android + **`expo run:android`**). Boot an **Android TV** emulator (or plug in a TV device) first so the install lands on the right target. This CLI does not support `--target tv`; pick the TV device when prompted or via **`adb devices`**.
+
+**Protocol:** Prefer **`https://`** for Supabase in all shipped builds; HTTP is acceptable only for deliberate local tooling.
 
 ---
 

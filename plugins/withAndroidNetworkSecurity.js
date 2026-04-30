@@ -35,6 +35,8 @@ function withAndroidNetworkSecurity(config) {
   config = withAndroidManifest(config, (config) => {
     const app = config.modResults.manifest.application?.[0];
     if (app?.$) {
+      /** Metro / LAN dev servers use http://; Supabase Cloud must stay https:// in .env. */
+      app.$['android:usesCleartextTraffic'] = 'true';
       app.$['android:networkSecurityConfig'] = '@xml/network_security_config';
     }
     return config;
