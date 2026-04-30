@@ -15,7 +15,8 @@
     "web": "expo start --web",
     "build": "expo export",
     "sync:stream-finder": "npx tsx scripts/stream-finder-sync.ts",
-    "inspect:stream-finder-payload": "npx tsx scripts/inspect-payload.ts"
+    "inspect:stream-finder-payload": "npx tsx scripts/inspect-payload.ts",
+    "audit:stream-finder-providers": "npx tsx scripts/audit-providers.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

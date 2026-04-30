@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-/** TMDB profile size for provider logos (sync stores relative paths only; UI uses full URL with this base via `stream-finder-supabase`). */
+/** Same base as authoritative `/api/providers` ingest (logo_path stores full TMDB URLs at w92 where possible). */
 export const TMDB_PROVIDER_LOGO_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
 /** Stored when the API omits `logo_path`; client maps this to a generic icon URL. */
@@ -17,6 +17,10 @@ export const GENERIC_PROVIDER_LOGO_SENTINEL = '__generic_stream__';
 const STREAM_FINDER_URL =
   process.env.STREAM_FINDER_MOVIES_URL?.trim() ||
   'https://stream-finder--trevorseitzai.replit.app/api/movies';
+
+/** Authoritative Stream Finder catalog (not overridden by env). */
+const OFFICIAL_STREAM_FINDER_PROVIDERS_URL =
+  'https://stream-finder--trevorseitzai.replit.app/api/providers';
 
 const CHUNK = 80;
 
@@ -32,7 +36,7 @@ export type ParsedStreamMovie = {
 export type ParsedProvider = {
   provider_id: number;
   name: string;
-  /** TMDB-relative path, full TMDB logo URL, or `GENERIC_PROVIDER_LOGO_SENTINEL` when unknown. */
+  /** Full TMDB w92 logo URL, TMDB-relative path, or `GENERIC_PROVIDER_LOGO_SENTINEL` when unknown. */
   logo_path: string;
 };
 
@@ -64,12 +68,16 @@ function num(v: unknown): number | null {
 }
 
 /**
- * Turn API logo values into a storable path/string; use sentinel when nothing usable is present.
+ * Turn API logo values into a normalized relative TMDB fragment or full URL fallback;
+ * returns sentinel when nothing usable is present.
  */
 function normalizeProviderLogoPath(raw: unknown): string {
   if (raw == null) return GENERIC_PROVIDER_LOGO_SENTINEL;
   if (typeof raw !== 'string') return GENERIC_PROVIDER_LOGO_SENTINEL;
   let t = raw.trim();
+  if (!t.length) return GENERIC_PROVIDER_LOGO_SENTINEL;
+  const q = t.indexOf('?');
+  if (q >= 0) t = t.slice(0, q).trim();
   if (!t.length) return GENERIC_PROVIDER_LOGO_SENTINEL;
   if (t.includes('image.tmdb.org')) {
     const idx = t.toLowerCase().indexOf('/t/p/');
@@ -83,17 +91,131 @@ function normalizeProviderLogoPath(raw: unknown): string {
   return t.startsWith('http') ? t : (t.startsWith('/') ? t : `/${t}`);
 }
 
+/**
+ * `/api/providers` shape: normalize path then persist as canonical w92 TMDB URL (per Stream Finder catalog contract).
+ */
+function officialCatalogLogoToStoredLogoPath(logoPath: unknown): string {
+  const normalized = normalizeProviderLogoPath(logoPath);
+  if (normalized === GENERIC_PROVIDER_LOGO_SENTINEL) return GENERIC_PROVIDER_LOGO_SENTINEL;
+  if (normalized.startsWith('http')) return normalized;
+  const base = TMDB_PROVIDER_LOGO_IMAGE_BASE.replace(/\/?$/, '');
+  const pathPart = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  return `${base}${pathPart}`;
+}
+
+/** Root array keys for standalone GET `/api/providers` JSON wrappers (includes nested wrappers). */
+const STANDALONE_PROVIDER_ARRAY_KEYS = [
+  'providers',
+  'master_providers',
+  'data',
+  'results',
+  'items',
+  'catalog_providers',
+  'streaming_services',
+  'all_providers',
+  'catalog',
+] as const;
+
+function appendInnerProviderArrays(bucket: Record<string, unknown>, out: unknown[][]): void {
+  for (const key of STANDALONE_PROVIDER_ARRAY_KEYS) {
+    const raw = bucket[key];
+    if (Array.isArray(raw)) out.push(raw);
+  }
+}
+
+function extractProviderArrayRoots(blob: unknown): unknown[][] {
+  if (blob == null) return [];
+  if (Array.isArray(blob)) return [blob];
+  if (typeof blob !== 'object') return [];
+  const o = blob as Record<string, unknown>;
+  const out: unknown[][] = [];
+  appendInnerProviderArrays(o, out);
+  for (const v of Object.values(o)) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    appendInnerProviderArrays(v as Record<string, unknown>, out);
+  }
+  return out;
+}
+
+function catalogRowLooksLikeProvider(o: Record<string, unknown>): boolean {
+  return (
+    typeof o.name === 'string' ||
+    typeof o.displayName === 'string' ||
+    typeof o.providerName === 'string' ||
+    typeof o.provider_name === 'string' ||
+    o.logoPath !== undefined ||
+    o.logo_path !== undefined ||
+    o.logo !== undefined ||
+    typeof o.movieCount === 'number' ||
+    o.display_priority !== undefined
+  );
+}
+
+/**
+ * Strict mapping from official `/api/providers` rows: providerId → provider_id, name, logoPath → w92 TMDB logo URL.
+ * Omits **no** row for missing logos or zero movie counts (sentinel logo is stored instead).
+ */
+function parseOfficialCatalogRow(o: Record<string, unknown>): ParsedProvider | null {
+  const explicit = num(o.providerId ?? o.provider_id);
+  const inferredFromId = num(catalogRowLooksLikeProvider(o) ? o.id : undefined);
+  const id = explicit ?? inferredFromId;
+  if (id == null || id <= 0) return null;
+  const tid = Math.trunc(id);
+  const nameRaw =
+    (typeof o.name === 'string' && o.name.trim()) ||
+    (typeof o.displayName === 'string' && o.displayName.trim()) ||
+    (typeof o.providerName === 'string' && o.providerName.trim()) ||
+    (typeof o.provider_name === 'string' && o.provider_name.trim()) ||
+    '';
+  const name = (nameRaw.length ? nameRaw : `Provider ${tid}`).slice(0, 320);
+  const logo_path = officialCatalogLogoToStoredLogoPath(o.logoPath ?? o.logo_path ?? o.logo);
+  return { provider_id: tid, name, logo_path };
+}
+
+/** Parse authoritative catalog JSON → provider rows (dedup last-wins by `provider_id`). */
+export function parseOfficialProvidersCatalog(json: unknown): ParsedProvider[] {
+  const buckets = extractProviderArrayRoots(json);
+  const map = new Map<number, ParsedProvider>();
+  for (const bucket of buckets) {
+    for (const item of bucket) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const parsed = parseOfficialCatalogRow(row);
+      if (parsed) map.set(parsed.provider_id, parsed);
+    }
+  }
+  return [...map.values()];
+}
+
 export function parseOneProviderObject(o: Record<string, unknown>): ParsedProvider | null {
   const provNested = maybeRecord(o.provider);
+  /**
+   * Accept TMDB-style watch-provider rows (`provider_name`, `display_priority`) and any row with
+   * explicit logo fields — do **not** require `logoPath` (sentinel is fine).
+   */
+  const looksLikeProviderRow =
+    o.provider_id != null ||
+    o.providerId != null ||
+    provNested !== undefined ||
+    o.logo_path != null ||
+    o.logoPath != null ||
+    o.logo_uri != null ||
+    o.logoUri != null ||
+    o.logo != null ||
+    o.logoUrl != null ||
+    o.tm != null ||
+    typeof o.provider_name === 'string' ||
+    typeof o.providerName === 'string' ||
+    o.display_priority !== undefined;
   const id =
     num(
       o.provider_id ??
       o.providerId ??
       o.tm ??
-      o.id ??
       provNested?.provider_id ??
       provNested?.providerId ??
-      provNested?.id
+      (looksLikeProviderRow ? provNested?.id : undefined) ??
+      (looksLikeProviderRow ? o.id : undefined)
     );
   if (id == null || id <= 0) return null;
   const tid = Math.trunc(id);
@@ -102,7 +224,15 @@ export function parseOneProviderObject(o: Record<string, unknown>): ParsedProvid
       ? o.name.trim()
       : `Provider ${tid}`;
   const lp =
-    o.logo_path ?? o.logoPath ?? o.logo_uri ?? o.logoUri ?? o.logo ?? o.logoUrl;
+    o.logo_path ??
+    o.logoPath ??
+    o.logo_uri ??
+    o.logoUri ??
+    o.logo ??
+    o.logoUrl ??
+    o.image ??
+    o.icon ??
+    o.avatar;
   const logo_path = normalizeProviderLogoPath(lp);
   return { provider_id: tid, name: name.slice(0, 320), logo_path };
 }
@@ -125,73 +255,6 @@ function readProviders(row: Record<string, unknown>): ParsedProvider[] {
     if (parsed) out.push(parsed);
   }
   return out;
-}
-
-const PAYLOAD_PROVIDER_KEYS = ['providers', 'master_providers', 'provider_list', 'watch_providers'] as const;
-
-/** Pull provider rows from optional top-level arrays on the JSON root (same Set merge as movie-level). */
-export function extractProvidersFromPayload(payload: unknown): ParsedProvider[] {
-  if (!payload || typeof payload !== 'object') return [];
-  const root = payload as Record<string, unknown>;
-  const out: ParsedProvider[] = [];
-  for (const key of PAYLOAD_PROVIDER_KEYS) {
-    const raw = root[key];
-    if (!Array.isArray(raw)) continue;
-    for (const item of raw) {
-      if (!item || typeof item !== 'object') continue;
-      const row = item as Record<string, unknown>;
-      if (
-        Array.isArray(row.providers) ||
-        Array.isArray(row.watch_providers) ||
-        Array.isArray(row.watchProviders) ||
-        Array.isArray(row.streaming_providers) ||
-        Array.isArray(row.streamingProviders) ||
-        Array.isArray(row.flatrate)
-      ) {
-        out.push(...readProviders(row));
-      } else {
-        const one = parseOneProviderObject(row);
-        if (one) out.push(one);
-      }
-    }
-  }
-  return out;
-}
-
-function isGenericLogoPath(path: string | null | undefined): boolean {
-  return !path || path === GENERIC_PROVIDER_LOGO_SENTINEL;
-}
-
-function mergeProviderIntoMap(map: Map<number, ParsedProvider>, incoming: ParsedProvider): void {
-  const cur = map.get(incoming.provider_id);
-  if (!cur) {
-    map.set(incoming.provider_id, { ...incoming });
-    return;
-  }
-  const name = cur.name.length >= incoming.name.length ? cur.name : incoming.name;
-  let logo_path = cur.logo_path;
-  if (isGenericLogoPath(cur.logo_path) && !isGenericLogoPath(incoming.logo_path)) {
-    logo_path = incoming.logo_path;
-  } else if (!isGenericLogoPath(cur.logo_path)) {
-    logo_path = cur.logo_path;
-  } else {
-    logo_path = incoming.logo_path;
-  }
-  map.set(incoming.provider_id, {
-    provider_id: incoming.provider_id,
-    name,
-    logo_path: isGenericLogoPath(logo_path) ? GENERIC_PROVIDER_LOGO_SENTINEL : logo_path!,
-  });
-}
-
-/** Dedup by `provider_id` (Set semantics); merges movie-level rows with optional root-level catalog rows. */
-export function buildMasterProviderList(movies: ParsedStreamMovie[], payload: unknown): ParsedProvider[] {
-  const map = new Map<number, ParsedProvider>();
-  for (const m of movies) {
-    for (const p of m.providers) mergeProviderIntoMap(map, p);
-  }
-  for (const p of extractProvidersFromPayload(payload)) mergeProviderIntoMap(map, p);
-  return [...map.values()];
 }
 
 export function normalizeStreamFinderMovie(
@@ -263,6 +326,205 @@ function sortByPopularityDesc(movies: ParsedStreamMovie[]): ParsedStreamMovie[] 
   });
 }
 
+function longestProvidersArrayInPayload(blob: unknown): number {
+  let max = 0;
+  for (const arr of extractProviderArrayRoots(blob)) max = Math.max(max, arr.length);
+  return max;
+}
+
+function getDeclaredCatalogTotal(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const o = payload as Record<string, unknown>;
+  const meta = maybeRecord(o.meta);
+  const pagination = maybeRecord(o.pagination);
+  const page = maybeRecord(o.page);
+  const candidates = [
+    o.total,
+    o.totalCount,
+    o.total_count,
+    o.total_providers,
+    o.totalProviders,
+    meta?.total,
+    meta?.totalCount,
+    page?.total,
+    pagination?.total,
+  ];
+  for (const c of candidates) {
+    const n = num(c);
+    if (n != null && n > 0) return Math.trunc(n);
+  }
+  return null;
+}
+
+/** Links-style `next`, relative paths, nested `pagination`/`meta`. */
+export function resolveNextCatalogUrl(payload: unknown, currentRequestUrl: string): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const o = payload as Record<string, unknown>;
+  const meta = maybeRecord(o.meta);
+  const pagination = maybeRecord(o.pagination);
+
+  const fromLink = (link: unknown): string | null => {
+    if (!link || typeof link !== 'object') return null;
+    const r = link as Record<string, unknown>;
+    const href = typeof r.href === 'string' ? r.href : typeof r.url === 'string' ? r.url : null;
+    if (!href?.trim()) return null;
+    const h = href.trim();
+    if (h.startsWith('http')) return h;
+    try {
+      return new URL(h, currentRequestUrl).href;
+    } catch {
+      return null;
+    }
+  };
+
+  const tryString = (s: unknown): string | null => {
+    if (typeof s !== 'string' || !s.trim()) return null;
+    const t = s.trim();
+    if (t === currentRequestUrl) return null;
+    if (t.startsWith('http')) return t;
+    try {
+      return new URL(t, currentRequestUrl).href;
+    } catch {
+      return null;
+    }
+  };
+
+  const candidates: unknown[] = [
+    o.next,
+    o.nextUrl,
+    o.next_url,
+    o.nextPage,
+    o.next_page,
+    (o.links as Record<string, unknown>)?.next,
+    (o._links as Record<string, unknown>)?.next,
+    pagination?.next,
+    pagination?.nextUrl,
+    pagination?.next_url,
+    meta?.next,
+    meta?.nextPage,
+    meta?.next_url,
+  ];
+
+  for (const c of candidates) {
+    const fromS = tryString(c);
+    if (fromS) return fromS;
+    const fromO = fromLink(c);
+    if (fromO) return fromO;
+  }
+  return null;
+}
+
+async function probeNumericCatalogPages(
+  apiKey: string,
+  merged: Map<number, ParsedProvider>,
+  declaredTotal: number,
+  lastPayload: unknown
+): Promise<void> {
+  const pageSize = Math.max(1, longestProvidersArrayInPayload(lastPayload));
+  const maxPage = Math.min(60, Math.max(2, Math.ceil(declaredTotal / pageSize) + 2));
+  const base = new URL(OFFICIAL_STREAM_FINDER_PROVIDERS_URL);
+  for (let p = 2; p <= maxPage && merged.size < declaredTotal; p++) {
+    base.searchParams.set('page', String(p));
+    const pageUrl = base.href;
+    const res = await fetch(pageUrl, {
+      headers: {
+        'X-Api-Key': apiKey,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) break;
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      break;
+    }
+    const batch = parseOfficialProvidersCatalog(json);
+    if (batch.length === 0) break;
+    const before = merged.size;
+    for (const row of batch) merged.set(row.provider_id, row);
+    if (merged.size === before) break;
+  }
+}
+
+/** GET official catalog — required for a successful sync; follows `next` / `?page=` when totals hint at more rows. */
+async function fetchStreamFinderProvidersCatalog(apiKey: string): Promise<ParsedProvider[]> {
+  const merged = new Map<number, ParsedProvider>();
+  const seen = new Set<string>();
+  const queue: string[] = [OFFICIAL_STREAM_FINDER_PROVIDERS_URL];
+  let lastPayload: unknown = null;
+  let firstRequest = true;
+
+  while (queue.length > 0) {
+    const url = queue.shift()!;
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: {
+          'X-Api-Key': apiKey,
+          'Content-Type': 'application/json',
+        },
+      });
+    } catch (e) {
+      throw new Error(
+        `[stream-finder-sync] Providers catalog fetch failed: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+
+    if (firstRequest) {
+      firstRequest = false;
+      if (res.status === 404 || res.status === 401) {
+        throw new Error(
+          `[stream-finder-sync] Providers catalog required but HTTP ${res.status}: ${OFFICIAL_STREAM_FINDER_PROVIDERS_URL}`
+        );
+      }
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(
+          `[stream-finder-sync] Providers catalog HTTP ${res.status}: ${t.slice(0, 400)}`
+        );
+      }
+    } else if (!res.ok) {
+      continue;
+    }
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      if (merged.size === 0) {
+        throw new Error('[stream-finder-sync] Providers catalog response is not valid JSON');
+      }
+      continue;
+    }
+
+    lastPayload = json;
+    for (const p of parseOfficialProvidersCatalog(json)) {
+      merged.set(p.provider_id, p);
+    }
+
+    const next = resolveNextCatalogUrl(json, url);
+    if (next && !seen.has(next)) queue.push(next);
+  }
+
+  const declared = lastPayload ? getDeclaredCatalogTotal(lastPayload) : null;
+  if (typeof declared === 'number' && merged.size < declared && lastPayload !== null) {
+    console.warn(
+      `[stream-finder-sync] Catalog declares totalProviders/total=${declared} but collected ${merged.size}; probing ?page=2…`
+    );
+    await probeNumericCatalogPages(apiKey, merged, declared, lastPayload);
+  }
+
+  if (merged.size === 0) {
+    throw new Error('[stream-finder-sync] Providers catalog parsed to zero rows (check `/api/providers` payload shape)');
+  }
+
+  return [...merged.values()];
+}
+
 async function fetchStreamFinderPayload(apiKey: string): Promise<unknown> {
   const res = await fetch(STREAM_FINDER_URL, {
     headers: {
@@ -276,7 +538,6 @@ async function fetchStreamFinderPayload(apiKey: string): Promise<unknown> {
   }
   return res.json();
 }
-
 
 function buildAvailability(movies: ParsedStreamMovie[]): ParsedAvailability[] {
   const out: ParsedAvailability[] = [];
@@ -313,7 +574,7 @@ export function logStreamFinderSyncToHq(
     const block = `<!-- STREAM_FINDER_SYNC -->
 ### Stream Finder cache sync
 - **Last successful run:** ${isoTime} — **${movieCount}** movies written to Supabase (\`stream_finder_movies\`).
-- **Active Services:** ${providerCount} unique providers in Master Provider List (\`stream_finder_providers\`).
+- **Active Services:** ${providerCount} unique providers from official catalog (\`/api/providers\`) in \`stream_finder_providers\`.
 <!-- /STREAM_FINDER_SYNC -->`;
     if (text.includes('<!-- STREAM_FINDER_SYNC -->')) {
       text = text.replace(
@@ -352,7 +613,9 @@ export async function runStreamFinderSync(
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+  const officialProviders = await fetchStreamFinderProvidersCatalog(apiKey);
   const json = await fetchStreamFinderPayload(apiKey);
+
   const items = extractMovies(json);
   const parsed: ParsedStreamMovie[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -367,10 +630,14 @@ export async function runStreamFinderSync(
 
   const { error: truncErr } = await supabase.rpc('truncate_stream_finder_cache');
   if (truncErr) throw new Error(`truncate_stream_finder_cache: ${truncErr.message}`);
-  console.log("🧹 Database cleared via CASCADE. Inserting 300+ movies...");
+  console.log('🧹 Database cleared via CASCADE. Inserting official providers, then movies…');
 
-  const providers = buildMasterProviderList(sorted, json);
-  for (const batch of chunk(providers, CHUNK)) {
+  console.log(`✅ Synced ${officialProviders.length} official providers from /api/providers`);
+  console.log('🔍 Found Providers:', officialProviders.map((p) => p.name).join(', '));
+
+  const catalogIds = new Set(officialProviders.map((p) => p.provider_id));
+
+  for (const batch of chunk(officialProviders, CHUNK)) {
     const { error } = await supabase.from('stream_finder_providers').upsert(
       batch.map((p) => ({
         provider_id: p.provider_id,
@@ -398,7 +665,15 @@ export async function runStreamFinderSync(
     if (error) throw new Error(`stream_finder_movies: ${error.message}`);
   }
 
-  const avail = buildAvailability(sorted);
+  const availAll = buildAvailability(sorted);
+  const avail = availAll.filter((a) => catalogIds.has(a.provider_id));
+  const dropped = availAll.length - avail.length;
+  if (dropped > 0) {
+    console.warn(
+      `[stream-finder-sync] Dropped ${dropped} movie_availability rows (provider_id not in official catalog)`
+    );
+  }
+
   for (const batch of chunk(avail, CHUNK)) {
     const { error } = await supabase.from('movie_availability').upsert(batch, {
       onConflict: 'movie_id,provider_id',
@@ -407,7 +682,7 @@ export async function runStreamFinderSync(
   }
 
   const iso = new Date().toISOString();
-  logStreamFinderSyncToHq(iso, sorted.length, providers.length);
+  logStreamFinderSyncToHq(iso, sorted.length, officialProviders.length);
 
-  return { movieCount: sorted.length, providerCount: providers.length };
+  return { movieCount: sorted.length, providerCount: officialProviders.length };
 }

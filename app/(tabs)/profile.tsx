@@ -206,6 +206,7 @@ export default function SettingsScreen() {
     };
   }, []);
 
+  /** IDs returned from sync (`stream_finder_providers`). New providers after sync appear here after reload/prefetch. */
   const activeProviderIdSet = useMemo(
     () => new Set(providers.map((p) => p.id)),
     [providers]

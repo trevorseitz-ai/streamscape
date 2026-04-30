@@ -10,20 +10,21 @@
 | :--- | :--- |
 | **Android TV UI** | Refining Discover/Home layouts; follow `docs/tv_layout_rules.md`. |
 | **Backend** | Supabase auth, profiles, watchlists; schema in `docs/database_schema.md`. |
-| **Cross-platform** | **Web / TV / native parity** on Discover curated feed and hybrid pipeline. **Phase 1: Discovery & Stability** — **COMPLETE** (Stream Finder curation + mobile stability baseline; see [`docs/depts/product.md`](docs/depts/product.md)). |
+| **Cross-platform** | **Web / TV / native parity** on Discover curated feed and hybrid pipeline. **Phase 1: Discovery & Stability** — **COMPLETE**, **validated at scale** (**1,206** titles + **16** mirrored providers); see [`docs/depts/product.md`](docs/depts/product.md). |
 
 _Update this table when priorities shift._
 
-**Milestone — Phase 1: Discovery & Stability (COMPLETE):** Default Discover is fed from the **Stream Finder** cache (`stream_finder_movies` + provider availability); **TMDB** enriches imagery; **`bucketViewportWidth`** + mount guards lock in mobile-web stability; Profile provider grid and pruning match the synced catalog — detailed in **`web.md`**, **`product.md`**, **`tv.md`**.
+**Milestone — Phase 1: Discovery & Stability (COMPLETE, validated at scale):** Default Discover is fed from the **Stream Finder** cache (`stream_finder_movies` + provider availability); canonical provider roster is **`GET /api/providers`** (**16** mirrored services—including mainstream and niche / premium catalogs such as **AMC+, Shudder, Criterion Channel** where offered by upstream); **TMDB** enriches imagery; **`bucketViewportWidth`** + mount guards lock in mobile-web stability; Profile provider grid and pruning match the synced catalog — detailed in **`web.md`**, **`product.md`**, **`tv.md`**.
 
 ---
 
 ## 🚧 Active Work-in-Progress
 
-- **Discover Phase 1 — Discovery & Stability:** ✅ **COMPLETE** — see [`docs/depts/product.md`](docs/depts/product.md).
+- **Discover Phase 1 — Discovery & Stability:** ✅ **COMPLETE** — **validated at scale** (**1,206** titles, **16** providers); see [`docs/depts/product.md`](docs/depts/product.md).
+- **Active roadmap:** **Phase 2 — watchlist logic & deep linking** (all **16** mirrored services)—see Product office.
 - **Completed:** Validated TV/Web architecture and automated the Waitlist-to-Auth migration pipeline.
 - **Current Focus:** Ensuring D-pad navigation "Focus Bridge" works across all Home screen rows.
-- **Next Step:** See **Product** office — *watchlist syncing* and *deep linking* (streaming logos → native apps) are the headline follow-ons; TV focus bridge and provider filtering remain in flight where noted in `tv.md` / `web.md`.
+- **Next Step:** See **Product** office — **Phase 2**: *watchlist syncing* and *deep linking* (**16** mirrored providers → native apps); TV focus bridge and provider filtering remain in flight where noted in `tv.md` / `web.md`.
 
 ---
 
@@ -86,10 +87,14 @@ High-jitter viewports (**mobile Safari**, mobile browsers with chrome inset) emi
 
 | Layer | Role |
 | :--- | :--- |
-| **Stream Finder API → Supabase cache** | **Primary curation** for the default Discover experience (e.g. top ~300 titles) and **streaming availability** / provider catalog (`stream_finder_movies`, `movie_availability`, `stream_finder_providers`). Sync: `npm run sync:stream-finder` / [`lib/services/stream-finder-sync.ts`](lib/services/stream-finder-sync.ts). |
+| **Stream Finder API → Supabase cache** | **Primary curation** for the default Discover experience (e.g. top ~300 titles) and **streaming availability** / provider catalog (`stream_finder_movies`, `movie_availability`, `stream_finder_providers`). **`GET /api/providers`** is the **authoritative** provider roster; sync mirrors it into Supabase. Sync: `npm run sync:stream-finder` / [`lib/services/stream-finder-sync.ts`](lib/services/stream-finder-sync.ts). |
 | **TMDB** | **Enrichment only** for the curated list — high-resolution **posters and backdrops** (and TMDB Discover when the user applies **filters**: year, genre, monetization, providers). Do not replace Stream Finder ordering for the **unfiltered** default landing. |
 
 Implementation choke points: [`lib/stream-finder-supabase.ts`](lib/stream-finder-supabase.ts) (read path), [`lib/film-show-rapid-discover.ts`](lib/film-show-rapid-discover.ts) (TMDB image enrichment for hybrid rows).
+
+#### Data Integrity Protocol — source of truth
+
+**Data Integrity Protocol:** ReelDive serves as a **real-time mirror** of the Stream Finder API—metadata, counts, and availability in the app trace to what the upstream service exposes plus the latest sync write. **If expectations diverge**, the correction belongs at the **API source** (refresh cycle, ingestion, roster). ReelDive’s local database **re-aligns automatically** on the **next scheduled (or manual) sync** (**`npm run sync:stream-finder`**); do not treat hand-editing Supabase alone as fixing upstream truth.
 
 ---
 
@@ -117,6 +122,6 @@ _(Replace placeholders with real URLs.)_
 
 <!-- STREAM_FINDER_SYNC -->
 ### Stream Finder cache sync
-- **Last successful run:** 2026-04-30T01:16:19.483Z — **272** movies written to Supabase (`stream_finder_movies`).
-- **Active Services:** 8 unique providers in Master Provider List (`stream_finder_providers`).
+- **Last successful run:** 2026-04-30T13:44:29.534Z — **1206** movies written to Supabase (`stream_finder_movies`).
+- **Active Services:** **16** unique providers mirrored from authoritative **`GET /api/providers`** into `stream_finder_providers` (catalog includes flagship streamers plus niche / premium outlets—e.g. **AMC+, Shudder, Criterion Channel**—per upstream roster).
 <!-- /STREAM_FINDER_SYNC -->

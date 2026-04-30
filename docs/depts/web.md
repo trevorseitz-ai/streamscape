@@ -49,6 +49,10 @@ Chunk size for horizontal poster rows (and `getMoviePosterLayout(..., 'phone', n
 
 The vertical results `FlatList` **key** should continue to include **`numColumns`** so row math remounts cleanly when crossing breakpoints.
 
+### Discover performance at scale (1,000+ mirrored titles)
+
+Production validation has been extended to **1,206** cached movie rows (**Stream Finder mirror**) with the full **16-provider** footprint. **Phone Discover** retains the dense **3-column** grid (**≤768px**) with **`bucketViewportWidth`**-stabilized layout and **mount-guarded** hydration for the curated list—the combination is **our baseline for sustaining smooth ~60fps scrolling** on modern phones (performance traces in Chromium / Safari remain the regression check).
+
 ### Row alignment (“no dead space” on narrow screens)
 
 The Discover results list **mixes row items and phase dividers**, so the vertical `FlatList` **cannot** safely use **`numColumns`** / **`columnWrapperStyle`** (that API assumes a uniform grid of cells).
@@ -62,9 +66,13 @@ Discover is implemented in [**`app/(tabs)/discover.tsx`**](../../app/%28tabs%29/
 
 ### Hybrid mandate (non-negotiable)
 
-- **Stream Finder (Supabase cache):** **Curation and ordering** for the default “Top ~300” experience — authoritative list membership and streaming links for the synced catalog (`stream_finder_movies`, `movie_availability`). Read path: [`lib/stream-finder-supabase.ts`](../../lib/stream-finder-supabase.ts); sync: **`npm run sync:stream-finder`**.
+- **Stream Finder (Supabase cache):** **Curation and ordering** for the default “Top ~300” experience — authoritative list membership and streaming links for the synced catalog (`stream_finder_movies`, `movie_availability`). **Provider catalog (scale milestone):** **`GET /api/providers`** feeds **16** providers into **`stream_finder_providers`**—major services plus niche and premium options upstream includes (e.g. **AMC+, Shudder, Criterion Channel**); same table backs **Profile (“My services”)** and **Discover** (badges, filters, pruning). Read path: [`lib/stream-finder-supabase.ts`](../../lib/stream-finder-supabase.ts); sync: **`npm run sync:stream-finder`**.
 - **TMDB:** **Enrichment layer** — high-resolution posters and backdrops for that curated list via [`lib/film-show-rapid-discover.ts`](../../lib/film-show-rapid-discover.ts). **TMDB Discover** on demand when users apply **filters** (**year**, **genre**, **monetization** / providers).
 - **Legacy / alternate curated path:** RapidAPI “Film & Show” remains in the repo for optional or historical flows; the **default unfiltered** Discover landing is **Stream Finder + TMDB enrich**, not a raw TMDB `/discover` dump.
+
+### Metadata fallbacks (provider logos)
+
+[`resolveStreamFinderProviderLogoUrl`](../../lib/stream-finder-supabase.ts) turns each `stream_finder_providers.logo_path` into a display URL. **`null`**, empty strings, and the sync **`__generic_stream__`** sentinel (used when the API omits artwork—e.g. **Paramount+** in the current catalog) resolve to a **built-in generic SVG** so the grid never shows a broken image. Valid paths and full TMDB URLs still map to **`image.tmdb.org` / w92** as before.
 
 Operational detail:
 
@@ -73,7 +81,7 @@ Operational detail:
 
 ### Profile & “My services” — auto-pruning
 
-User selections (`user_profiles.enabled_services` + local AsyncStorage) are **not** an open-ended TMDB ID list — they are **intersected with `stream_finder_providers`** (the master list produced by each Stream Finder sync).
+User selections (`user_profiles.enabled_services` + local AsyncStorage) are **not** an open-ended TMDB ID list — they are **intersected with `stream_finder_providers`**, which mirrors **`GET /api/providers`** on each Stream Finder sync (**API as source of truth** for which services exist in the product).
 
 - **On Profile load:** After the catalog fetch, any saved ID **not** in the current provider table is **silently dropped**; storage and Supabase are updated to match. A one-time UI hint may appear when pruning occurs.
 - **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Library**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
@@ -87,4 +95,4 @@ User selections (`user_profiles.enabled_services` + local AsyncStorage) are **no
 
 - **Parity:** TV and phone/web Discover both surface the **Stream Finder curated** list as the default experience before filters.
 - **Stability:** **`app/+html.tsx`** viewport + bucketed width + mount guards + stable session deps prevent **layout mis-scale** and **render-loop** classes of bugs on mobile web and iOS.
-- **Responsiveness:** **3 / 4 / 5** column breakpoints and horizontal-row distribution are documented above so mobile **~430px** layouts stay dense and centered.
+- **Responsiveness & scale:** **3 / 4 / 5** column breakpoints plus horizontal-row distribution keep mobile **~430px** layouts dense; at **>1k** mirrored titles (`stream_finder_movies`), **bucketing + mount guards** stay the backbone for predictable scroll performance (**~60fps**) on phone Discover.
