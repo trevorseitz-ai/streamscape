@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { getSavedProviderIds } from '../../lib/provider-preferences';
+import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import {
   getDirectStreamingLinks,
   normalizeTmdbIdForStreaming,
@@ -573,23 +573,13 @@ export default function MovieDetailsScreen() {
 
   useEffect(() => {
     async function loadEnabledServices() {
-      if (session) {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('enabled_services')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (profile?.enabled_services) {
-          setEnabledServiceIds(new Set(profile.enabled_services as number[]));
-          return;
-        }
-      }
-      const localIds = await getSavedProviderIds();
-      setEnabledServiceIds(new Set(localIds));
+      const ids = await resolvePrunedProviderSelections(supabase, {
+        userId: session?.user?.id ?? null,
+      });
+      setEnabledServiceIds(new Set(ids));
     }
 
-    loadEnabledServices();
+    void loadEnabledServices();
   }, [session]);
 
   useEffect(() => {

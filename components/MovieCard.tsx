@@ -23,6 +23,8 @@ export interface Movie {
   poster_url: string | null;
   release_year?: number | null;
   vote_average?: number | null;
+  /** TMDB w45 provider logos (Stream Finder cache) — full URLs. */
+  provider_logo_urls?: string[] | null;
 }
 
 interface MovieCardProps {
@@ -211,6 +213,18 @@ export function MovieCard({
           <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
         </View>
       )}
+      {movie.provider_logo_urls && movie.provider_logo_urls.length > 0 ? (
+        <View style={styles.providerLogoRow} pointerEvents="none">
+          {movie.provider_logo_urls.slice(0, 6).map((uri, i) => (
+            <Image
+              key={`${uri}-${i}`}
+              source={{ uri }}
+              style={styles.providerLogoThumb}
+              resizeMode="contain"
+            />
+          ))}
+        </View>
+      ) : null}
     </>
   );
 
@@ -431,6 +445,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  providerLogoRow: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    right: 40,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    alignItems: 'center',
+  },
+  providerLogoThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   title: {
     fontSize: 14,

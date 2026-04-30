@@ -10,9 +10,13 @@ export type FilmShowDiscoverMovie = {
   backdrop_url: string | null;
   release_year: number | null;
   vote_average: number | null;
-  platforms: Array<{ name: string; access_type: string }>;
+  platforms: Array<{ name: string; access_type: string; logo_path?: string | null }>;
   /** RapidAPI `ids.TMDB` — used for TMDB image enrichment (not for list source). */
   tmdb_id: number | null;
+  /** Stream Finder: canonical row (sorted by name); use for UI that needs ids + URLs. */
+  providers?: Array<{ id: number; name: string; logo_url: string }>;
+  /** Stream Finder cached provider logos → passed through to Discover / MovieCard. */
+  provider_logo_urls?: string[];
 };
 
 const TMDB_API_BASE = 'https://api.themoviedb.org/3';

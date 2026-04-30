@@ -13,7 +13,9 @@
     "android:release": "cd android && ./gradlew assembleRelease",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build": "expo export"
+    "build": "expo export",
+    "sync:stream-finder": "npx tsx scripts/stream-finder-sync.ts",
+    "inspect:stream-finder-payload": "npx tsx scripts/inspect-payload.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

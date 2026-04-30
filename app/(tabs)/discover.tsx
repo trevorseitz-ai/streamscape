@@ -31,7 +31,6 @@ import {
   MOVIE_POSTER_EDGE_INSET,
 } from '../../components/MovieRow';
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
-import { getSavedProviderIds } from '../../lib/provider-preferences';
 import { useCountry } from '../../lib/country-context';
 import { isTvTarget } from '../../lib/isTv';
 import { tvFocusable } from '../../lib/tvFocus';
@@ -41,10 +40,8 @@ import { tvScale } from '../../lib/tvUiScale';
 import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
-import {
-  fetchFilmShowTopTrendingDiscoverMovies,
-  enrichWithTmdbImages,
-} from '../../lib/film-show-rapid-discover';
+import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
+import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -112,13 +109,17 @@ interface DiscoverResult {
   id: string;
   title: string;
   poster_url: string | null;
-  /** Present when hydrated from RapidAPI + TMDB enrichment. */
+  /** Present when hydrated from Stream Finder cache + TMDB enrichment. */
   backdrop_url?: string | null;
   release_year: number | null;
   vote_average: number | null;
   platforms: Array<{ name: string; access_type: string }>;
-  /** RapidAPI ids.TMDB — used for enrichment only when present. */
+  /** TMDB id — enrichment + routing. */
   tmdb_id?: number | null;
+  /** Stream Finder: rows joined from `stream_finder_providers`; sorted by name when present. */
+  providers?: Array<{ id: number; name: string; logo_url: string }>;
+  /** Cached provider logos (Discover stream finder). */
+  provider_logo_urls?: string[];
 }
 
 interface TMDBDiscoverResponse {
@@ -520,12 +521,22 @@ export default function DiscoverScreen() {
   useFocusEffect(
     useCallback(() => {
       watchlistRefetchRef.current?.();
+      let cancelled = false;
       supabase.auth.getSession().then(({ data: { session: incoming } }) => {
+        if (cancelled) return;
         setSession((prev) =>
           mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
         );
+        const uid = incoming?.user?.id ?? null;
+        resolvePrunedProviderSelections(supabase, { userId: uid }).then(
+          (ids) => {
+            if (!cancelled) setProviderIds(ids);
+          }
+        );
       });
-      getSavedProviderIds().then(setProviderIds);
+      return () => {
+        cancelled = true;
+      };
     }, [])
   );
 
@@ -606,8 +617,6 @@ export default function DiscoverScreen() {
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
   const [phase1Movies, setPhase1Movies] = useState<DiscoverResult[]>([]);
   const [phase2Movies, setPhase2Movies] = useState<DiscoverResult[]>([]);
-  /** Mount-time pool — RapidAPI Film & Show top/trending list (~100 rows), same shape as Discover list; prefetch / inspection. */
-  const [prefetchedTop100Trending, setPrefetchedTop100Trending] = useState<DiscoverResult[]>([]);
   const [fetchPhase, setFetchPhase] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -616,13 +625,13 @@ export default function DiscoverScreen() {
   const [providerIds, setProviderIds] = useState<number[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [rapidListHydrating, setRapidListHydrating] = useState(false);
+  const [streamFinderListHydrating, setStreamFinderListHydrating] = useState(false);
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
-  /** True while the default grid is the RapidAPI top list (no TMDB discover pagination). */
-  const rapidDiscoverListActiveRef = useRef(false);
-  /** Ensures Rapid Top-100 logic runs once per mount (protects Strict Mode oddities & accidental re-invocation). */
-  const rapidTop100FetchedRef = useRef(false);
+  /** True while the default grid is the Stream Finder–cached list (no TMDB discover pagination). */
+  const streamFinderCuratedFeedActiveRef = useRef(false);
+  /** Ensures Stream Finder cache hydration runs once per mount. */
+  const streamFinderCuratedFetchedRef = useRef(false);
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const genreListRef = useRef<FlatList>(null);
@@ -678,70 +687,51 @@ export default function DiscoverScreen() {
   }, [discoverPosterLayout.posterHeight, gridGap, isTV]);
 
   useEffect(() => {
-    getSavedProviderIds().then(setProviderIds);
-  }, []);
+    let cancelled = false;
+    const uid =
+      session === undefined ? undefined : (session?.user?.id ?? null);
+    resolvePrunedProviderSelections(supabase, { userId: uid }).then((ids) => {
+      if (!cancelled) setProviderIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [discoverAuthKey(session)]);
 
   useEffect(() => {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
-  const signedOutStable = discoverAuthKey(session) === '__signed_out__';
-  /** Logged-out: allow a future sign-in to trigger the curated prefetch again. */
-  useEffect(() => {
-    if (!signedOutStable) return;
-    rapidTop100FetchedRef.current = false;
-    rapidDiscoverListActiveRef.current = false;
-  }, [signedOutStable]);
-
-  const sessionUserId = session?.user?.id ?? null;
-
   /**
-   * Curated Top 100 — gated on resolved session with a real user (`session` !== `undefined` and `.user`).
+   * Curated default Discover — Stream Finder cache in Supabase (+ TMDB poster/backdrop enrichment).
    */
   useEffect(() => {
-    const key = process.env.EXPO_PUBLIC_RAPIDAPI_KEY?.trim();
-    const host = process.env.EXPO_PUBLIC_RAPIDAPI_HOST?.trim();
-    if (!key || !host) {
-      setRapidListHydrating(false);
-      return;
-    }
-
-    if (!sessionUserId) {
-      console.log('⏸️ [Discover] Fetch paused: No active session.');
-      setRapidListHydrating(false);
-      rapidDiscoverListActiveRef.current = false;
-      return;
-    }
-
-    if (rapidTop100FetchedRef.current) return;
-    rapidTop100FetchedRef.current = true;
+    if (streamFinderCuratedFetchedRef.current) return;
+    streamFinderCuratedFetchedRef.current = true;
 
     let cancelled = false;
-    rapidDiscoverListActiveRef.current = true;
-    setRapidListHydrating(true);
+    streamFinderCuratedFeedActiveRef.current = true;
+    setStreamFinderListHydrating(true);
 
     (async () => {
       try {
-        const mappedMovies = await fetchFilmShowTopTrendingDiscoverMovies(key, host);
+        const mapped = await fetchDiscoverMoviesFromStreamFinder(supabase);
         if (cancelled) return;
-        const enrichedMovies = await enrichWithTmdbImages(mappedMovies);
+        const enriched = await enrichWithTmdbImages(mapped);
         if (cancelled) return;
-        setPrefetchedTop100Trending(enrichedMovies);
-        setPhase1Movies(enrichedMovies);
-
-        console.log("🚀 ENRICHED DATA SUCCESS. First movie:", JSON.stringify(enrichedMovies[0], null, 2));
+        setPhase1Movies(enriched as DiscoverResult[]);
       } catch (e) {
-        console.warn('[Discover] RapidAPI Film and Show top list prefetch failed:', e);
-        rapidDiscoverListActiveRef.current = false;
+        console.warn('[Discover] Stream Finder cache load failed:', e);
+        streamFinderCuratedFeedActiveRef.current = false;
       } finally {
-        if (!cancelled) setRapidListHydrating(false);
+        if (!cancelled) setStreamFinderListHydrating(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [sessionUserId]);
+  }, []);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -752,7 +742,7 @@ export default function DiscoverScreen() {
     async (year: number | null, monet: MonetizationType, genres: number[]) => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
-      rapidDiscoverListActiveRef.current = false;
+      streamFinderCuratedFeedActiveRef.current = false;
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -794,9 +784,9 @@ export default function DiscoverScreen() {
     if (loadingMoreRef.current || loading) return;
     /**
      * Same guard on Web and native: infinite scroll must not append TMDB /discover pages into the
-     * fixed curated RapidAPI list while `rapidDiscoverListActiveRef` is true.
+     * Stream Finder–cached default list while `streamFinderCuratedFeedActiveRef` is true.
      */
-    if (rapidDiscoverListActiveRef.current) return;
+    if (streamFinderCuratedFeedActiveRef.current) return;
 
     if (page >= totalPages) {
       if (fetchPhase === 1) {
@@ -996,7 +986,7 @@ export default function DiscoverScreen() {
     setWrapNavVersion((n) => n + 1);
   }, [totalMovieRows]);
 
-  /** Auth still resolving — never show signed-out UI or fire Rapid prefetch on `undefined`. */
+  /** Auth still resolving — never show signed-out UI or curated feed on `undefined`. */
   if (session === undefined) {
     return (
       <View style={styles.blackout}>
@@ -1138,7 +1128,7 @@ export default function DiscoverScreen() {
         />
       </View>
 
-      {!hasMovies && !loading && !rapidListHydrating && (
+      {!hasMovies && !loading && !streamFinderListHydrating && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🎬</Text>
           <Text style={styles.emptyText}>
@@ -1149,7 +1139,7 @@ export default function DiscoverScreen() {
         </View>
       )}
 
-      {(loading || rapidListHydrating) && !hasMovies && (
+      {(loading || streamFinderListHydrating) && !hasMovies && (
         <View
           style={[
             styles.centered,
@@ -1159,8 +1149,8 @@ export default function DiscoverScreen() {
         >
           <ActivityIndicator size="large" color="#6366f1" />
           <Text style={styles.loadingText}>
-            {rapidListHydrating && !loading
-              ? 'Loading top picks…'
+            {streamFinderListHydrating && !loading
+              ? 'Loading curated picks…'
               : selectedYear != null
                 ? `Discovering ${selectedYear} movies for your region...`
                 : 'Discovering movies for your region...'}

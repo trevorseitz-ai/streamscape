@@ -18,24 +18,25 @@ import {
   ListRenderItem,
   Alert,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { bucketViewportWidth } from '../../components/MovieRow';
 import { supabase } from '../../lib/supabase';
 import {
   getSavedProviderIds,
   saveProviderIds,
 } from '../../lib/provider-preferences';
-import { useCountry } from '../../lib/country-context';
+import { resolveStreamFinderProviderLogoUrl } from '../../lib/stream-finder-supabase';
 import { isTvTarget } from '../../lib/isTv';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+const CONTENT_HORIZONTAL_PAD = 20;
+const PROFILE_GRID_GAP = 10;
 
 interface ProviderEntry {
   id: number;
   name: string;
-  logo_url: string | null;
-  display_priority: number;
+  logo_url: string;
 }
 
 /** Normalize TMDB / Supabase / storage IDs so Set membership never fails on 8 vs "8". */
@@ -59,7 +60,10 @@ function providerIdsToNumberArray(set: Set<string>): number[] {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { selectedCountry } = useCountry();
+  const { width: rawWidth } = useWindowDimensions();
+  const viewportBucket = bucketViewportWidth(rawWidth);
+  const innerContentWidth =
+    viewportBucket - CONTENT_HORIZONTAL_PAD * 2;
   const isTV = isTvTarget();
   /** Android TV: list / chrome must not become accidental focus targets after grid updates. */
   const tvNf =
@@ -68,8 +72,9 @@ export default function SettingsScreen() {
       : {};
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [loading, setLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [catalogPrunedNotice, setCatalogPrunedNotice] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [watchedRows, setWatchedRows] = useState<
@@ -158,84 +163,158 @@ export default function SettingsScreen() {
     return () => subscription.unsubscribe();
   }, []);
 
+  /** Stream Finder catalog: load once per Profile mount (anon RLS read). */
   useEffect(() => {
-    async function load() {
+    let cancelled = false;
+    (async () => {
+      setFetchError(null);
+      setCatalogLoading(true);
       try {
-        let enabledIds: number[] = [];
+        const { data, error } = await supabase
+          .from('stream_finder_providers')
+          .select('provider_id, name, logo_path')
+          .order('name', { ascending: true });
 
+        if (cancelled) return;
+        if (error) {
+          setFetchError(error.message);
+          setProviders([]);
+          return;
+        }
+
+        const rows = data ?? [];
+        const mapped: ProviderEntry[] = rows.map((row) => ({
+          id: Number(row.provider_id),
+          name: row.name,
+          logo_url: resolveStreamFinderProviderLogoUrl(row.logo_path),
+        }));
+
+        setProviders(mapped);
+      } catch (err) {
+        if (!cancelled) {
+          setFetchError(
+            err instanceof Error ? err.message : 'Failed to load providers'
+          );
+          setProviders([]);
+        }
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeProviderIdSet = useMemo(
+    () => new Set(providers.map((p) => p.id)),
+    [providers]
+  );
+
+  /**
+   * Hydrate selections from profile / local storage, then prune to the active
+   * `stream_finder_providers` catalog once the catalog load has finished.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (catalogLoading) return;
+
+      let rawSaved: number[] = [];
+
+      if (fetchError) {
         if (session) {
           const { data: profile } = await supabase
             .from('user_profiles')
             .select('enabled_services')
             .eq('id', session.user.id)
             .maybeSingle();
-
+          if (cancelled) return;
           if (profile?.enabled_services) {
-            const raw = profile.enabled_services as unknown[];
-            enabledIds = providerIdsToNumberArray(providerIdSetFromValues(raw));
-            setSelectedIds(providerIdSetFromValues(raw));
-            saveProviderIds(enabledIds);
+            rawSaved = providerIdsToNumberArray(
+              providerIdSetFromValues(profile.enabled_services as unknown[])
+            );
           } else {
-            enabledIds = await getSavedProviderIds();
-            setSelectedIds(providerIdSetFromValues(enabledIds as unknown[]));
+            rawSaved = await getSavedProviderIds();
           }
         } else {
-          enabledIds = await getSavedProviderIds();
-          setSelectedIds(providerIdSetFromValues(enabledIds as unknown[]));
+          rawSaved = await getSavedProviderIds();
         }
-
-        const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
-        if (!apiKey) {
-          setFetchError('TMDB API key not configured');
-          return;
+        if (!cancelled) {
+          setSelectedIds(providerIdSetFromValues(rawSaved as unknown[]));
         }
-
-        const url = `${TMDB_BASE}/watch/providers/movie?watch_region=${selectedCountry}&language=en-US`;
-
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        });
-
-        if (!res.ok) {
-          setFetchError(`Failed to load providers (${res.status})`);
-          return;
-        }
-
-        const data = await res.json();
-        const results: Array<{
-          provider_id: number;
-          provider_name: string;
-          logo_path: string | null;
-          display_priority: number;
-        }> = data.results ?? [];
-
-        const mapped = results
-          .sort((a, b) => a.display_priority - b.display_priority)
-          .map((p) => ({
-            id: p.provider_id,
-            name: p.provider_name,
-            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : null,
-            display_priority: p.display_priority,
-          }));
-
-        setProviders(mapped);
-      } catch (err) {
-        setFetchError(
-          err instanceof Error ? err.message : 'Failed to load providers'
-        );
-      } finally {
-        setLoading(false);
+        return;
       }
-    }
 
-    load();
-  }, [session, selectedCountry]);
+      if (session) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('enabled_services')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (profile?.enabled_services) {
+          rawSaved = providerIdsToNumberArray(
+            providerIdSetFromValues(profile.enabled_services as unknown[])
+          );
+        } else {
+          rawSaved = await getSavedProviderIds();
+        }
+      } else {
+        rawSaved = await getSavedProviderIds();
+      }
+
+      if (cancelled) return;
+
+      const pruned = rawSaved.filter((id) => activeProviderIdSet.has(id));
+
+      if (pruned.length !== rawSaved.length) {
+        const removed = rawSaved.filter((id) => !activeProviderIdSet.has(id));
+        console.info(
+          '[profile] Pruned stale streaming selections (not in stream_finder_providers)',
+          { removed }
+        );
+        await saveProviderIds(pruned);
+        if (session) {
+          await supabase.from('user_profiles').upsert(
+            { id: session.user.id, enabled_services: pruned },
+            { onConflict: 'id' }
+          );
+        }
+        if (!cancelled) setCatalogPrunedNotice(true);
+      }
+
+      if (!cancelled) {
+        setSelectedIds(providerIdSetFromValues(pruned as unknown[]));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    session,
+    providers,
+    catalogLoading,
+    fetchError,
+    activeProviderIdSet,
+  ]);
+
+  useEffect(() => {
+    if (!catalogPrunedNotice) return;
+    const t = setTimeout(() => setCatalogPrunedNotice(false), 10000);
+    return () => clearTimeout(t);
+  }, [catalogPrunedNotice]);
 
   /** Two-way: add or remove provider id from selection (new Set each update). */
   const handleSave = useCallback(async () => {
-    const idsArray = providerIdsToNumberArray(selectedIds);
+    const idsArray = providerIdsToNumberArray(selectedIds).filter((id) =>
+      activeProviderIdSet.has(id)
+    );
     try {
       await saveProviderIds(idsArray);
+      setSelectedIds(providerIdSetFromValues(idsArray as unknown[]));
       if (session) {
         const { error } = await supabase
           .from('user_profiles')
@@ -255,7 +334,7 @@ export default function SettingsScreen() {
         e instanceof Error ? e.message : 'Could not save preferences'
       );
     }
-  }, [selectedIds, session]);
+  }, [selectedIds, session, activeProviderIdSet]);
 
   const selectionRevision = useMemo(
     () => Array.from(selectedIds).sort().join(','),
@@ -266,40 +345,65 @@ export default function SettingsScreen() {
    * Search filter + fixed display order only (no re-sort when selection changes).
    * Order stays stable so TV FlatList cells are not remounted on add/remove.
    */
+  const numColumns = useMemo(() => {
+    if (isTV) return Math.min(8, Math.max(4, Math.floor(innerContentWidth / 112)));
+    return innerContentWidth >= 380 ? 5 : 4;
+  }, [innerContentWidth, isTV]);
+
+  const tileWidth = useMemo(() => {
+    const usable = innerContentWidth - PROFILE_GRID_GAP * (numColumns - 1);
+    return Math.max(72, Math.floor(usable / numColumns));
+  }, [innerContentWidth, numColumns]);
+
   const sortedFilteredProviders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return [...providers]
-      .filter((p) => p.name.toLowerCase().includes(q))
-      .sort((a, b) => a.display_priority - b.display_priority);
+    return providers.filter((p) => p.name.toLowerCase().includes(q));
   }, [providers, searchQuery]);
 
-  const handleToggle = useCallback((providerId: number) => {
-    const key = normalizeProviderId(providerId);
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      const idsArray = providerIdsToNumberArray(next);
-      saveProviderIds(idsArray);
+  const servicesEmptyQuiet =
+    !catalogLoading &&
+    !fetchError &&
+    sortedFilteredProviders.length === 0 &&
+    providers.length > 0;
 
-      if (session) {
-        supabase
-          .from('user_profiles')
-          .upsert(
-            { id: session.user.id, enabled_services: idsArray },
-            { onConflict: 'id' }
-          )
-          .then(({ error }) => {
-            if (error) console.warn('Failed to save to Supabase:', error.message);
-          });
-      }
+  const catalogEmptyAfterSync =
+    !catalogLoading && !fetchError && providers.length === 0;
 
-      return next;
-    });
-  }, [session]);
+  const handleToggle = useCallback(
+    (providerId: number) => {
+      if (!activeProviderIdSet.has(providerId)) return;
+
+      const key = normalizeProviderId(providerId);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+        const idsArray = providerIdsToNumberArray(next).filter((id) =>
+          activeProviderIdSet.has(id)
+        );
+
+        saveProviderIds(idsArray);
+
+        if (session) {
+          supabase
+            .from('user_profiles')
+            .upsert(
+              { id: session.user.id, enabled_services: idsArray },
+              { onConflict: 'id' }
+            )
+            .then(({ error }) => {
+              if (error) console.warn('Failed to save to Supabase:', error.message);
+            });
+        }
+
+        return providerIdSetFromValues(idsArray as unknown[]);
+      });
+    },
+    [session, activeProviderIdSet]
+  );
 
   const renderProviderItem = useCallback<ListRenderItem<ProviderEntry>>(
     ({ item }) => {
@@ -309,11 +413,12 @@ export default function SettingsScreen() {
         <ProviderCard
           item={item}
           isSelected={isSelected}
+          tileWidth={tileWidth}
           onPress={() => handleToggle(item.id)}
         />
       );
     },
-    [selectedIds, handleToggle]
+    [selectedIds, handleToggle, tileWidth]
   );
 
   const listHeader = useMemo(
@@ -396,10 +501,28 @@ export default function SettingsScreen() {
             filtered to show movies available on your services.
           </Text>
 
+          {catalogPrunedNotice ? (
+            <Text style={styles.catalogPrunedHint} {...tvNf}>
+              Your saved services were updated to match the current streaming catalog (some
+              entries are no longer in the feed).
+            </Text>
+          ) : null}
+
           {fetchError ? (
             <View style={styles.errorBox} {...tvNf}>
               <Text style={styles.errorText}>{fetchError}</Text>
             </View>
+          ) : catalogLoading ? (
+            <View style={styles.servicesCatalogLoading} {...tvNf}>
+              <ActivityIndicator size="small" color="#6366f1" />
+              <Text style={styles.servicesCatalogLoadingText}>
+                Loading available services...
+              </Text>
+            </View>
+          ) : catalogEmptyAfterSync ? (
+            <Text style={styles.servicesQuietEmpty}>
+              Loading available services...
+            </Text>
           ) : (
             <>
               <TextInput
@@ -419,6 +542,9 @@ export default function SettingsScreen() {
     ),
     [
       averageRating,
+      catalogLoading,
+      catalogEmptyAfterSync,
+      catalogPrunedNotice,
       favoriteMovie,
       fetchError,
       handleSave,
@@ -481,14 +607,6 @@ export default function SettingsScreen() {
     );
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center} {...tvNf}>
-        <ActivityIndicator size="large" color="#6366f1" />
-      </View>
-    );
-  }
-
   return (
     <FlatList
       {...tvNf}
@@ -498,13 +616,28 @@ export default function SettingsScreen() {
       showsVerticalScrollIndicator={false}
       removeClippedSubviews={false}
       ListHeaderComponent={listHeader}
-      data={fetchError ? [] : sortedFilteredProviders}
+      data={
+        fetchError || catalogLoading || catalogEmptyAfterSync
+          ? []
+          : sortedFilteredProviders
+      }
       keyExtractor={(item) => normalizeProviderId(item.id)}
-      numColumns={3}
-      extraData={selectionRevision}
-      columnWrapperStyle={fetchError ? undefined : styles.providerRow}
+      numColumns={numColumns}
+      extraData={{ selectionRevision, tileWidth, numColumns }}
+      columnWrapperStyle={
+        fetchError || catalogLoading || catalogEmptyAfterSync
+          ? undefined
+          : styles.providerRow
+      }
       renderItem={renderProviderItem}
       ListFooterComponent={listFooter}
+      ListEmptyComponent={
+        servicesEmptyQuiet ? (
+          <Text style={[styles.servicesQuietEmpty, { marginBottom: 16 }]}>
+            No services match your search.
+          </Text>
+        ) : null
+      }
     />
   );
 }
@@ -717,17 +850,42 @@ const styles = StyleSheet.create({
     borderColor: '#2d2d2d',
     fontSize: 16,
   },
-  providerRow: {
+  servicesCatalogLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
-    marginBottom: 12,
+    paddingVertical: 20,
+  },
+  servicesCatalogLoadingText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#9ca3af',
+  },
+  servicesQuietEmpty: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  catalogPrunedHint: {
+    fontSize: 13,
+    color: '#818cf8',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  providerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    gap: PROFILE_GRID_GAP,
+    marginBottom: PROFILE_GRID_GAP,
+    width: '100%',
   },
   providerCard: {
-    flex: 1,
-    minWidth: 90,
-    maxWidth: '33.33%',
     borderRadius: 10,
     borderWidth: 2,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
@@ -878,6 +1036,7 @@ function SavePreferencesButton({ onPress }: SavePreferencesButtonProps) {
 type ProviderCardProps = {
   item: ProviderEntry;
   isSelected: boolean;
+  tileWidth: number;
   onPress: () => void;
 };
 
@@ -887,16 +1046,23 @@ function providerCardPropsAreEqual(
 ): boolean {
   return (
     normalizeProviderId(prev.item.id) === normalizeProviderId(next.item.id) &&
-    prev.isSelected === next.isSelected
+    prev.isSelected === next.isSelected &&
+    prev.tileWidth === next.tileWidth &&
+    prev.item.logo_url === next.item.logo_url
   );
 }
 
 const ProviderCard = memo(function ProviderCard({
   item,
   isSelected,
+  tileWidth,
   onPress,
 }: ProviderCardProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const logoSize = Math.min(
+    56,
+    Math.max(36, Math.floor(tileWidth * 0.52))
+  );
 
   return (
     <Pressable
@@ -905,6 +1071,7 @@ const ProviderCard = memo(function ProviderCard({
       onBlur={() => setIsFocused(false)}
       style={({ pressed }) => [
         styles.providerCard,
+        { width: tileWidth },
         isSelected ? styles.providerCardActive : styles.providerCardInactive,
         isFocused && styles.providerCardFocused,
         pressed && styles.providerCardPressing,
@@ -912,15 +1079,13 @@ const ProviderCard = memo(function ProviderCard({
       onPress={onPress}
     >
       <View style={styles.providerCardContent}>
-        {item.logo_url ? (
-          <Image source={{ uri: item.logo_url }} style={styles.providerLogo} />
-        ) : (
-          <View style={styles.providerLogoPlaceholder}>
-            <Text style={styles.providerLogoPlaceholderText}>
-              {item.name.charAt(0)}
-            </Text>
-          </View>
-        )}
+        <Image
+          source={{ uri: item.logo_url }}
+          style={[
+            styles.providerLogo,
+            { width: logoSize, height: logoSize },
+          ]}
+        />
         <Text style={styles.providerName} numberOfLines={2}>
           {item.name}
         </Text>

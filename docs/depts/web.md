@@ -23,26 +23,29 @@ To avoid infinite re-renders when the mobile browser **fractionally** changes `w
 
 Parent context (auth, watchlists) can update often. **One-shot** fetches must not re-run on every context tick.
 
-- Prefer **`useRef` flags** (e.g. **`rapidTop100FetchedRef`** on Discover) so RapidAPI “Top 100” style hydration runs **once per mount**, with cleanup on unmount where async work continues.
+- Prefer **`useRef` flags** (e.g. **`streamFinderCuratedFetchedRef`** on Discover) so **Stream Finder cache** hydration runs **once per mount**, with cleanup on unmount where async work continues.
 - **`useFocusEffect`** for watchlist refresh should use a **ref to `refetch`** (see Discover) so the callback identity does not thrash when watchlist context value changes every tick.
 
 ## Responsive Layout Standards
 
-### HTML meta tags (viewport)
+### HTML shell & viewport scaling (`app/+html.tsx`)
 
-[`app/+html.tsx`](../../app/+html.tsx) is the **source of truth** for the web document shell.
+[`app/+html.tsx`](../../app/+html.tsx) is the **source of truth** for the **web document shell** and **proper viewport scaling** on mobile browsers.
 
-- Include a standard viewport meta so the layout width matches the device: **`width=device-width`**, **`initial-scale=1`** (and project-locked scale as needed). Omitting this can leave mobile Safari in a **desktop-width (~980px)** layout and break all width-based breakpoints.
+- **Viewport meta:** `width=device-width`, `initial-scale=1`, plus project **scale caps** (`maximum-scale`, `user-scalable`) as set in that file. Without this, mobile Safari can stay in a **desktop-width (~980px)** logical viewport — **all bucketed breakpoints and “~430px phone” assumptions break**.
+- **Expo HTML reset:** `ScrollViewStyleReset` from `expo-router/html` is included so the document body matches Expo Router’s expected baseline for web.
 
 ### Grid breakpoints (Discover, non-TV)
 
-Chunk size for horizontal poster rows (and `getMoviePosterLayout(..., 'phone', numColumns)`) is centralized as **`numColumns`**:
+Chunk size for horizontal poster rows (and `getMoviePosterLayout(..., 'phone', numColumns)`) is centralized as **`numColumns`**. Use **`bucketViewportWidth`** before choosing a column count so jitter does not flip layouts.
 
-| Viewport (bucketed width) | Columns |
-|----------------------------|--------|
-| Desktop **> 1024px**       | **5**  |
-| Tablet **> 768px**         | **4**  |
-| Mobile **≤ 768px**         | **3** (tuned for ~**390–430px**) |
+**Standard (responsive):**
+
+| Breakpoint (bucketed width) | Columns | Notes |
+|------------------------------|--------|--------|
+| **Mobile** — up to **768px** (e.g. **~430px** iPhone class) | **3** | Dense phone grid; rows use **`distributePosterRow`** / **`justifyContent: 'space-between'`** so three tiles read **centered and balanced** on ~**430px** width. |
+| **Tablet** — **> 768px**     | **4**  | |
+| **Desktop** — **> 1024px**   | **5**  | |
 
 The vertical results `FlatList` **key** should continue to include **`numColumns`** so row math remounts cleanly when crossing breakpoints.
 
@@ -59,14 +62,21 @@ Discover is implemented in [**`app/(tabs)/discover.tsx`**](../../app/%28tabs%29/
 
 ### Hybrid mandate (non-negotiable)
 
-- **RapidAPI (“Film & Show”):** **Curation and ordering** — the default “Top” experience and list shape.
-- **TMDB:** **Image (and similar) metadata only** for that curated list — hydrate via shared helpers; do not replace RapidAPI ordering with a raw TMDB `/discover` dump for the **default** landing.
+- **Stream Finder (Supabase cache):** **Curation and ordering** for the default “Top ~300” experience — authoritative list membership and streaming links for the synced catalog (`stream_finder_movies`, `movie_availability`). Read path: [`lib/stream-finder-supabase.ts`](../../lib/stream-finder-supabase.ts); sync: **`npm run sync:stream-finder`**.
+- **TMDB:** **Enrichment layer** — high-resolution posters and backdrops for that curated list via [`lib/film-show-rapid-discover.ts`](../../lib/film-show-rapid-discover.ts). **TMDB Discover** on demand when users apply **filters** (**year**, **genre**, **monetization** / providers).
+- **Legacy / alternate curated path:** RapidAPI “Film & Show” remains in the repo for optional or historical flows; the **default unfiltered** Discover landing is **Stream Finder + TMDB enrich**, not a raw TMDB `/discover` dump.
 
 Operational detail:
 
-- **Default landing (“Top Rated Movies”): hybrid list.** Rows are sourced from RapidAPI **“Film & Show”** (curated ordering), then **`tmdb_id`-based** enrichment for posters/backdrops in [`lib/film-show-rapid-discover.ts`](../../lib/film-show-rapid-discover.ts). Treat that helper as the **single choke point** for the RapidAPI ↔ `DiscoverResult` mapping and TMDB image hydration logic.
-- **TMDB Discover engine on demand.** When users apply **filters** (**year**, **genre**, watch **monetization** / providers), **`fetchMovies`** invokes TMDB **`/discover`** as today. That path remains the authoritative behavior for filtered browsing.
-- **Constraint:** Web filters (**Year / Genre** and related controls) **must keep triggering** the TMDB engine. The **default unfiltered landing** across Web and TV is **always** the RapidAPI-enriched curated Top list, not TMDB **`/discover`** until the user changes filters.
+- **Default landing:** Stream Finder cache → `DiscoverResult` mapping + TMDB **`tmdb_id`** image hydration. **Filters** keep invoking TMDB **`/discover`** as today.
+- **Constraint:** The **default unfiltered** landing must stay **Stream Finder–ordered** until the user changes filters.
+
+### Profile & “My services” — auto-pruning
+
+User selections (`user_profiles.enabled_services` + local AsyncStorage) are **not** an open-ended TMDB ID list — they are **intersected with `stream_finder_providers`** (the master list produced by each Stream Finder sync).
+
+- **On Profile load:** After the catalog fetch, any saved ID **not** in the current provider table is **silently dropped**; storage and Supabase are updated to match. A one-time UI hint may appear when pruning occurs.
+- **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Library**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
 
 ### Session stability in effects
 
@@ -75,6 +85,6 @@ Operational detail:
 
 ## Final state (parity checklist)
 
-- **Parity:** TV and phone/web Discover both surface the **curated Top** list as the default experience before filters.
-- **Stability:** Bucketed viewport width + mount guards + stable session deps prevent the **render-loop** class of bugs on mobile web and iOS.
+- **Parity:** TV and phone/web Discover both surface the **Stream Finder curated** list as the default experience before filters.
+- **Stability:** **`app/+html.tsx`** viewport + bucketed width + mount guards + stable session deps prevent **layout mis-scale** and **render-loop** classes of bugs on mobile web and iOS.
 - **Responsiveness:** **3 / 4 / 5** column breakpoints and horizontal-row distribution are documented above so mobile **~430px** layouts stay dense and centered.
