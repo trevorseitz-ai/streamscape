@@ -16,9 +16,8 @@ function getTabIcon(routeName: string, focused: boolean) {
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
     library: { active: 'library', inactive: 'library-outline' },
-    profile: { active: 'person', inactive: 'person-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
-    account: { active: 'person-circle', inactive: 'person-circle-outline' },
+    profile: { active: 'person', inactive: 'person-outline' },
   };
   const icons = iconMap[routeName];
   const name = icons ? (focused ? icons.active : icons.inactive) : 'ellipse-outline';
@@ -115,9 +114,8 @@ export default function TabLayout() {
       <Tabs.Screen name="search" options={{ title: 'Search', headerShown: false }} />
       <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist', headerShown: false }} />
       <Tabs.Screen name="library" options={{ title: 'Library', headerShown: false }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile', headerShown: false }} />
       <Tabs.Screen name="discover" options={{ title: 'Discover', headerShown: false }} />
-      <Tabs.Screen name="account" options={{ title: 'Account', headerShown: false }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile', headerShown: false }} />
     </Tabs>
   );
 

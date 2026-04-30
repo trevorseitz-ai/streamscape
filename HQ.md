@@ -35,11 +35,18 @@ Three product surfaces; each can ship on its own URL or store listing.
 | Branch | What it is |
 | :--- | :--- |
 | **Waitlist Portal** | **https://getreeldive.com** — signup, positioning, and handoff to the app. Independent of the main Expo app origin (see Verified Ecosystem Map below). |
-| **ReelDive Web** | Browser experience: account, libraries, discovery—**shared routes** with native and TV (**`app/`**). |
+| **ReelDive Web** | Browser: libraries, discovery, profile settings—**shared `app/` routes** with native and TV (no placeholder tabs); sign-in **`/login`**. |
 | **ReelDive Mobile** | **iOS / Android** handsets: same **Expo Router** tree, **Stream Finder** Discover, **viewport-utils** adaptive grids. |
-| **ReelDive TV** | **Android TV** lean-back client — Expo/React Native, D-pad focus, sidebar navigation, `docs/tv_layout_rules.md`. |
+| **ReelDive TV** | **Android TV** lean-back client — Expo/React Native, D-pad focus, **six-slot** left sidebar (`docs/tv_layout_rules.md`; **Profile** anchors the bottom slot). |
 
 _Add concrete URLs and repos here when they are finalized._
+
+### Navigation architecture (shared tab shell)
+
+**Standard tab order** (horizontal on Web / handset bottom bar; mirrored top-to-bottom on TV sidebar): **Home → Search → Watchlist → Library → Discover → Profile**.
+
+- **Profile** is the **anchor** slot (far right / bottom)—see [`docs/depts/product.md`](docs/depts/product.md).
+- **Account** is **not** a tab: Phase 1 removed the unused **`account`** route from **`app/(tabs)/`**—see [`docs/depts/web.md`](docs/depts/web.md).
 
 ---
 
@@ -74,6 +81,7 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 
 1. **Stability first — viewport bucketing.** Treat **discretized width** as a first-class rule, not an optimization. Raw **`useWindowDimensions()`** on mobile Safari and mobile-web chrome causes fractional width churn; layout driven from that signal can **re-render in a loop** when combined with context identity churn (**session**, watchlists). **Always** bucket before poster/grid math via **`bucketViewportWidth`** in [`lib/viewport-utils.ts`](lib/viewport-utils.ts) (re-exported from [`components/MovieRow.tsx`](components/MovieRow.tsx)) — see [`docs/depts/shared.md`](docs/depts/shared.md) and [`docs/depts/web.md`](docs/depts/web.md#mobile-web-stability-standards).
 2. **Mount guards for heavy work.** **`useRef`** one-shots (e.g. Stream Finder cache hydration on Discover) so expensive fetches do not re-run on every parent tick; use stable **`session?.user?.id`** or **`discoverAuthKey`** in dependency arrays instead of the full **`session`** object where applicable.
+3. **No-empty-placeholder policy.** Screens and **tab routes** that ship **no active data and no meaningful action** dilute UX and inflate the navigator. **Remove** them from the UI **and** the route tree rather than reserving an “Account”-sized dead end (Phase 1: dropped **`app/(tabs)/account.tsx`**). Prefer **`/login`**, **`Profile`**, or real feature shells when introducing surface area again—[`docs/depts/web.md`](docs/depts/web.md).
 
 ### Golden Rule — Stability first (detail)
 

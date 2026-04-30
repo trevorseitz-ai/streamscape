@@ -4,11 +4,9 @@ import { CommonActions } from '@react-navigation/native';
 import { PlatformPressable } from '@react-navigation/elements';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { getTVSidebarNavFocusStyle } from '../hooks/useTVFocus';
 import { useTvNativeTag } from '../hooks/useTvNativeTag';
 import { isTvTarget, shouldUseTvDpadFocus } from '../lib/isTv';
-import { supabase } from '../lib/supabase';
 import { tvAndroidNavProps } from '../lib/tvAndroidNavProps';
 import {
   useTvSearchFocusBridge,
@@ -33,17 +31,16 @@ export function getTvSidebarWidthForWindow(_windowWidth?: number): number {
 }
 
 /**
- * Fixed 7-slot order — never derived from `state.routes.length` so spacing stays
- * symmetric when auth state changes.
+ * Fixed slot order — never derived from `state.routes.length` so the rail keeps
+ * consistent spacing regardless of navigator internals.
  */
 const TV_SIDEBAR_SLOTS = [
   'index',
   'search',
   'watchlist',
   'library',
-  'profile',
   'discover',
-  'account',
+  'profile',
 ] as const;
 
 type SlotName = (typeof TV_SIDEBAR_SLOTS)[number];
@@ -61,36 +58,28 @@ function labelForSlot(routeName: SlotName, optionsTitle: string | undefined): st
     search: 'Search',
     watchlist: 'Watchlist',
     library: 'Library',
-    profile: 'Profile',
     discover: 'Discover',
-    account: 'Account',
+    profile: 'Profile',
   };
   return fallback[routeName];
 }
 
 function iconForSlot(
   routeName: SlotName,
-  selected: boolean,
-  session: { user: { id: string } } | null
+  selected: boolean
 ): keyof typeof Ionicons.glyphMap {
-  if (routeName === 'account') {
-    if (session) {
-      return selected ? 'log-out' : 'log-out-outline';
-    }
-    return selected ? 'log-in' : 'log-in-outline';
-  }
   const iconMap: Record<
-    Exclude<SlotName, 'account'>,
+    SlotName,
     { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }
   > = {
     index: { active: 'home', inactive: 'home-outline' },
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
     library: { active: 'library', inactive: 'library-outline' },
-    profile: { active: 'person', inactive: 'person-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
+    profile: { active: 'person', inactive: 'person-outline' },
   };
-  const icons = iconMap[routeName as Exclude<SlotName, 'account'>];
+  const icons = iconMap[routeName];
   const name = icons ? (selected ? icons.active : icons.inactive) : 'ellipse-outline';
   return name;
 }
@@ -228,10 +217,9 @@ function TvSidebarTabItem({
 }
 
 /**
- * Full-height left rail: exactly 7 fixed slots, space-evenly between block buffers.
+ * Full-height left rail: fixed slots, space-evenly between block buffers.
  */
 export function TvSidebarTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
   const {
     searchFieldNativeTag,
@@ -239,7 +227,6 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
     mainContentEntryNativeTag,
     setTvContentHasFocus,
   } = useTvSearchFocusBridge();
-  const [session, setSession] = useState<{ user: { id: string } } | null>(null);
 
   const padH = getTvSidebarPaddingH(windowWidth);
   const padV = getTvSidebarPaddingV(windowWidth);
@@ -251,18 +238,6 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
   const lineMv = getTvSidebarSegmentLineMarginV();
   const labelMaxW = Math.max(48, TV_SIDEBAR_WIDTH - padH * 2);
   const missingMinH = Math.max(40, Math.round(56 * tvScale));
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   return (
     <View
@@ -294,31 +269,11 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         const options = desc.options as { title?: string };
         const titleOpt = options.title != null ? String(options.title) : undefined;
 
-        const label =
-          slotName === 'account'
-            ? session
-              ? 'Logout'
-              : 'Login'
-            : labelForSlot(slotName, titleOpt);
+        const label = labelForSlot(slotName, titleOpt);
 
-        const iconName = iconForSlot(slotName, selected, session);
+        const iconName = iconForSlot(slotName, selected);
 
         const onPress = () => {
-          if (slotName === 'account') {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (event.defaultPrevented) return;
-            if (session) {
-              void supabase.auth.signOut();
-            } else {
-              router.push('/login');
-            }
-            return;
-          }
-
           const event = navigation.emit({
             type: 'tabPress',
             target: route.key,
@@ -340,8 +295,9 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         };
 
         /**
-         * Every tab (except account) should jump to main content; Search uses the search
-         * field tag. Home/others use `mainContentEntryNativeTag` (Home = hero `View Details`).
+         * Every tab should jump to main content; Search uses the search field tag.
+         * Other slots (Discover, Profile as last rail item, …) bridge via `mainContentEntryNativeTag`
+         * so D-pad right never dead-ends on the rail edge.
          */
         const mainRightBridge: number | undefined =
           slotName === 'search' && searchFieldNativeTag != null
@@ -349,8 +305,7 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
             : mainContentEntryNativeTag != null
               ? mainContentEntryNativeTag
               : undefined;
-        const nextFocusRightTarget =
-          slotName === 'account' ? undefined : mainRightBridge;
+        const nextFocusRightTarget = mainRightBridge;
 
         return (
           <TvSidebarTabItem

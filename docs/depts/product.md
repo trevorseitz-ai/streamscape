@@ -6,6 +6,11 @@
 
 - **Scope:** Discover default landing aligned across **browser**, **native handsets**, and **Android TV**; **Stream Finder**-backed curation (synced catalog + provider availability—**16** mirrored providers); **TMDB** poster/backdrop enrichment; **adaptive viewport utils** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards + stable auth effect deps.
 - **Outcome:** Featured / “Top”-style landings and **~1,206** mirrored titles at scale; technical detail in [Web](web.md), [TV](tv.md), and [HQ](../../HQ.md).
+- **Phase 1 shell — clutter-free:** The main navigator has **six** substantive tabs only (**Home → Search → Watchlist → Library → Discover → Profile**). Placeholder **Account** UI and **`app/(tabs)/account.tsx`** are **removed** so Phase 1 ships without empty shells; the experience is **ready for Phase 2** feature expansion without tab-bar debt.
+
+### UX strategy — Profile as anchor
+
+**Profile** is the **rightmost** tab on phone / web and the **bottom** slot on the TV sidebar—fixed “settings & identity” real estate. Users expect account-adjacent actions (services, preferences, sign-out where applicable) **there**, not in a separate dead-end tab. **Sign in** stays on **`/login`**; **`HQ.md`** documents the **no-empty-placeholder** policy for future routes.
 
 ### Phase 2: User utility & bug squashing — **NEXT** (placeholder)
 
@@ -47,6 +52,6 @@ Operational implementation: [`lib/stream-finder-supabase.ts`](../../lib/stream-f
 
 ## TV Technical Architecture
 
-- **Navigation:** Left-rail UI via [`components/TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx).
+- **Navigation:** Left-rail UI via [`components/TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx) — **six** slots (**`TV_SIDEBAR_SLOTS`**), same order as handset/Web tabs with **Profile** at the **bottom** anchor; no separate **Account** slot (auth via **`/login`** + **Profile**)—see **Left rail slots** in [TV](tv.md).
 - **Focus management:** Custom bridge in [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) plus native tags from [`hooks/useTvNativeTag.ts`](../../hooks/useTvNativeTag.ts) to steer spatial navigation.
 - **TV-first components:** [`components/HomeTvMovieRow.tsx`](../../components/HomeTvMovieRow.tsx) drives horizontal media rows with window-based poster sizing math.

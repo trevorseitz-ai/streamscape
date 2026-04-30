@@ -4,7 +4,21 @@
 
 ## Universal Web Strategy
 
-- **Route logic:** Uses the shared `app/(tabs)` routes ([`_layout.tsx`](../../app/%28tabs%29/_layout.tsx)). Platform-specific UI is gated via `Platform.OS === 'web'`.
+- **Route logic:** Uses the shared **`app/(tabs)`** routes ([`_layout.tsx`](../../app/%28tabs%29/_layout.tsx)). Platform-specific UI is gated via **`Platform.OS === 'web'`**.
+
+### Route pruning (Expo Router)
+
+- **`app/(tabs)/account.tsx` deleted:** The placeholder **Account** tab file is **gone**—keeps the **tab navigator and bundle** lean (no orphaned screen or deep link stub with an empty layout). Sign-in flows use **`app/login.tsx`** (**`/login`**); authenticated settings and **“My services”** stay on **`app/(tabs)/profile.tsx`**.
+- **Related standard:** Prefer removing placeholder routes alongside hiding tabs—“no-empty-placeholder”—see **`HQ.md` → Engineering standards**.
+
+### Tab order (canonical)
+
+**Standard horizontal order** (mobile web and native handset **bottom tab bar**; TV mirrors this **top-to-bottom** on the sidebar):
+
+**Home → Search → Watchlist → Library → Discover → Profile**.
+
+**Profile** is intentionally **last** (anchored)—see [`product.md`](product.md).
+
 - **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes.
 - **Auth flow:** Standard `signInWithPassword` in [`app/login.tsx`](../../app/login.tsx), shared with the TV redirect logic in [`app/index.tsx`](../../app/index.tsx).
 

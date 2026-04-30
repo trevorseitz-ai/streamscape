@@ -64,6 +64,23 @@ Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`
 
 Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, **`TV_GRID_COLUMNS` 5** (Home rail/grid; **Discover** uses adaptive **3 / 4 / 6** via **`discoverPosterGridColumns`**), poster tile title **13px**, year **11px**, section header **22px**.
 
+### Left rail slots (`TV_SIDEBAR_SLOTS`)
+
+Authoritative ordering lives in **`components/TvSidebarTabBar.tsx`** as **`TV_SIDEBAR_SLOTS`**. Vertical order (**top → bottom**) matches the canonical tab sequence with **Profile** at the anchor position:
+
+```
+const TV_SIDEBAR_SLOTS = [
+  'index',      // Home
+  'search',
+  'watchlist',
+  'library',
+  'discover',
+  'profile',    // bottom slot — settings, “My services,” auth-adjacent UI
+] as const;
+```
+
+**Authentication:** There is **no** dedicated **Account** rail slot. **Sign in** uses **`/login`**; **sign out** and session-adjacent controls are handled from the **Profile** tab (same as Web / handset). Earlier builds used a sidebar **Login / Logout** slot wired to an **`account`** route; that pattern was removed with **`app/(tabs)/account.tsx`**.
+
 Type tokens for the Hero text column:
 
 | Token | Value |
