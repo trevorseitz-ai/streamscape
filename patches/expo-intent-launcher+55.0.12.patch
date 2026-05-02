@@ -1,0 +1,101 @@
+diff --git a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
+index b829cf6..9cdfde5 100644
+--- a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
++++ b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherModule.kt
+@@ -25,6 +25,8 @@ private const val REQUEST_CODE = 12
+ private const val ATTR_EXTRA = "extra"
+ private const val ATTR_DATA = "data"
+ 
++private const val ACTION_VIEW = "android.intent.action.VIEW"
++
+ class IntentLauncherModule : Module() {
+   private val context: Context
+     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+@@ -34,9 +36,6 @@ class IntentLauncherModule : Module() {
+     Name("ExpoIntentLauncher")
+ 
+     AsyncFunction("startActivity") { activityAction: String, params: IntentLauncherParams, promise: Promise ->
+-      if (pendingPromise != null) {
+-        throw ActivityAlreadyStartedException()
+-      }
+       val intent = Intent(activityAction)
+ 
+       params.className?.let {
+@@ -81,10 +80,29 @@ class IntentLauncherModule : Module() {
+       }
+       params.flags?.let { intent.addFlags(it) }
+       params.category?.let { intent.addCategory(it) }
++      params.categories?.forEach { intent.addCategory(it) }
++
++      if (params.packageName != null && params.className == null) {
++        intent.setPackage(params.packageName)
++      }
++
++      /** One-shot [ACTION_VIEW] with [Intent.setData]; with or without [Intent.setPackage] (streaming / deep-link handoff). Avoids [startActivityForResult] blocking. */
++      val immediateViewUri =
++        activityAction == ACTION_VIEW &&
++          params.data != null &&
++          params.className == null
+ 
+       try {
+-        appContext.throwingActivity.startActivityForResult(intent, REQUEST_CODE)
+-        pendingPromise = promise
++        if (immediateViewUri) {
++          appContext.throwingActivity.startActivity(intent)
++          promise.resolve(bundleOf("resultCode" to android.app.Activity.RESULT_OK))
++        } else {
++          if (pendingPromise != null) {
++            throw ActivityAlreadyStartedException()
++          }
++          appContext.throwingActivity.startActivityForResult(intent, REQUEST_CODE)
++          pendingPromise = promise
++        }
+       } catch (e: Throwable) {
+         promise.reject(e.toCodedException())
+       }
+diff --git a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherParams.kt b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherParams.kt
+index ad7ef9e..c78b258 100644
+--- a/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherParams.kt
++++ b/node_modules/expo-intent-launcher/android/src/main/java/expo/modules/intentlauncher/IntentLauncherParams.kt
+@@ -10,6 +10,9 @@ data class IntentLauncherParams(
+   @Field
+   val category: String?,
+ 
++  @Field
++  val categories: List<String>?,
++
+   @Field
+   val extra: Map<String, Any>?,
+ 
+diff --git a/node_modules/expo-intent-launcher/build/IntentLauncher.d.ts b/node_modules/expo-intent-launcher/build/IntentLauncher.d.ts
+index df467ad..5f1fb30 100644
+--- a/node_modules/expo-intent-launcher/build/IntentLauncher.d.ts
++++ b/node_modules/expo-intent-launcher/build/IntentLauncher.d.ts
+@@ -232,6 +232,11 @@ export interface IntentLauncherParams {
+      * Category provides more details about the action the intent performs. See [`Intent.addCategory`](https://developer.android.com/reference/android/content/Intent#addCategory(java.lang.String)).
+      */
+     category?: string;
++    /**
++     * Multiple categories (e.g. `BROWSABLE` + `DEFAULT` for package-targeted `ACTION_VIEW` on TV).
++     * Each entry is passed to [`Intent.addCategory`](https://developer.android.com/reference/android/content/Intent#addCategory(java.lang.String)).
++     */
++    categories?: string[];
+     /**
+      * A map specifying additional key-value pairs which are passed with the intent as `extras`.
+      * The keys must include a package prefix, for example the app `com.android.contacts` would use
+diff --git a/node_modules/expo-intent-launcher/src/IntentLauncher.ts b/node_modules/expo-intent-launcher/src/IntentLauncher.ts
+index 62715eb..d5830c6 100644
+--- a/node_modules/expo-intent-launcher/src/IntentLauncher.ts
++++ b/node_modules/expo-intent-launcher/src/IntentLauncher.ts
+@@ -239,6 +239,11 @@ export interface IntentLauncherParams {
+    * Category provides more details about the action the intent performs. See [`Intent.addCategory`](https://developer.android.com/reference/android/content/Intent#addCategory(java.lang.String)).
+    */
+   category?: string;
++  /**
++   * Multiple categories (e.g. `BROWSABLE` + `DEFAULT` for package-targeted `ACTION_VIEW` on TV).
++   * Each entry is passed to [`Intent.addCategory`](https://developer.android.com/reference/android/content/Intent#addCategory(java.lang.String)).
++   */
++  categories?: string[];
+   /**
+    * A map specifying additional key-value pairs which are passed with the intent as `extras`.
+    * The keys must include a package prefix, for example the app `com.android.contacts` would use
