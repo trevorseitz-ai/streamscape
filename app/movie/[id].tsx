@@ -40,6 +40,7 @@ import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
+import { WatchOnButton } from '../../components/WatchOnButton';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
@@ -1548,10 +1549,10 @@ export default function MovieDetailsScreen() {
             </Text>
           ) : (
             validStreamOptionsNav.map((opt, idx) => (
-              <StreamingButton
+              <WatchOnButton
                 key={`${opt.serviceId}-${idx}`}
                 provider={opt}
-                onStreamPress={handleStreamingPress}
+                onOpenStreamingUrl={handleStreamingPress}
                 isLandscape={isLandscape}
                 isPreferredEntry={detailsTvPrimary === 'stream0' && idx === 0}
                 tvTextNf={tvNf}
@@ -2263,44 +2264,6 @@ const styles = StyleSheet.create({
   },
   trailerButtonRowInner: {
     minWidth: 200,
-  },
-  streamingTvButton: {
-    width: '100%',
-    alignSelf: 'stretch',
-    backgroundColor: '#333333',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streamingTvButtonDesktop: {
-    paddingVertical: 16,
-    borderRadius: 14,
-    marginBottom: 12,
-  },
-  streamingTvButtonFocused: {
-    borderColor: ELECTRIC_CYAN,
-    borderWidth: 3,
-    transform: [{ scale: 1.05 }],
-    overflow: 'visible',
-    zIndex: 2,
-    elevation: 6,
-  },
-  streamingTvButtonPressing: {
-    opacity: 0.88,
-  },
-  streamingTvButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  streamingTvButtonTextDesktop: {
-    fontSize: 17,
   },
   streamingTvEmptyNote: {
     fontSize: 14,
@@ -3168,87 +3131,6 @@ function DetailsRecommendationCard({
       )}
       <Text style={styles.recommendationTitle} numberOfLines={2} {...tvNf}>
         {rec.title}
-      </Text>
-    </Pressable>
-  );
-}
-
-type StreamingButtonProps = {
-  provider: StreamingOption;
-  onStreamPress: (url: string) => void | Promise<void>;
-  isLandscape: boolean;
-  isPreferredEntry?: boolean;
-  /** Pass parent `tvNf` so the label is not a focus target on TV. */
-  tvTextNf?: AndroidTvNf;
-  /** `shouldUseTvDpadFocus()` from parent; sets `focusable` explicitly. */
-  focusableExplicit?: boolean;
-  setEntryRef?: TvRowEntryRefSetter;
-  /** First column of a lower row, for `nextFocusDown` from the whole actions strip. */
-  tvNextFocusDown?: number | null;
-  /** When true, apply `tvNextFocusDown` on Android. */
-  tvLadderNav?: boolean;
-  /** When true, trap D-pad Right on the last stream button. */
-  tvClampRightEdge?: boolean;
-};
-
-function StreamingButton({
-  provider,
-  onStreamPress,
-  isLandscape,
-  isPreferredEntry = false,
-  tvTextNf = {},
-  focusableExplicit = false,
-  setEntryRef,
-  tvNextFocusDown = null,
-  tvLadderNav = false,
-  tvClampRightEdge = false,
-}: StreamingButtonProps) {
-  const [isFocused, setIsFocused] = useState(false);
-  const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
-  const mergedRef: TvRowEntryRefSetter = (node) => {
-    setLocalRef(node);
-    setEntryRef?.(node);
-  };
-  const platformName =
-    provider.serviceName.trim() !== '' ? provider.serviceName.trim() : 'service';
-  const label = `Watch on ${platformName}`;
-  const downNav =
-    tvLadderNav && tvNextFocusDown != null
-      ? tvAndroidNavProps({ nextFocusDown: tvNextFocusDown })
-      : undefined;
-  const rightWall =
-    tvLadderNav && tvClampRightEdge && localTag != null
-      ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
-      : undefined;
-
-  return (
-    <Pressable
-      ref={mergedRef as never}
-      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
-      focusable={focusableExplicit ? true : undefined}
-      {...(downNav ?? {})}
-      {...(rightWall ?? {})}
-      onFocus={() => setIsFocused(true)}
-      onBlur={() => setIsFocused(false)}
-      onPress={() => void onStreamPress(provider.link)}
-      style={({ pressed }) => [
-        styles.streamingTvButton,
-        isLandscape && styles.streamingTvButtonDesktop,
-        isFocused && styles.streamingTvButtonFocused,
-        pressed && styles.streamingTvButtonPressing,
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Text
-        style={[
-          styles.streamingTvButtonText,
-          isLandscape && styles.streamingTvButtonTextDesktop,
-        ]}
-        numberOfLines={1}
-        {...tvTextNf}
-      >
-        {label}
       </Text>
     </Pressable>
   );

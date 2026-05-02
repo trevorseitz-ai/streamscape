@@ -41,6 +41,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# QA report (generated locally / CI artifact; do not commit)
+qa-audit-summary.json
+
 # generated native folders
 /ios
 /android

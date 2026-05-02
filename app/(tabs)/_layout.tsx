@@ -28,6 +28,8 @@ export default function TabLayout() {
   /**
    * Shell is binary: TV rail vs default bottom tabs. No breakpoint-based tab tree swap here.
    * No auth redirects (`router.replace`); those live in routed screens guarded with `useEffect`.
+   *
+   * **TV branding:** left-rail hero mark lives in **`TvSidebarTabBar`** (`assets/reeldive-sonar-reel-hero-mark.png`).
    */
   const isTV = isTvTarget();
   const tvDpad = shouldUseTvDpadFocus();
@@ -101,10 +103,18 @@ export default function TabLayout() {
               },
             }
           : {}),
-        ...(!isTV && tvDpad
+        ...(!isTV
           ? {
               tabBarButton: (props: BottomTabBarButtonProps) => (
-                <PlatformPressable {...props} focusable />
+                <PlatformPressable
+                  {...props}
+                  {...(tvDpad ? { focusable: true as const } : {})}
+                  {...(route.name === 'discover'
+                    ? { testID: 'maestro-tab-discover' }
+                    : route.name === 'profile'
+                      ? { testID: 'maestro-tab-profile' }
+                      : {})}
+                />
               ),
             }
           : {}),

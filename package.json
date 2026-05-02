@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
+    "postinstall": "patch-package",
     "start": "expo start",
     "dev": "expo start --dev-client",
     "start:dev-client": "expo start --dev-client",
@@ -17,7 +18,13 @@
     "sync:stream-finder": "npx tsx scripts/stream-finder-sync.ts",
     "inspect:stream-finder-payload": "npx tsx scripts/inspect-payload.ts",
     "audit:stream-finder-providers": "npx tsx scripts/audit-providers.ts",
-    "tv:clean": "npx expo prebuild --clean --platform android && npx expo run:android"
+    "verify:android-queries": "node ./scripts/verify-android-streaming-queries.mjs",
+    "android:prebuild-verify": "npx expo prebuild --platform android && npm run verify:android-queries",
+    "tv:clean": "npx expo prebuild --clean --platform android && npm run verify:android-queries && npx expo run:android",
+    "check:env-security": "npx tsx scripts/check-env-security.ts",
+    "report:qa": "npx tsx scripts/generate-qa-report.ts",
+    "test:auth-maestro": "maestro test testing/maestro/auth-flow.yaml",
+    "test:smoke-maestro": "maestro test testing/maestro/smoke-test.yaml"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -27,12 +34,14 @@
     "expo": "~55.0.17",
     "expo-constants": "~55.0.7",
     "expo-haptics": "~55.0.14",
+    "expo-intent-launcher": "~55.0.12",
     "expo-linear-gradient": "~55.0.13",
     "expo-linking": "~55.0.14",
     "expo-router": "~55.0.13",
     "expo-screen-orientation": "~55.0.13",
     "expo-splash-screen": "~55.0.19",
     "expo-status-bar": "~55.0.5",
+    "expo-system-ui": "~55.0.16",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.6",
@@ -43,9 +52,10 @@
   },
   "private": true,
   "devDependencies": {
-    "dotenv": "^16.4.7",
     "@types/react": "~19.2.10",
     "@vercel/node": "^3.2.29",
+    "dotenv": "^16.4.7",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   }
 }

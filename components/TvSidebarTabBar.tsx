@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import { PlatformPressable } from '@react-navigation/elements';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -22,6 +29,9 @@ import {
   getTvSidebarSegmentLineHeight,
   getTvSidebarSegmentLineMarginV,
 } from '../lib/tvUiScale';
+
+/** Brand hero mark (`assets/`). Replace bundled placeholder with final Sonar reel artwork when shipped. */
+const TV_SIDEBAR_LOGO = require('../assets/reeldive-sonar-reel-hero-mark.png');
 
 /** Fixed left rail width (~10% on 1080p landscape); do not stretch with parent flex. */
 export const TV_SIDEBAR_WIDTH = 100;
@@ -130,6 +140,8 @@ type TabItemProps = {
   nextFocusRight?: number | null;
   onRegisterSlotNavTag?: (slot: (typeof TV_SIDEBAR_SLOTS)[number], tag: number | null) => void;
   onSidebarItemFocusIn?: () => void;
+  /** Maestro / UI tests — rail slots exposed for tab navigation (see `maestroTestID` below). */
+  maestroTestID?: string;
 };
 
 function TvSidebarTabItem({
@@ -150,6 +162,7 @@ function TvSidebarTabItem({
   nextFocusRight,
   onRegisterSlotNavTag,
   onSidebarItemFocusIn,
+  maestroTestID,
 }: TabItemProps) {
   const [dpadFocused, setDpadFocused] = useState(false);
   const showRing = shouldUseTvDpadFocus() || isTvTarget();
@@ -168,6 +181,7 @@ function TvSidebarTabItem({
   return (
     <PlatformPressable
       ref={setRef as never}
+      testID={maestroTestID}
       accessibilityRole={Platform.OS === 'web' ? 'tab' : 'button'}
       accessibilityState={{ selected }}
       focusable={true}
@@ -239,6 +253,8 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
   const labelMaxW = Math.max(48, TV_SIDEBAR_WIDTH - padH * 2);
   const missingMinH = Math.max(40, Math.round(56 * tvScale));
 
+  const logoBandH = Math.max(28, Math.round(36 * tvScale));
+
   return (
     <View
       focusable={false}
@@ -252,6 +268,15 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         },
       ]}
     >
+      <View style={styles.sidebarBrandBand} accessibilityRole="image" accessibilityLabel="ReelDive">
+        <Image
+          source={TV_SIDEBAR_LOGO}
+          style={[styles.sidebarBrandMark, { height: logoBandH }]}
+          resizeMode="contain"
+        />
+      </View>
+
+      <View style={styles.sidebarTabStack}>
       {TV_SIDEBAR_SLOTS.map((slotName) => {
         const route = state.routes.find((r) => r.name === slotName);
         if (!route) {
@@ -311,6 +336,13 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
           <TvSidebarTabItem
             key={route.key}
             slotName={slotName}
+            maestroTestID={
+              slotName === 'discover'
+                ? 'maestro-tab-discover'
+                : slotName === 'profile'
+                  ? 'maestro-tab-profile'
+                  : undefined
+            }
             label={label}
             iconName={iconName}
             iconSize={iconSize}
@@ -330,6 +362,7 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
           />
         );
       })}
+      </View>
     </View>
   );
 }
@@ -340,14 +373,36 @@ const styles = StyleSheet.create({
     minWidth: TV_SIDEBAR_WIDTH,
     maxWidth: TV_SIDEBAR_WIDTH,
     alignSelf: 'stretch',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
     backgroundColor: '#0a0a0a',
     borderRightWidth: 1,
     borderRightColor: '#222222',
     /** Flush against scene — kill any navigator default bumper */
     marginRight: 0,
     marginLeft: 0,
+  },
+  sidebarBrandBand: {
+    width: '100%',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginBottom: 4,
+    paddingTop: 2,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  sidebarBrandMark: {
+    width: '100%',
+    maxWidth: TV_SIDEBAR_WIDTH - 8,
+    alignSelf: 'flex-start',
+  },
+  sidebarTabStack: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    flexShrink: 1,
+    minHeight: 0,
   },
   itemPressable: {
     flexDirection: 'column',

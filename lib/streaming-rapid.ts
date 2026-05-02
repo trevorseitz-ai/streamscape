@@ -21,6 +21,13 @@ export interface StreamingOption {
   serviceName: string;
   link: string;
   type: string;
+  /** RapidAPI `videoLink` — direct playback URL (`/watch/...`), prefer over storefront `link` when opening. */
+  videoLink?: string;
+  /**
+   * Service-native catalog id when the API exposes one (sparse).
+   * Otherwise derived in `lib/linking-utils` from **`link`** / **`videoLink`** paths.
+   */
+  providerContentId?: string;
 }
 
 /** One row per service: same provider often appears multiple times (rent / buy / add-on). First wins. */
@@ -42,11 +49,74 @@ export function dedupeStreamingOptionsByServiceFirst(
 }
 
 /** RapidAPI: options under `streamingOptions[country]` with nested `service`. */
+function stringifyApiId(raw: unknown): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    return t !== '' ? t : undefined;
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return String(Math.trunc(raw));
+  }
+  return undefined;
+}
+
+const AMAZON_ASIN_RE = /^[A-Z0-9]{10}$/;
+
+/** True when **`s`** matches a storefront ASIN (**`B0…`** / **`B09…`** style, 10 alnum). */
+function isAmazonVideoAsin(s: string): boolean {
+  return AMAZON_ASIN_RE.test(s.trim().toUpperCase());
+}
+
+/** ASIN segments on **`amazon`** / **`primevideo`** storefront links (RapidAPI `link` / `videoLink`). */
+function extractPrimeVideoAsinFromUrls(...candidates: string[]): string | undefined {
+  for (const raw of candidates) {
+    if (typeof raw !== 'string' || raw.trim() === '') continue;
+    const href = raw.trim();
+    try {
+      const u = new URL(href);
+      const qp = u.searchParams.get('asin');
+      if (qp && isAmazonVideoAsin(qp)) return qp.trim().toUpperCase();
+    } catch {
+      /* fragment-only or malformed */
+    }
+    const pathAsin = href.match(
+      /[/](?:gp[/]video[/]detail|detail|dp)[/]([A-Z0-9]{10})(?:[/\?#]|$)/i
+    );
+    if (pathAsin?.[1]) return pathAsin[1].toUpperCase();
+    const b0 = href.match(/\b(B0[A-Z0-9]{8})\b/i);
+    if (b0?.[1]) return b0[1].toUpperCase();
+  }
+  return undefined;
+}
+
+function isPrimeLikeStreamingService(serviceName: string, serviceId: string): boolean {
+  const n = serviceName.trim().toLowerCase();
+  const id = serviceId.trim().toLowerCase();
+  return (
+    id === 'prime' ||
+    id === 'amazon' ||
+    id.includes('prime') ||
+    n.includes('prime video') ||
+    n.includes('amazon prime')
+  );
+}
+
 function mapLiveStreamingItem(raw: unknown): StreamingOption | null {
   if (!raw || typeof raw !== 'object') return null;
   const opt = raw as Record<string, unknown>;
-  const link = opt.link ?? opt.videoLink;
-  if (typeof link !== 'string') return null;
+  const apiLink =
+    typeof opt.link === 'string' && opt.link.trim() !== '' ? opt.link.trim() : '';
+  const apiVideoLink =
+    typeof opt.videoLink === 'string' && opt.videoLink.trim() !== ''
+      ? opt.videoLink.trim()
+      : '';
+  /** Row must expose at least one playable / storefront URI. */
+  const link =
+    apiLink !== '' ? apiLink : apiVideoLink !== '' ? apiVideoLink : '';
+  if (link === '') return null;
+  const videoLink =
+    apiVideoLink !== '' && apiVideoLink !== apiLink ? apiVideoLink : undefined;
   const type = typeof opt.type === 'string' ? opt.type : '';
   const service = opt.service;
   let serviceId = 'unknown';
@@ -57,7 +127,25 @@ function mapLiveStreamingItem(raw: unknown): StreamingOption | null {
     serviceName =
       typeof s.name === 'string' && s.name ? s.name : 'Unknown Service';
   }
-  return { link, type, serviceId, serviceName };
+  let providerContentId =
+    stringifyApiId(opt.catalogId) ??
+    stringifyApiId(opt.catalogueId) ??
+    stringifyApiId(opt.videoId);
+
+  if (isPrimeLikeStreamingService(serviceName, serviceId)) {
+    const fromUrl = extractPrimeVideoAsinFromUrls(apiLink, apiVideoLink);
+    const trimmed = providerContentId?.trim();
+    if (trimmed && isAmazonVideoAsin(trimmed)) {
+      providerContentId = trimmed.toUpperCase();
+    } else if (fromUrl) {
+      providerContentId = fromUrl;
+    }
+  }
+
+  const out: StreamingOption = { link, type, serviceId, serviceName };
+  if (videoLink) out.videoLink = videoLink;
+  if (providerContentId) out.providerContentId = providerContentId;
+  return out;
 }
 
 /** v4-style paths: streamingOptions[cc] | result.streamingOptions[cc] | data[cc] */

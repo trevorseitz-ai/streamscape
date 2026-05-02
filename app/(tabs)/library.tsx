@@ -302,8 +302,15 @@ export default function LibraryScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>Your history awaits</Text>
           <Text style={styles.emptySubtext}>
-            Tap "Sign In" in the top-right to get started
+            Tap &quot;Sign In&quot; below to get started (or use Sign In in the header on web).
           </Text>
+          <Pressable
+            testID="maestro-onboarding-login-btn"
+            style={styles.emptyLoginButton}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.emptyLoginButtonText}>Sign In</Text>
+          </Pressable>
         </View>
       ) : !loading && libraryMovies.length === 0 ? (
         <View style={styles.empty}>
@@ -381,6 +388,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginTop: 8,
+    textAlign: 'center',
+  },
+  emptyLoginButton: {
+    marginTop: 20,
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  emptyLoginButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',

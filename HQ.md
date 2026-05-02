@@ -21,6 +21,7 @@ _Update this table when priorities shift._
 ## 🚧 Active Work-in-Progress
 
 - **Discover Phase 1 — Discovery & Stability:** ✅ **100% COMPLETE** — **Web**, **mobile**, and **TV**; **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md).
+- **Autonomous audit pipeline:** ✅ **100% COMPLETE** — **`npm run report:qa`** ([`scripts/generate-qa-report.ts`](scripts/generate-qa-report.ts)): **`check:env-security`** + **`test:smoke-maestro`**, **`qa-audit-summary.json`**, optional **Resend** email (**`RESEND_API_KEY`**, **`REPORT_EMAIL`**). Schedule and CI notes: [`docs/depts/qa.md`](docs/depts/qa.md) (**08:00 UTC** cron **`0 8 * * *`**).
 - **Active roadmap:** **Phase 2 — User utility & bug squashing** (placeholder umbrella; includes watchlist sync, deep linking, polish)—see Product office.
 - **Completed:** Validated TV/Web architecture and automated the Waitlist-to-Auth migration pipeline.
 - **Current Focus:** Ensuring D-pad navigation "Focus Bridge" works across all Home screen rows.
@@ -72,6 +73,7 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 | **Web App** | [docs/depts/web.md](docs/depts/web.md) | ReelDive Web: React/Expo web, responsive UI, browser UX. |
 | **TV App** | [docs/depts/tv.md](docs/depts/tv.md) | Android TV: D-pad focus, sidebar, lean-back layout. |
 | **Shared components** | [docs/depts/shared.md](docs/depts/shared.md) | Cross-surface primitives (e.g. `MovieRow` / viewport bucketing). |
+| **QA & Automation** | [docs/depts/qa.md](docs/depts/qa.md) | Test matrix, **`npm run report:qa`** autonomous digest (**Resend**), nightly schedule (**08:00 UTC**) — **Operational**. |
 
 ---
 
@@ -123,8 +125,25 @@ Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stre
 
 ## 📐 Shared engineering docs
 
+- **HTTP APIs & integrations (canonical list):** [docs/API-ENDPOINTS.md](docs/API-ENDPOINTS.md) — first-party `/api/*` routes, Supabase, TMDB, RapidAPI, Stream Finder, OMDb, env checklist.
+- **QA & Triple-Platform test matrix:** [docs/depts/qa.md](docs/depts/qa.md)
 - **TV layout rules:** [docs/tv_layout_rules.md](docs/tv_layout_rules.md)
 - **User / waitlist migration:** [docs/user_migration.md](docs/user_migration.md)
+
+---
+
+## v1.0.0 Release Checklist
+
+| Track | Functionality | Security | Store Assets |
+| :--- | :--- | :--- | :--- |
+| **Smoke / E2E** | Maestro [`testing/maestro/smoke-test.yaml`](testing/maestro/smoke-test.yaml) runs [`auth-flow.yaml`](testing/maestro/auth-flow.yaml) first (**`launchApp`** + Supabase login via **`maestro-login-*`** testIDs), then **Discover** → **`discover-smoke-poster`** → **Profile**. Run: `npm run test:smoke-maestro` with **`-e MAESTRO_TEST_USER_EMAIL=… -e MAESTRO_TEST_USER_PASSWORD=…`** (or exported env). Requires [Maestro](https://maestro.mobile.dev/) + device **`com.reeldive.app`**. Detail: [`docs/depts/qa.md`](docs/depts/qa.md) (Maestro credentials). | — | — |
+| **Env & secrets** | App reads keys via **`EXPO_PUBLIC_*`** / **`process.env`** (see [`.env.example`](.env.example)). | Automated scan: `npm run check:env-security` ([`scripts/check-env-security.ts`](scripts/check-env-security.ts)) — fails on suspicious literals in **`app/`**, **`lib/`**, **`components/`**, **`scripts/`**, etc. | — |
+| **Android build** | **Discover**, **Profile**, auth **`/login`**, hybrid data paths per Product office. | Network policy [`plugins/withAndroidNetworkSecurity.js`](plugins/withAndroidNetworkSecurity.js); no keys in repo. | Adaptive icon + **`android.package`** **`com.reeldive.app`** in [`app.json`](app.json); TV banner `./assets/tv-banner.png`; Play listing copy / screenshots owned by Marketing. |
+| **iOS build** | Parity with shared routes (handset targets). | Same secret posture as Android. | **`ios.bundleIdentifier`** **`com.reeldive.app`** in [`app.json`](app.json); App Store screenshots / metadata owned by Marketing. |
+| **Web** | Hosted bundle + **`app/+html.tsx`** viewport. | CSP / env injection per hosting provider. | Favicon `./assets/favicon.png`; store not applicable. |
+| **QA audit signed off** | **QA Lead / delegate** confirms the full **`docs/depts/qa.md`** matrix for the RC; optional aggregate run **`npm run report:qa`** (same gates + **`qa-audit-summary.json`** / Resend digest). | **`npm run check:env-security`** green on the RC branch; waived findings tracked with owner. | Store policy spot-check (**D‑pad** / **`adjustPan`**) on the RC Android artifact (**`softwareKeyboardLayoutMode: "pan"`** in **`app.json`**). |
+
+Pre-release: bump **`app.json`** version / release channel; run **`npm run check:env-security`** in CI; run Maestro against a staging build whose **`applicationId`** matches **`smoke-test.yaml`**; complete **QA audit signed off** row before tagging **v1.0.0**.
 
 ---
 

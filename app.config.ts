@@ -17,15 +17,8 @@ export default ({ config }: { config: ExpoConfig }): ExpoConfig => {
   const androidFlags = config.android as AndroidTvFlags | undefined;
   const tv = isTvBuild() || androidFlags?.isTV === true;
 
-  const basePlugins = config.plugins ?? [];
-
   return {
     ...config,
-    plugins: [
-      ...basePlugins,
-      './plugins/withAndroidNetworkSecurity.js',
-      './plugins/withAndroidTvLauncher.js',
-    ],
     backgroundColor: tv ? '#121212' : config.backgroundColor,
     android: {
       ...config.android,

@@ -46,6 +46,8 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 **D-pad** behavior is exercised with the **arrow keys** on your physical keyboard while the **emulator window has focus**.
 
+- **Soft keyboard / handset builds:** **`app.json`** sets **`expo.android.softwareKeyboardLayoutMode`** to **`"pan"`**, which maps to Android **`adjustPan`** so Search and other fields pan the viewport when the IME opens instead of using invalid **`windowSoftInputMode`** values (e.g. **`onScroll`** breaks native Gradle builds).
+
 - **Focus debugging:** The `MovieCard` and TV poster cells (`HomeTvPosterCell`, `DiscoverTvPosterCell`) are equipped with a **Focus Trail**. Watch the Metro terminal for `[D-PAD FOCUS]` / `[D-PAD BLUR]` logs (development builds) to see which item the focus engine is highlighting during emulator navigation.
 
 ---
@@ -190,7 +192,78 @@ Before booting the emulator, ensure the **RapidAPI** naming convention (**`EXPO_
 
 ---
 
-## Core logic
+## Intent handoff protocol (Bravia / native)
+
+ReelDive uses a **two-step** strategy so Sony Bravia and handset Android users get a **native app** when possible, without losing **title-accurate** URLs from RapidAPI.
+
+### Order of operations
+
+1. **Resolve TMDB `provider_id`** from the RapidAPI row via **[`resolveTmdbProviderIdForStreamingOption`](../../lib/linking-utils.ts)** (numeric **`service.id`** first, otherwise fuzzy match on **`serviceName`** against the sixteen-service catalog).
+
+2. **Android TV (Bravia / `isTvTarget`):** **[`WatchOnButton`](../../components/WatchOnButton.tsx)** calls **[`launchStreamingViaAndroidTvIntent`](../../lib/streaming-android-tv-intent.ts)**. That walks each URI from **[`collectStreamingLaunchCandidates`](../../lib/linking-utils.ts)** and, for each URI, tries **[`expo-intent-launcher`](../../lib/streaming-android-tv-intent.ts)** **`ACTION_VIEW`** intents in order for **every package** from **[`getAndroidTvPackageCandidatesForTmdbProviderId`](../../lib/linking-utils.ts)** (living-room / TV primary first, then optional **mobile** **`androidPackageFallbacks`** from **`STREAMING_PROVIDER_ANDROID_MATRIX`**).
+
+3. **Android phone (non-TV):** **`WatchOnButton`** uses **`Linking.openURL`** via **[`launchStreamingApp`](../../lib/linking-utils.ts)** over the same storefront URL candidates until one succeeds.
+
+4. **Fallback:** If no candidate opens the app, **`WatchOnButton`** uses **`onOpenStreamingUrl`** (**RapidAPI** **`videoLink` / `link`**) so playback can still resolve through the system browser or default handler.
+
+### Non-Android surfaces
+
+On **Web** / **iOS**, TV intent code is skipped; taps go through **`onOpenStreamingUrl`** with RapidAPI links.
+
+---
+
+## Android 11+ package visibility (`<queries>`)
+
+Starting with **Android 11**, **`PackageManager`** hides most installed packages unless the app declares [**package visibility**](https://developer.android.com/training/package-visibility) in **`AndroidManifest.xml`**. Without a **`<queries>`** block, **`Intent`** resolution and explicit **`setPackage`** launches can fail on **Android 12+** (often reported as “intent kill” or `ActivityNotFoundException` in logs).
+
+ReelDive injects a **`<queries>`** list at prebuild time via **[`plugins/withAndroidStreamingPackageQueries.js`](../../plugins/withAndroidStreamingPackageQueries.js)** (registered from **[`app.config.ts`](../../app.config.ts)**). After **`npx expo prebuild`** or **`expo run:android`**, the merged file is **`android/app/src/main/AndroidManifest.xml`**.
+
+**`/android` is gitignored** in this repo; you will not see that path in git. For a copy-paste **`<queries>`** block (Sony’s minimum eight packages + notes on fallbacks), see **[`docs/native/android-streaming-queries-snippet.xml`](../native/android-streaming-queries-snippet.xml)**.
+
+**Declared packages (Sony Bravia hardware–verified primaries + matrix fallbacks; keep in sync with **[`STREAMING_PROVIDER_ANDROID_MATRIX`](../../lib/linking-utils.ts)** and **`withAndroidStreamingPackageQueries.js`):**
+
+- Netflix: `com.netflix.ninja`, `com.netflix.mediaclient`
+- Amazon Prime: `com.amazon.amazonvideo.livingroom`
+- Disney+: `com.disney.disneyplus`
+- Hulu: `com.hulu.livingroomplus`, `com.hulu.livingroom`
+- Apple TV (Sony): `com.apple.atve.sony.appletv`, `com.apple.atve.sony.trusted`
+- Max: `com.wbd.stream`
+- Paramount+: `com.cbs.ott`
+- Peacock: `com.peacocktv.peacockandroid`
+- Plus remaining matrix storefronts (Crunchyroll, AMC+, Shudder, Criterion, MUBI, MGM+, Discovery+, Fubo) — see plugin list
+
+---
+
+## App Linking Matrix — verified Android TV package names (16 supported providers)
+
+ReelDive mirrors **16** Stream Finder streaming services in **`stream_finder_providers`** (**`provider_id`** aligns with TMDB watch-provider identifiers where upstream uses TMDB semantics). Rows below match **[`STREAMING_PROVIDER_ANDROID_MATRIX`](../../lib/linking-utils.ts)**. **Primary** values target **living-room / TV / Sony-trusted** **`applicationId`** strings where applicable; **fallback** values are used only when the primary package is not installed (same watch URI, alternate **`packageName`** in **[`launchStreamingViaAndroidTvIntent`](../../lib/streaming-android-tv-intent.ts)**).
+
+| TMDB **`provider_id`** | Service label | Primary **`applicationId`** (Bravia / LR) | Fallback **`applicationId`** |
+| ----------------------: | ------------- | ----------------------------------- | -------------------------------------- |
+| **8** | Netflix | `com.netflix.ninja` | `com.netflix.mediaclient` |
+| **9** | Amazon Prime Video | `com.amazon.amazonvideo.livingroom` | — |
+| **15** | Hulu | `com.hulu.livingroomplus` | `com.hulu.livingroom` |
+| **337** | Disney Plus | `com.disney.disneyplus` | — |
+| **1899** | Max | `com.wbd.stream` | — |
+| **531** | Paramount Plus | `com.cbs.ott` | — |
+| **386** | Peacock Premium | `com.peacocktv.peacockandroid` | — |
+| **350** | Apple TV Plus | `com.apple.atve.sony.appletv` | `com.apple.atve.sony.trusted` |
+| **283** | Crunchyroll | `com.crunchyroll.crunchyroid` | — |
+| **526** | AMC Plus | `com.amcup.android` | — |
+| **99** | Shudder | `com.shudder.android` | — |
+| **358** | Criterion Channel | `com.criterionchannel` | — |
+| **11** | MUBI | `com.mubi` | — |
+| **613** | MGM Plus | `com.epix.epix.now` | — |
+| **520** | Discovery Plus | `com.discovery.discoveryplus.mobile` | — |
+| **1794** | FuboTV | `com.fubo.android` | — |
+
+**Contract**
+
+- **Source of truth:** After each **`npm run sync:stream-finder`**, compare Supabase **`stream_finder_providers`** to this table; adjust **`STREAMING_PROVIDER_ANDROID_MATRIX`** when the API adds/removes services and extend **`withAndroidStreamingPackageQueries.js`** when you add new primary or fallback packages used in intents.
+- **Primary deep link path on Web / iOS:** RapidAPI **`StreamingOption.link` / `videoLink`** (`lib/streaming.ts`). **Android TV:** package-targeted intents + URL candidate list; **Android phone:** **`launchStreamingApp`** + same URLs.
+- **Bravia / Android TV:** Declared **`<queries>`** packages are required for reliable resolution on **Android 12+**; App Link verification remains owned by each publisher.
+
+---
 
 TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search, horizontal rows) so focus can move predictably across the screen.
 

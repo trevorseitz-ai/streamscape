@@ -599,6 +599,7 @@ export default function SettingsScreen() {
         <Text style={styles.blackoutBrand}>ReelDive</Text>
         <Text style={styles.blackoutHint}>Sign in to manage your settings</Text>
         <Pressable
+          testID="maestro-onboarding-login-btn"
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}
         >

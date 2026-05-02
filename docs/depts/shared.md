@@ -10,3 +10,7 @@ Lightweight pointers for **`Web`**, **`TV`**, and **`native`** — code lives in
 - Do not fork a second bucket implementation — regressions fragment behavior across Home, Discover, and TV-adjacent rows.
 
 Secondary references: **[`web.md`](web.md)** (mobile-web stability section), **[`tv.md`](tv.md)** (below-the-fold parity with shared routes).
+
+## Android Expo config (`app.json`)
+
+Shared native Android targets use **`expo.android.softwareKeyboardLayoutMode: "pan"`** in **`app.json`**, mapping to **`adjustPan`** (`windowSoftInputMode`) so Search and forms pan when the IME appears. Do **not** use **`onScroll`** there — Gradle/manifest tooling expects valid Android modes (**`resize`**, **`pan`**) and rejects invalid strings on prebuild/release.

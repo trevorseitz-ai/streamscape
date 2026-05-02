@@ -250,6 +250,7 @@ function DiscoverTvPosterCell({
   rowRefIndex,
   discoverSidebarLeftTag,
   mainContentEntryNavTag,
+  smokeTestID,
 }: {
   movie: DiscoverResult;
   posterWidth: number;
@@ -266,6 +267,7 @@ function DiscoverTvPosterCell({
   rowRefIndex: number;
   discoverSidebarLeftTag: number | null;
   mainContentEntryNavTag: number | null;
+  smokeTestID?: string;
 }) {
   const [isFocused, setIsFocused] = useState(false);
   const [posterLoadFailed, setPosterLoadFailed] = useState(false);
@@ -327,10 +329,23 @@ function DiscoverTvPosterCell({
     [posterWidth, posterHeight, isFocused]
   );
 
+  const smokeA11y = smokeTestID != null;
+
   return (
-    <View style={cellWrapStyle} collapsable={false}>
+    <View
+      style={cellWrapStyle}
+      collapsable={false}
+      testID={smokeTestID}
+      accessible={smokeA11y}
+      accessibilityLabel={smokeA11y ? 'Discover Poster 1' : undefined}
+      accessibilityRole={smokeA11y ? 'button' : undefined}
+      {...(Platform.OS === 'android' && smokeA11y
+        ? { importantForAccessibility: 'yes' as const }
+        : {})}
+    >
       <Pressable
         ref={pressableRef}
+        accessible={!smokeA11y}
         {...tvFocusable()}
         focusable={true}
         {...(useNav
@@ -446,6 +461,9 @@ function DiscoverTvHorizontalMovieRow({
             rowRefIndex={movieRowIndex}
             discoverSidebarLeftTag={discoverSidebarLeftTag}
             mainContentEntryNavTag={mainContentEntryNavTag}
+            smokeTestID={
+              movieRowIndex === 0 && colIndex === 0 ? 'discover-smoke-poster' : undefined
+            }
           />
         )}
       />
@@ -723,7 +741,16 @@ export default function DiscoverScreen() {
         console.warn('[Discover] Stream Finder cache load failed:', e);
         streamFinderCuratedFeedActiveRef.current = false;
       } finally {
-        if (!cancelled) setStreamFinderListHydrating(false);
+        if (!cancelled) {
+          /**
+           * TV + dev: give the first row a frame to mount testIDs / layout before Maestro polls
+           * (horizontal row inside nested FlatLists).
+           */
+          if (__DEV__ && isTvTarget()) {
+            await new Promise((r) => setTimeout(r, 400));
+          }
+          setStreamFinderListHydrating(false);
+        }
       }
     })();
 
@@ -1002,6 +1029,7 @@ export default function DiscoverScreen() {
     return (
       <View style={styles.blackout}>
         <TouchableOpacity
+          testID="maestro-onboarding-login-btn"
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}
         >
@@ -1279,6 +1307,9 @@ export default function DiscoverScreen() {
                 tvSidebarLeftNavTag={discoverSidebarLeftTag}
                 phonePosterColumns={numColumns}
                 distributePosterRow={!isTV}
+                leadPosterTestID={
+                  item.movieRowIndex === 0 ? 'discover-smoke-poster' : undefined
+                }
                 renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
               />
             );

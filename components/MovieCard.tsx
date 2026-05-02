@@ -51,6 +51,8 @@ interface MovieCardProps {
   /** When set (e.g. Discover grid), fixes poster size to an exact pixel layout (2:3 via height). */
   posterWidth?: number;
   posterHeight?: number;
+  /** Automation (Maestro): stable id on poster `Pressable` / wrapper. */
+  testID?: string;
 }
 
 /** ReelDive TV: Electric Cyan (art.md) */
@@ -76,6 +78,7 @@ export function MovieCard({
   tvNextFocusDown,
   posterWidth: fixedPosterWidth,
   posterHeight: fixedPosterHeight,
+  testID,
 }: MovieCardProps) {
   const router = useRouter();
   const status = useWatchlistStatus();
@@ -262,6 +265,7 @@ export function MovieCard({
     return (
       <Pressable
         ref={setPosterNavRef as never}
+        testID={testID}
         focusable
         {...tvFocusable()}
         {...(hasTvAndroidNavProps
@@ -323,6 +327,7 @@ export function MovieCard({
 
   return (
     <Pressable
+      testID={testID}
       {...tvFocusable()}
       style={({ pressed }) => [styles.card, cardWidthStyle, pressed && styles.cardPressed]}
       onPress={handleCardPress}
