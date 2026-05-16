@@ -16,7 +16,6 @@ import {
   ActivityIndicator,
   Pressable,
   FlatList,
-  Image,
   useWindowDimensions,
   TouchableOpacity,
   Platform,
@@ -33,8 +32,6 @@ import {
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { isTvTarget } from '../../lib/isTv';
-import { tvFocusable } from '../../lib/tvFocus';
-import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
@@ -42,6 +39,10 @@ import { supabase } from '../../lib/supabase';
 import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
 import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import { discoverPosterGridColumns } from '../../lib/viewport-utils';
+import {
+  TvMovieGridRow,
+  TV_MOVIE_GRID_COLUMNS,
+} from '../../components/TvMovieGridRow';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -95,12 +96,6 @@ const GRID_GAP_TV = 20;
 /** TV content shell: left inset clears sidebar-adjacent focus ring; right keeps bezel breathing room. */
 const DISCOVER_TV_CONTENT_PAD_LEFT = 24;
 const DISCOVER_TV_RIGHT_MARGIN = 20;
-const DISCOVER_TV_GAP = 20;
-/** Fixed TV poster cells — matches static Home-style sizing (no fluid row division). */
-const DISCOVER_TV_POSTER_WIDTH = 140;
-const DISCOVER_TV_POSTER_HEIGHT = 210;
-const DISCOVER_TV_GRID_COLUMNS = 5;
-const DISCOVER_TV_LIST_VERTICAL_PAD = 20;
 /** TV: small bottom pad so the focus “floor” isn’t a huge empty scroll region. */
 const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 32;
 const YEAR_JUMP_DISTANCE = 350;
@@ -213,297 +208,6 @@ type ListItem =
   | { type: 'row'; movies: DiscoverResult[]; key: string; movieRowIndex: number }
   | { type: 'divider'; title: string; key: string };
 
-type DiscoverTvHorizontalRowProps = {
-  movies: DiscoverResult[];
-  router: ReturnType<typeof useRouter>;
-  /** Pixel width/height of one poster cell — fixed `DISCOVER_TV_POSTER_*` + `rowGap` between cells. */
-  posterWidth: number;
-  posterHeight: number;
-  rowGap: number;
-  /** Ordinal of this row among all movie rows (0-based). */
-  movieRowIndex: number;
-  /** First cell of the next row (Z-pattern: right on last item → first of next). */
-  nextRowEntryTag: number | null;
-  /** Last row’s last cell tag for `nextFocusRightSelf` (right-edge wall on bottom-right). */
-  lastRowLastCellWallTag: number | null;
-  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  renderMovieFooter?: (movie: DiscoverResult) => ReactNode;
-  isLastMovieRow: boolean;
-  /** Bumps when row entry/exit native tags change so cells re-apply D-pad links. */
-  wrapNavVersion: number;
-  discoverSidebarLeftTag?: number | null;
-  mainContentEntryNavTag?: number | null;
-};
-
-function DiscoverTvPosterCell({
-  movie,
-  posterWidth,
-  posterHeight,
-  onPress,
-  footer,
-  colIndex,
-  rowLen,
-  isLastMovieRow,
-  nextRowEntryTag,
-  lastRowLastCellWallTag,
-  setRowEntryRef,
-  setRowExitRef,
-  rowRefIndex,
-  discoverSidebarLeftTag,
-  mainContentEntryNavTag,
-}: {
-  movie: DiscoverResult;
-  posterWidth: number;
-  posterHeight: number;
-  onPress: () => void;
-  footer: ReactNode | null;
-  colIndex: number;
-  rowLen: number;
-  isLastMovieRow: boolean;
-  nextRowEntryTag: number | null;
-  lastRowLastCellWallTag: number | null;
-  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  rowRefIndex: number;
-  discoverSidebarLeftTag: number | null;
-  mainContentEntryNavTag: number | null;
-}) {
-  const [isFocused, setIsFocused] = useState(false);
-  const [posterLoadFailed, setPosterLoadFailed] = useState(false);
-  /** Native tag of this cell’s `Pressable` (self-trap when cross-row target not registered yet). */
-  const [localTag, setLocalTag] = useState<number | null>(null);
-
-  const cellWrapStyle = useMemo(
-    () => [discoverTvPosterStyles.posterCellWrap, { width: posterWidth, flexShrink: 0 }],
-    [posterWidth]
-  );
-
-  useEffect(() => {
-    setPosterLoadFailed(false);
-  }, [movie.id, movie.poster_url]);
-
-  const showPlaceholder = !movie.poster_url || posterLoadFailed;
-  const useNav = Platform.OS === 'android';
-  const isLastInRow = colIndex === rowLen - 1;
-  const isFirstInRow = colIndex === 0;
-  /** Z-pattern: right from last col → first of next row, or self until that tag exists. */
-  const rightCarriage =
-    isLastInRow && !isLastMovieRow
-      ? (nextRowEntryTag ?? localTag)
-      : null;
-  /** Bottom-right: right wall; prefer shared ref tag else local so first frame is trapped. */
-  const rightWallSelf =
-    isLastInRow && isLastMovieRow
-      ? (lastRowLastCellWallTag ?? localTag)
-      : null;
-  /** Every row’s first cell: left goes to sidebar, or self-trap if sidebar tag not ready. */
-  const leftToSidebar =
-    isFirstInRow ? (discoverSidebarLeftTag ?? localTag) : null;
-
-  const pressableRef = useCallback(
-    (node: ComponentRef<typeof Pressable> | null) => {
-      if (Platform.OS === 'android') {
-        setLocalTag(node ? findNodeHandle(node) : null);
-      } else {
-        setLocalTag(null);
-      }
-      if (isFirstInRow) setRowEntryRef(rowRefIndex)(node);
-      if (isLastInRow) setRowExitRef(rowRefIndex)(node);
-    },
-    [
-      isFirstInRow,
-      isLastInRow,
-      rowRefIndex,
-      setRowEntryRef,
-      setRowExitRef,
-    ]
-  );
-
-  const posterPressStyle = useMemo(
-    () => [
-      discoverTvPosterStyles.posterPressable,
-      { width: posterWidth, height: posterHeight },
-      ...(isFocused ? [discoverTvPosterStyles.posterPressableFocused] : []),
-    ],
-    [posterWidth, posterHeight, isFocused]
-  );
-
-  return (
-    <View style={cellWrapStyle} collapsable={false}>
-      <Pressable
-        ref={pressableRef}
-        {...tvFocusable()}
-        focusable={true}
-        {...(useNav
-          ? tvAndroidNavProps({
-              ...(isFirstInRow && leftToSidebar != null
-                ? { nextFocusLeft: leftToSidebar }
-                : {}),
-              ...(isLastInRow && !isLastMovieRow && rightCarriage != null
-                ? { nextFocusRight: rightCarriage }
-                : {}),
-              ...(isLastInRow && isLastMovieRow && rightWallSelf != null
-                ? { nextFocusRightSelf: rightWallSelf }
-                : {}),
-              ...(isLastMovieRow && mainContentEntryNavTag != null
-                ? { nextFocusDown: mainContentEntryNavTag }
-                : {}),
-            })
-          : {})}
-        onFocus={() => {
-          setIsFocused(true);
-          if (__DEV__) {
-            console.log(
-              `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
-            );
-          }
-        }}
-        onBlur={() => {
-          setIsFocused(false);
-          if (__DEV__) {
-            console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
-          }
-        }}
-        onPress={onPress}
-        android_ripple={null}
-        style={posterPressStyle}
-      >
-        {!showPlaceholder ? (
-          <Image
-            source={{ uri: movie.poster_url as string }}
-            style={discoverTvPosterStyles.posterImageFill}
-            resizeMode="cover"
-            onError={() => setPosterLoadFailed(true)}
-          />
-        ) : (
-          <View
-            focusable={false}
-            style={[
-              discoverTvPosterStyles.placeholder,
-              discoverTvPosterStyles.posterImageFill,
-            ]}
-          >
-            <Text style={discoverTvPosterStyles.placeholderTitle} numberOfLines={3}>
-              {movie.title}
-            </Text>
-          </View>
-        )}
-      </Pressable>
-      {footer}
-    </View>
-  );
-}
-
-function DiscoverTvHorizontalMovieRow({
-  movies,
-  router,
-  posterWidth,
-  posterHeight,
-  rowGap,
-  movieRowIndex,
-  nextRowEntryTag,
-  lastRowLastCellWallTag,
-  setRowEntryRef,
-  setRowExitRef,
-  renderMovieFooter,
-  isLastMovieRow,
-  wrapNavVersion,
-  discoverSidebarLeftTag = null,
-  mainContentEntryNavTag = null,
-}: DiscoverTvHorizontalRowProps) {
-  const rowLen = movies.length;
-  const rowContentStyle = useMemo(
-    () => ({
-      paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
-      gap: rowGap,
-    }),
-    [rowGap]
-  );
-  return (
-    <View style={discoverTvRowStyles.rowWrap}>
-      <FlatList
-        horizontal
-        data={movies}
-        keyExtractor={(m) => m.id}
-        showsHorizontalScrollIndicator={false}
-        removeClippedSubviews={false}
-        style={discoverTvRowStyles.rowFlatList}
-        contentContainerStyle={rowContentStyle}
-        extraData={wrapNavVersion}
-        renderItem={({ item, index: colIndex }) => (
-          <DiscoverTvPosterCell
-            movie={item}
-            posterWidth={posterWidth}
-            posterHeight={posterHeight}
-            onPress={() => router.push(`/movie/${item.id}`)}
-            footer={renderMovieFooter?.(item) ?? null}
-            colIndex={colIndex}
-            rowLen={rowLen}
-            isLastMovieRow={isLastMovieRow}
-            nextRowEntryTag={nextRowEntryTag}
-            lastRowLastCellWallTag={lastRowLastCellWallTag}
-            setRowEntryRef={setRowEntryRef}
-            setRowExitRef={setRowExitRef}
-            rowRefIndex={movieRowIndex}
-            discoverSidebarLeftTag={discoverSidebarLeftTag}
-            mainContentEntryNavTag={mainContentEntryNavTag}
-          />
-        )}
-      />
-    </View>
-  );
-}
-
-const discoverTvRowStyles = StyleSheet.create({
-  rowWrap: {
-    width: '100%',
-    maxWidth: '100%',
-    alignSelf: 'stretch',
-    marginBottom: 12,
-    overflow: 'visible',
-  },
-  rowFlatList: {
-    width: '100%',
-    overflow: 'visible',
-  },
-});
-
-const discoverTvPosterStyles = StyleSheet.create({
-  posterCellWrap: {
-    overflow: 'visible',
-  },
-  posterPressable: {
-    backgroundColor: 'transparent',
-    overflow: 'visible',
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: 'transparent',
-  },
-  posterPressableFocused: {
-    borderColor: '#00F5FF',
-    transform: [{ scale: 1.05 }],
-    zIndex: 2,
-    elevation: 10,
-  },
-  posterImageFill: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholder: {
-    backgroundColor: '#080C10',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  placeholderTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#e5e7eb',
-    textAlign: 'center',
-  },
-});
-
 export default function DiscoverScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
@@ -561,18 +265,6 @@ export default function DiscoverScreen() {
     isTV && Platform.OS === 'android' ? (sidebarSlotNativeTags['discover'] ?? null) : null;
   /** TV: shell `discoverTvContentWrap` supplies horizontal padding — results FlatList omits extra horizontal inset. */
   const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
-  /** Android TV: fixed poster geometry (no fluid division — avoids fractional widths / clipping). */
-  const discoverTvGridLayout = useMemo(() => {
-    if (!isTV) {
-      return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP, columns: 0 };
-    }
-    return {
-      itemWidth: DISCOVER_TV_POSTER_WIDTH,
-      itemHeight: DISCOVER_TV_POSTER_HEIGHT,
-      rowGap: DISCOVER_TV_GAP,
-      columns: DISCOVER_TV_GRID_COLUMNS,
-    };
-  }, [isTV]);
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
   const discoverPosterLayout = useMemo(
@@ -890,7 +582,7 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
-    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : numColumns;
+    const perRow = isTV ? TV_MOVIE_GRID_COLUMNS : numColumns;
     let movieRowIndex = 0;
 
     for (let i = 0; i < phase1Movies.length; i += perRow) {
@@ -984,13 +676,6 @@ export default function DiscoverScreen() {
 
   const discoverMain = (
     <>
-      <View style={[styles.header, { paddingHorizontal: contentPadX }]}>
-        <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(32) }]}>Discover</Text>
-        <Text style={[styles.subtitle, isTV && { fontSize: tvBodyFontSize(16) }]}>
-          Browse movies by year & genre
-        </Text>
-      </View>
-
       <View style={styles.chipRowContainer}>
         <View style={styles.yearListWrapper}>
           <FlatList
@@ -1142,7 +827,7 @@ export default function DiscoverScreen() {
         /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
         <FlatList
           key={
-            isTV ? `discover-tv-grid-${DISCOVER_TV_GRID_COLUMNS}` : `discover-poster-grid-${numColumns}`
+            isTV ? `discover-tv-grid-${TV_MOVIE_GRID_COLUMNS}` : `discover-poster-grid-${numColumns}`
           }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}
@@ -1224,22 +909,25 @@ export default function DiscoverScreen() {
                 ? (rowExitTags.current[movieRowIndex] ?? null)
                 : null;
               return (
-                <DiscoverTvHorizontalMovieRow
+                <TvMovieGridRow
                   movies={item.movies}
-                  router={router}
-                  posterWidth={discoverTvGridLayout.itemWidth}
-                  posterHeight={discoverTvGridLayout.itemHeight}
-                  rowGap={discoverTvGridLayout.rowGap}
-                  movieRowIndex={movieRowIndex}
-                  nextRowEntryTag={nextRowEntryTag}
-                  lastRowLastCellWallTag={lastRowLastCellWallTag}
-                  setRowEntryRef={setRowEntryRef}
-                  setRowExitRef={setRowExitRef}
-                  renderMovieFooter={renderDiscoverFooter}
-                  isLastMovieRow={isLastMovieRow}
-                  wrapNavVersion={wrapNavVersion}
-                  discoverSidebarLeftTag={discoverSidebarLeftTag}
-                  mainContentEntryNavTag={mainContentEntryNativeTag}
+                  onPress={(movie) => router.push(`/movie/${movie.id}`)}
+                  renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
+                  tvFocus={
+                    Platform.OS === 'android'
+                      ? {
+                          movieRowIndex,
+                          nextRowEntryTag,
+                          lastRowLastCellWallTag,
+                          setRowEntryRef,
+                          setRowExitRef,
+                          isLastMovieRow,
+                          wrapNavVersion,
+                          sidebarLeftNavTag: discoverSidebarLeftTag,
+                          mainContentEntryNavTag: mainContentEntryNativeTag ?? null,
+                        }
+                      : undefined
+                  }
                 />
               );
             }
@@ -1309,21 +997,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingLeft: DISCOVER_TV_CONTENT_PAD_LEFT,
     paddingRight: DISCOVER_TV_RIGHT_MARGIN,
-  },
-  header: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginTop: 4,
   },
   chipRowContainer: {
     marginBottom: 10,

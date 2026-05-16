@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ComponentRef } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   View,
@@ -10,6 +10,7 @@ import {
   Pressable,
   Keyboard,
   Platform,
+  findNodeHandle,
   useWindowDimensions,
   Dimensions,
 } from 'react-native';
@@ -29,6 +30,10 @@ import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { supabase } from '../../lib/supabase';
 import { TvFocusGuideView } from '../../components/TvFocusGuideView';
 import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
+import {
+  TvMovieGridRow,
+  TV_MOVIE_GRID_COLUMNS,
+} from '../../components/TvMovieGridRow';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
@@ -40,11 +45,7 @@ const TV_HERO_HEIGHT_PX = 220;
 /** Hero banner copy + image fit — see `docs/depts/tv.md`. */
 const TV_HERO_TITLE_FONT = 18;
 const TV_HERO_META_FONT = 12;
-const TV_FIXED_POSTER_WIDTH = 140;
-const TV_FIXED_POSTER_HEIGHT = 210;
-const TV_GRID_COLUMNS = 5;
 const TV_GAP = 12;
-const TV_SECTION_HEADER_FONT = 22;
 
 interface TrendingMovie extends Movie {
   backdrop_url: string | null;
@@ -187,7 +188,7 @@ export default function HomeScreen() {
   /** TV: fixed 5 columns to match real layout & focus [R,C] math. Phone: 3 or 2. */
   const gridColumnCount = (() => {
     if (isTV) {
-      return TV_GRID_COLUMNS;
+      return TV_MOVIE_GRID_COLUMNS;
     }
     return width >= 430 ? 3 : 2;
   })();
@@ -203,6 +204,43 @@ export default function HomeScreen() {
   const trendingGridCount = trendingGridMovies.length;
   const numTrendingGridRows =
     trendingGridCount > 0 ? Math.ceil(trendingGridCount / gridColumnCount) : 0;
+
+  const rowEntryTags = useRef<(number | null)[]>([]);
+  const rowExitTags = useRef<(number | null)[]>([]);
+  const [trendingWrapNavVersion, setTrendingWrapNavVersion] = useState(0);
+  const setTrendingRowEntryRef = useCallback(
+    (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => {
+      if (Platform.OS !== 'android') return;
+      const t = node ? findNodeHandle(node) : null;
+      const arr = rowEntryTags.current;
+      while (arr.length <= rowIdx) arr.push(null);
+      if (arr[rowIdx] === t) return;
+      arr[rowIdx] = t;
+      setTrendingWrapNavVersion((n) => n + 1);
+    },
+    []
+  );
+  const setTrendingRowExitRef = useCallback(
+    (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => {
+      if (Platform.OS !== 'android') return;
+      const t = node ? findNodeHandle(node) : null;
+      const arr = rowExitTags.current;
+      while (arr.length <= rowIdx) arr.push(null);
+      if (arr[rowIdx] === t) return;
+      arr[rowIdx] = t;
+      setTrendingWrapNavVersion((n) => n + 1);
+    },
+    []
+  );
+
+  const tvTrendingRowChunks = useMemo(() => {
+    if (!isTV) return [] as TrendingMovie[][];
+    const chunks: TrendingMovie[][] = [];
+    for (let i = 0; i < trendingGridMovies.length; i += TV_MOVIE_GRID_COLUMNS) {
+      chunks.push(trendingGridMovies.slice(i, i + TV_MOVIE_GRID_COLUMNS));
+    }
+    return chunks;
+  }, [isTV, trendingGridMovies]);
   /**
    * TV: usable row width beside the left rail (`Discover` uses the same shell − sidebar math).
    * Phone: full window minus horizontal padding only.
@@ -578,94 +616,87 @@ export default function HomeScreen() {
             {...tvNf}
           >
             {isTV ? (
-              <View {...tvNf}>
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    {
-                      fontSize: TV_SECTION_HEADER_FONT,
-                      marginBottom: 8,
-                    },
-                  ]}
-                >
-                  Trending Now
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.sectionTitle}>Trending Now</Text>
-            )}
-            <View
-              style={
-                isTV
-                  ? {
-                      width: '100%',
-                      flexDirection: 'row',
-                      flexWrap: 'wrap',
-                      alignItems: 'flex-start',
-                      justifyContent: 'flex-start',
+              <>
+                {tvTrendingRowChunks.map((rowMovies, rowIdx) => (
+                  <TvMovieGridRow
+                    key={`home-tv-trend-${rowIdx}`}
+                    title={rowIdx === 0 ? 'Trending Now' : undefined}
+                    movies={rowMovies}
+                    showTitleMeta
+                    notifyTvContentFocus
+                    marginBottom={
+                      rowIdx < tvTrendingRowChunks.length - 1 ? 20 : 0
                     }
-                  : [styles.trendingGrid, { gap: trendingGap }]
-              }
-              {...tvNf}
-            >
-              {trendingGridMovies.map((movie, idx) => {
-                const rowIndex = Math.floor(idx / gridColumnCount);
-                const colIndex = idx % gridColumnCount;
-                const isTopRow = rowIndex === 0;
-                const isRightEdge =
-                  isTV &&
-                  (colIndex === gridColumnCount - 1 || idx === trendingGridCount - 1);
-                /** First cell only — native tag for Hero `nextFocusDown` / `nextFocusRight`. */
-                const isFirstGridPoster = idx === 0;
-                const isLeftCol = colIndex === 0;
-                const isBottomRow =
-                  trendingGridCount > 0 && rowIndex === numTrendingGridRows - 1;
-                const isLastCol = colIndex === gridColumnCount - 1;
-                return (
-                  <View
-                    key={movie.id}
-                    style={
-                      isTV
+                    onPress={(m) => {
+                      handleMoviePress(m as Movie);
+                      router.push(`/movie/${m.id}`);
+                    }}
+                    onFirstPosterNativeTag={
+                      rowIdx === 0 ? setFirstTrendingPosterTag : undefined
+                    }
+                    reduceTopSpacing={true}
+                    tvFocus={
+                      Platform.OS === 'android'
                         ? {
-                            width: trendingCardWidth,
-                            marginRight: isLastCol ? 0 : 12,
-                            marginBottom: 20,
+                            movieRowIndex: rowIdx,
+                            nextRowEntryTag:
+                              rowEntryTags.current[rowIdx + 1] ?? null,
+                            lastRowLastCellWallTag:
+                              rowIdx === tvTrendingRowChunks.length - 1
+                                ? (rowExitTags.current[rowIdx] ?? null)
+                                : null,
+                            setRowEntryRef: setTrendingRowEntryRef,
+                            setRowExitRef: setTrendingRowExitRef,
+                            isLastMovieRow:
+                              rowIdx === tvTrendingRowChunks.length - 1,
+                            wrapNavVersion: trendingWrapNavVersion,
+                            sidebarLeftNavTag: homeSidebarLeftTag,
+                            mainContentEntryNavTag: heroMainEntryTag,
+                            heroNavTag: heroMainEntryTag,
                           }
-                        : { width: trendingCardWidth }
+                        : undefined
                     }
-                    {...tvNf}
-                  >
-                    <MovieCard
-                      movie={movie}
-                      onPress={() => handleMoviePress(movie)}
-                      posterWidth={isTV ? TV_FIXED_POSTER_WIDTH : undefined}
-                      posterHeight={isTV ? TV_FIXED_POSTER_HEIGHT : undefined}
-                      tvClampFocusRight={isRightEdge}
-                      onTvPosterNavTag={
-                        isFirstGridPoster && isTV && Platform.OS === 'android'
-                          ? setFirstTrendingPosterTag
-                          : undefined
-                      }
-                      tvNextFocusUp={
-                        isTopRow && isTV && Platform.OS === 'android'
-                          ? heroMainEntryTag
-                          : null
-                      }
-                      tvNextFocusLeft={
-                        isLeftCol && isTV && Platform.OS === 'android'
-                          ? homeSidebarLeftTag
-                          : null
-                      }
-                      tvNextFocusDown={
-                        isBottomRow && isTV && Platform.OS === 'android'
-                          ? heroMainEntryTag
-                          : null
-                      }
-                    />
-                  </View>
-                );
-              })}
-            </View>
+                  />
+                ))}
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionTitle}>Trending Now</Text>
+                <View
+                  style={[styles.trendingGrid, { gap: trendingGap }]}
+                  {...tvNf}
+                >
+                  {trendingGridMovies.map((movie, idx) => {
+                    const rowIndex = Math.floor(idx / gridColumnCount);
+                    const colIndex = idx % gridColumnCount;
+                    const isRightEdge =
+                      colIndex === gridColumnCount - 1 ||
+                      idx === trendingGridCount - 1;
+                    const isBottomRow =
+                      trendingGridCount > 0 &&
+                      rowIndex === numTrendingGridRows - 1;
+                    return (
+                      <View
+                        key={movie.id}
+                        style={{ width: trendingCardWidth }}
+                        {...tvNf}
+                      >
+                        <MovieCard
+                          movie={movie}
+                          onPress={() => handleMoviePress(movie)}
+                          tvClampFocusRight={isRightEdge}
+                          tvNextFocusDown={
+                            isBottomRow && Platform.OS === 'android'
+                              ? heroMainEntryTag
+                              : null
+                          }
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </View>
         ) : (
           <View style={styles.bottomHalf} {...tvNf}>
