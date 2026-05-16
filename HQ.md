@@ -103,7 +103,7 @@ High-jitter viewports (**mobile Safari**, mobile browsers with chrome inset) emi
 
 ### Triple-Platform Adaptive Strategy
 
-1. **`lib/viewport-utils.ts`** — Single source for **`bucketViewportWidth`** (10px stability) and **`discoverPosterGridColumns`** (**3 / 4 / 6** tiers). **Web**, **mobile**, and **Android TV Discover** share the same density rules: TV applies them to **usable row width** (after sidebar/padding); phone and browser use **bucketed screen width**. Prevents billboard-sized posters on 65" panels while keeping phone layouts dense.
+1. **`lib/viewport-utils.ts`** — **`bucketViewportWidth`** (10px stability) and **`discoverPosterGridColumns`** (**3 / 4 / 6** tiers) apply to **Web** and **mobile** Discover/grid density. **Android TV** poster rails use the **fixed** **140×210**, **5** columns, **20px** horizontal gap per [`docs/depts/tv.md`](docs/depts/tv.md) — not fluid row-width division.
 2. **Native Android security (TV stability)** — Config plugin **`plugins/withAndroidNetworkSecurity.js`** (wired via [`app.config.ts`](app.config.ts)) sets **`android:usesCleartextTraffic`** and **`network_security_config`** (cleartext for Metro dev, HTTPS for Supabase in `.env`). After plugin or `.env` changes, native TV builds use **`npm run tv:clean`**. Detail: [`docs/depts/tv.md`](docs/depts/tv.md).
 
 ### Implementation choke points

@@ -37,7 +37,6 @@ import { tvFocusable } from '../../lib/tvFocus';
 import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
-import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
 import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
@@ -93,11 +92,14 @@ const GENRES = [
 const HORIZONTAL_PADDING = 20;
 const GRID_GAP_PHONE = 12;
 const GRID_GAP_TV = 20;
-/** Discover TV: nav + horizontal buffers (content shell padding; includes side inset for width math). */
-/** Matches Home’s 20px inset from the main column edge (nav + buffer). */
-const DISCOVER_TV_CONTENT_BUFFER = 20;
+/** TV content shell: left inset clears sidebar-adjacent focus ring; right keeps bezel breathing room. */
+const DISCOVER_TV_CONTENT_PAD_LEFT = 24;
 const DISCOVER_TV_RIGHT_MARGIN = 20;
 const DISCOVER_TV_GAP = 20;
+/** Fixed TV poster cells — matches static Home-style sizing (no fluid row division). */
+const DISCOVER_TV_POSTER_WIDTH = 140;
+const DISCOVER_TV_POSTER_HEIGHT = 210;
+const DISCOVER_TV_GRID_COLUMNS = 5;
 const DISCOVER_TV_LIST_VERTICAL_PAD = 20;
 /** TV: small bottom pad so the focus “floor” isn’t a huge empty scroll region. */
 const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 32;
@@ -214,7 +216,7 @@ type ListItem =
 type DiscoverTvHorizontalRowProps = {
   movies: DiscoverResult[];
   router: ReturnType<typeof useRouter>;
-  /** Pixel width/height of one poster cell; must match 5× `rowGap` ladder math. */
+  /** Pixel width/height of one poster cell — fixed `DISCOVER_TV_POSTER_*` + `rowGap` between cells. */
   posterWidth: number;
   posterHeight: number;
   rowGap: number;
@@ -250,7 +252,6 @@ function DiscoverTvPosterCell({
   rowRefIndex,
   discoverSidebarLeftTag,
   mainContentEntryNavTag,
-  smokeTestID,
 }: {
   movie: DiscoverResult;
   posterWidth: number;
@@ -267,7 +268,6 @@ function DiscoverTvPosterCell({
   rowRefIndex: number;
   discoverSidebarLeftTag: number | null;
   mainContentEntryNavTag: number | null;
-  smokeTestID?: string;
 }) {
   const [isFocused, setIsFocused] = useState(false);
   const [posterLoadFailed, setPosterLoadFailed] = useState(false);
@@ -329,23 +329,10 @@ function DiscoverTvPosterCell({
     [posterWidth, posterHeight, isFocused]
   );
 
-  const smokeA11y = smokeTestID != null;
-
   return (
-    <View
-      style={cellWrapStyle}
-      collapsable={false}
-      testID={smokeTestID}
-      accessible={smokeA11y}
-      accessibilityLabel={smokeA11y ? 'Discover Poster 1' : undefined}
-      accessibilityRole={smokeA11y ? 'button' : undefined}
-      {...(Platform.OS === 'android' && smokeA11y
-        ? { importantForAccessibility: 'yes' as const }
-        : {})}
-    >
+    <View style={cellWrapStyle} collapsable={false}>
       <Pressable
         ref={pressableRef}
-        accessible={!smokeA11y}
         {...tvFocusable()}
         focusable={true}
         {...(useNav
@@ -461,9 +448,6 @@ function DiscoverTvHorizontalMovieRow({
             rowRefIndex={movieRowIndex}
             discoverSidebarLeftTag={discoverSidebarLeftTag}
             mainContentEntryNavTag={mainContentEntryNavTag}
-            smokeTestID={
-              movieRowIndex === 0 && colIndex === 0 ? 'discover-smoke-poster' : undefined
-            }
           />
         )}
       />
@@ -575,51 +559,20 @@ export default function DiscoverScreen() {
   const { sidebarSlotNativeTags, mainContentEntryNativeTag } = useTvSearchFocusBridge();
   const discoverSidebarLeftTag =
     isTV && Platform.OS === 'android' ? (sidebarSlotNativeTags['discover'] ?? null) : null;
-  /** TV: shell `discoverTvContentWrap` supplies 20 / 20 horizontal padding — no extra horizontal inset here. */
+  /** TV: shell `discoverTvContentWrap` supplies horizontal padding — results FlatList omits extra horizontal inset. */
   const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
-  const [tvDiscoverShellW, setTvDiscoverShellW] = useState(0);
-  /** TV rail applies only on native TV builds — never on mobile web (bottom tabs / no rail). */
-  const discoverTvSidebarOffset =
-    isTV && Platform.OS !== 'web' ? TV_SIDEBAR_WIDTH : 0;
-  const tvRowUsableWidth = useMemo(() => {
-    if (!isTV) return 0;
-    if (tvDiscoverShellW > 0) {
-      return (
-        tvDiscoverShellW -
-        DISCOVER_TV_CONTENT_BUFFER -
-        DISCOVER_TV_RIGHT_MARGIN
-      );
-    }
-    return (
-      screenWidth -
-      discoverTvSidebarOffset -
-      DISCOVER_TV_CONTENT_BUFFER -
-      DISCOVER_TV_RIGHT_MARGIN
-    );
-  }, [
-    isTV,
-    tvDiscoverShellW,
-    screenWidth,
-    discoverTvSidebarOffset,
-  ]);
-  /**
-   * TV grid: column count scales with usable row width (3 / 4 / 6) so 65" layouts don’t use huge cells.
-   * Inner width ≈ shell minus buffers; gaps = columns - 1.
-   */
+  /** Android TV: fixed poster geometry (no fluid division — avoids fractional widths / clipping). */
   const discoverTvGridLayout = useMemo(() => {
     if (!isTV) {
       return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP, columns: 0 };
     }
-    const rowGap = DISCOVER_TV_GAP;
-    const inner = Math.max(0, tvRowUsableWidth);
-    const columns = discoverPosterGridColumns(inner);
-    const itemWidth = Math.max(
-      0,
-      (inner - rowGap * (columns - 1)) / columns
-    );
-    const itemHeight = itemWidth * 1.5;
-    return { itemWidth, itemHeight, rowGap, columns };
-  }, [isTV, tvRowUsableWidth]);
+    return {
+      itemWidth: DISCOVER_TV_POSTER_WIDTH,
+      itemHeight: DISCOVER_TV_POSTER_HEIGHT,
+      rowGap: DISCOVER_TV_GAP,
+      columns: DISCOVER_TV_GRID_COLUMNS,
+    };
+  }, [isTV]);
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
   const discoverPosterLayout = useMemo(
@@ -741,16 +694,7 @@ export default function DiscoverScreen() {
         console.warn('[Discover] Stream Finder cache load failed:', e);
         streamFinderCuratedFeedActiveRef.current = false;
       } finally {
-        if (!cancelled) {
-          /**
-           * TV + dev: give the first row a frame to mount testIDs / layout before Maestro polls
-           * (horizontal row inside nested FlatLists).
-           */
-          if (__DEV__ && isTvTarget()) {
-            await new Promise((r) => setTimeout(r, 400));
-          }
-          setStreamFinderListHydrating(false);
-        }
+        if (!cancelled) setStreamFinderListHydrating(false);
       }
     })();
 
@@ -946,7 +890,7 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
-    const perRow = isTV ? Math.max(1, discoverTvGridLayout.columns) : numColumns;
+    const perRow = isTV ? DISCOVER_TV_GRID_COLUMNS : numColumns;
     let movieRowIndex = 0;
 
     for (let i = 0; i < phase1Movies.length; i += perRow) {
@@ -973,7 +917,7 @@ export default function DiscoverScreen() {
     }
 
     return items;
-  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns, discoverTvGridLayout.columns]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns]);
 
   const totalMovieRows = useMemo(
     () => listData.filter((x) => x.type === 'row').length,
@@ -1029,7 +973,6 @@ export default function DiscoverScreen() {
     return (
       <View style={styles.blackout}>
         <TouchableOpacity
-          testID="maestro-onboarding-login-btn"
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}
         >
@@ -1152,6 +1095,8 @@ export default function DiscoverScreen() {
           label="All"
           isSelected={monetization === 'both'}
           onPress={() => handleMonetizationChange('both')}
+          nativeID="discoverAllFilterButton"
+          collapsable={false}
         />
       </View>
 
@@ -1197,7 +1142,7 @@ export default function DiscoverScreen() {
         /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
         <FlatList
           key={
-            isTV ? `discover-tv-grid-${discoverTvGridLayout.columns}` : `discover-poster-grid-${numColumns}`
+            isTV ? `discover-tv-grid-${DISCOVER_TV_GRID_COLUMNS}` : `discover-poster-grid-${numColumns}`
           }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}
@@ -1307,9 +1252,6 @@ export default function DiscoverScreen() {
                 tvSidebarLeftNavTag={discoverSidebarLeftTag}
                 phonePosterColumns={numColumns}
                 distributePosterRow={!isTV}
-                leadPosterTestID={
-                  item.movieRowIndex === 0 ? 'discover-smoke-poster' : undefined
-                }
                 renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
               />
             );
@@ -1322,10 +1264,7 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.container}>
       {isTV ? (
-        <View
-          style={styles.discoverTvContentWrap}
-          onLayout={(e) => setTvDiscoverShellW(e.nativeEvent.layout.width)}
-        >
+        <View style={styles.discoverTvContentWrap}>
           {discoverMain}
         </View>
       ) : (
@@ -1359,8 +1298,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   /**
-   * TV: fills space beside sidebar (`flex:1`), left/right from constants.
-   * Poster math: inner width = `onLayout.width - CONTENT_BUFFER - RIGHT_MARGIN` (see `tvRowUsableWidth`).
+   * TV: fills space beside sidebar (`flex:1`); static poster sizing — left pad clears focus ring vs rail.
    */
   discoverTvContentWrap: {
     flex: 1,
@@ -1369,7 +1307,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
-    paddingLeft: DISCOVER_TV_CONTENT_BUFFER,
+    paddingLeft: DISCOVER_TV_CONTENT_PAD_LEFT,
     paddingRight: DISCOVER_TV_RIGHT_MARGIN,
   },
   header: {
@@ -1617,18 +1555,24 @@ type MonetizationFilterChipProps = {
   label: string;
   isSelected: boolean;
   onPress: () => void;
+  nativeID?: string;
+  collapsable?: boolean;
 };
 
 function MonetizationFilterChip({
   label,
   isSelected,
   onPress,
+  nativeID,
+  collapsable,
 }: MonetizationFilterChipProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <Pressable
       focusable={true}
+      {...(nativeID != null ? { nativeID } : {})}
+      {...(collapsable === false ? { collapsable: false } : {})}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={onPress}

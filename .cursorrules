@@ -23,8 +23,8 @@ When the user’s active context clearly involves one of the departmental office
 
 - **The "TV Office" Law:** Never guess dimensions or use `windowWidth` for scaling. Use the standards in `docs/depts/tv.md`:
   - **Sidebar:** 128px | **Content Padding:** 10px | **Hero Height:** 400px.
-  - **Posters:** 170px wide x 255px high.
-  - **Grid:** 5 Columns / 12px Gap.
+  - **Posters:** **140px** wide × **210px** high (fixed on TV; no fluid row-width division — see `docs/depts/tv.md`).
+  - **Grid:** **5** columns | **Horizontal row gap:** **20px** between posters.
 - **No Flexbox Stretching:** Always apply `flexGrow: 0` and `flexShrink: 0` to TV movie cards to prevent "Zoom/Stretch" bugs.
 - **Typography:** Use the compact sizing: Header 22px, Title 13px, Year 11px.
 - **No Chrome:** Never enable `HomeHeader`, `HeaderRight`, or native stack headers on Android TV.

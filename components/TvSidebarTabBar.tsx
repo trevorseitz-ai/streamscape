@@ -234,7 +234,7 @@ function TvSidebarTabItem({
  * Full-height left rail: fixed slots, space-evenly between block buffers.
  */
 export function TvSidebarTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const {
     searchFieldNativeTag,
     registerSidebarSlotNavTag,
@@ -257,17 +257,22 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
 
   return (
     <View
-      focusable={false}
-      collapsable={Platform.OS === 'android' ? false : undefined}
-      style={[
-        styles.sidebar,
-        {
-          paddingHorizontal: padH,
-          paddingTop: padV + insets.top,
-          paddingBottom: padV + insets.bottom,
-        },
-      ]}
+      pointerEvents="box-none"
+      style={[styles.sidebarHitPass, { minHeight: windowHeight }]}
     >
+      <View
+        focusable={false}
+        collapsable={Platform.OS === 'android' ? false : undefined}
+        pointerEvents="auto"
+        style={[
+          styles.sidebar,
+          {
+            paddingHorizontal: padH,
+            paddingTop: padV + insets.top,
+            paddingBottom: padV + insets.bottom,
+          },
+        ]}
+      >
       <View style={styles.sidebarBrandBand} accessibilityRole="image" accessibilityLabel="ReelDive">
         <Image
           source={TV_SIDEBAR_LOGO}
@@ -320,16 +325,14 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         };
 
         /**
-         * Every tab should jump to main content; Search uses the search field tag.
-         * Other slots (Discover, Profile as last rail item, …) bridge via `mainContentEntryNativeTag`
-         * so D-pad right never dead-ends on the rail edge.
+         * Search → field tag. Else → `mainContentEntryNativeTag` (Discover = monetization **All**
+         * chip `discoverAllFilterButton`; Home / Watchlist publish their own anchors). If missing,
+         * omit `nextFocusRight` so Android searches east.
          */
         const mainRightBridge: number | undefined =
           slotName === 'search' && searchFieldNativeTag != null
             ? searchFieldNativeTag
-            : mainContentEntryNativeTag != null
-              ? mainContentEntryNativeTag
-              : undefined;
+            : mainContentEntryNativeTag ?? undefined;
         const nextFocusRightTarget = mainRightBridge;
 
         return (
@@ -363,12 +366,27 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         );
       })}
       </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Outer pass-through: fixed rail width, full viewport height (custom tab bar bypasses RN’s
+   * default tab bar height wrapper — without minHeight the column collapses to a tiny strip).
+   */
+  sidebarHitPass: {
+    alignSelf: 'stretch',
+    width: TV_SIDEBAR_WIDTH,
+    minWidth: TV_SIDEBAR_WIDTH,
+    maxWidth: TV_SIDEBAR_WIDTH,
+    flexGrow: 0,
+    flexShrink: 0,
+    height: '100%',
+  },
   sidebar: {
+    flex: 1,
     width: TV_SIDEBAR_WIDTH,
     minWidth: TV_SIDEBAR_WIDTH,
     maxWidth: TV_SIDEBAR_WIDTH,
@@ -378,6 +396,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
     borderRightWidth: 1,
     borderRightColor: '#222222',
+    /** Keep scaled TV focus styles inside the rail so they don’t intrude on the scene/grid. */
+    overflow: 'hidden',
     /** Flush against scene — kill any navigator default bumper */
     marginRight: 0,
     marginLeft: 0,
@@ -401,8 +421,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    flexShrink: 1,
-    minHeight: 0,
+    flexShrink: 0,
   },
   itemPressable: {
     flexDirection: 'column',

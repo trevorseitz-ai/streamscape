@@ -230,18 +230,20 @@ export default function HomeScreen() {
     router.push(`/movie/${heroMovie.id}`);
   }, [heroMovie, router, setSearchResult, setSearchError]);
 
-  /** Android TV: sidebar `nextFocusRight` targets this view tag (see TvSidebarTabBar). */
-  useEffect(() => {
-    if (!isTV || Platform.OS !== 'android') {
-      return;
-    }
-    if (heroMovie == null || heroMainEntryTag == null) {
-      setMainContentEntryNativeTag(null);
-      return;
-    }
-    setMainContentEntryNativeTag(heroMainEntryTag);
-    return () => setMainContentEntryNativeTag(null);
-  }, [isTV, heroMovie, heroMainEntryTag, setMainContentEntryNativeTag]);
+  /** Android TV: sidebar `nextFocusRight` — only while Home is focused (tabs stay mounted). */
+  useFocusEffect(
+    useCallback(() => {
+      if (!isTV || Platform.OS !== 'android') {
+        return;
+      }
+      if (heroMovie == null || heroMainEntryTag == null) {
+        setMainContentEntryNativeTag(null);
+        return () => setMainContentEntryNativeTag(null);
+      }
+      setMainContentEntryNativeTag(heroMainEntryTag);
+      return () => setMainContentEntryNativeTag(null);
+    }, [isTV, heroMovie, heroMainEntryTag, setMainContentEntryNativeTag])
+  );
 
   useEffect(() => {
     if (restTrending.length === 0) {

@@ -22,7 +22,11 @@ export function TvFocusGuideView({ children, style, destinations: _destinations 
   const tv = shouldUseTvDpadFocus() || isTvTarget();
 
   if (!tv) {
-    return <View style={style}>{children}</View>;
+    return (
+      <View pointerEvents="box-none" style={style}>
+        {children}
+      </View>
+    );
   }
 
   return (
@@ -30,6 +34,7 @@ export function TvFocusGuideView({ children, style, destinations: _destinations 
       collapsable={false}
       // Must NOT take focus on Android TV — only explicit Pressables in the child tree should.
       focusable={false}
+      pointerEvents="box-none"
       style={[styles.guide, style]}
     >
       {children}
@@ -41,6 +46,8 @@ const styles = StyleSheet.create({
   guide: {
     flex: 1,
     width: '100%',
+    height: '100%',
+    minHeight: '100%',
     alignSelf: 'stretch',
   },
 });

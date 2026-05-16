@@ -47,6 +47,8 @@ export default function TabLayout() {
                 width: TV_SIDEBAR_WIDTH,
                 minWidth: TV_SIDEBAR_WIDTH,
                 maxWidth: TV_SIDEBAR_WIDTH,
+                height: '100%',
+                alignSelf: 'stretch',
                 flexGrow: 0,
                 flexShrink: 0,
                 margin: 0,
@@ -134,7 +136,9 @@ export default function TabLayout() {
       style={{
         flex: 1,
         width: '100%',
+        height: '100%',
         minWidth: 0,
+        minHeight: '100%',
         flexDirection: 'row',
         gap: 0,
         margin: 0,
@@ -143,8 +147,21 @@ export default function TabLayout() {
         justifyContent: 'flex-start',
       }}
     >
-      {/** Single flex child so the navigator fills width (avoids intrinsic-width gap). */}
-      <View style={{ flex: 1, minWidth: 0, margin: 0, padding: 0 }}>{tabs}</View>
+      {/** Navigator fills width; BottomTabView lays out rail + scene as a horizontal row inside. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          flex: 1,
+          alignSelf: 'stretch',
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        {tabs}
+      </View>
     </TvFocusGuideView>
   ) : (
     tabs

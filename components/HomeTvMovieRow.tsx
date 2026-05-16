@@ -246,11 +246,9 @@ const styles = StyleSheet.create({
     borderWidth: TV_FOCUS_BORDER_WIDTH,
     borderColor: 'transparent',
   },
+  /** Border-only focus — no **`scale`**, so Bravia’s ring tracks the poster bounds exactly. */
   posterFrameFocused: {
     borderColor: ELECTRIC_CYAN,
-    transform: [{ scale: 1.05 }],
-    zIndex: 2,
-    elevation: 10,
   },
   posterImageFill: {
     width: '100%',

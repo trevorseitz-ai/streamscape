@@ -1,6 +1,6 @@
 # 📺 TV App Office (Lean-back Experience)
 
-> **Shared viewport bucketing** for poster rows: **`bucketViewportWidth`** and **`discoverPosterGridColumns`** live in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) — see [Shared components](shared.md). TV-specific tokens below remain authoritative for rail/bounds.
+> **Phone / Web poster columns:** **`bucketViewportWidth`** and **`discoverPosterGridColumns`** in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) may still drive responsive column counts on **handsets and browsers** — see [Shared components](shared.md). Those helpers are **not** the sizing authority for **Android TV** poster rails; TV uses the **fixed integer grid** in [TV poster grid standard (all tabs)](#tv-poster-grid-standard-all-tabs) below.
 
 ---
 
@@ -16,9 +16,20 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 ---
 
-## Discover grid: up to 6 columns (shared with Web / mobile)
+## TV poster grid standard (all tabs)
 
-**Discover** on Android TV does **not** use a fixed five-column constant for the main poster grid. It uses the same **`discoverPosterGridColumns`** helper as **Web** and **phone**: **`≥900` usable row width → 6**, **`≥600 → 4`**, else **`3`**, where **usable width** is the content band after the left rail and horizontal buffers (see **`app/(tabs)/discover.tsx`**). That keeps 65" / 4K layouts from turning into single-row “billboard” tiles. **Home** TV rails may still use fixed **`TV_GRID_COLUMNS`** (5) where documented below—only **Discover** adopts the triple-platform adaptive tiers.
+**Android TV** — **Home**, **Discover**, and any other TV poster rails — must use one uniform layout. Do **not** derive poster width by dividing usable row width (no fluid math, no fractional pixel cell widths on TV).
+
+| Standard | Value |
+|----------|------|
+| **Poster width** | **140px** |
+| **Poster height** | **210px** |
+| **Grid columns** (posters per row) | **5** |
+| **Horizontal row gap** (between posters) | **20px** |
+
+**Implementation alignment:** Mirror these values in screen constants (e.g. **`TV_FIXED_POSTER_WIDTH` / `TV_FIXED_POSTER_HEIGHT` / `TV_GRID_COLUMNS`** in **`app/(tabs)/index.tsx`**, and matching **`DISCOVER_TV_*`** tokens in **`app/(tabs)/discover.tsx`**). Horizontal TV lists should use **`gap: 20`** (or the same token) in **`contentContainerStyle`** alongside **`DISCOVER_TV_GAP`** / **`HomeTvMovieRow`** row spacing so all tabs stay uniform.
+
+**Non-TV:** Web and phone Discover grids may still use **`discoverPosterGridColumns`** for responsive columns; that behavior does **not** override the TV fixed grid above.
 
 ---
 
@@ -54,7 +65,7 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 ## Locked layout constants (540p logical height — above-the-fold)
 
-Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`, `app/(tabs)/index.tsx`, `MovieCard.tsx`.
+Single source for Home rail + poster grid. Implementation: **`TvSidebarTabBar.tsx`**, **`app/(tabs)/index.tsx`**, **`MovieCard.tsx`**, **`app/(tabs)/discover.tsx`** (TV).
 
 | Token | Value |
 |-------|--------|
@@ -62,9 +73,10 @@ Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`
 | `TV_HERO_HEIGHT` | **220px** |
 | `TV_POSTER_WIDTH` | **140px** |
 | `TV_POSTER_HEIGHT` | **210px** |
-| `TV_GAP` | **12px** |
+| `TV_GRID_COLUMNS` | **5** |
+| `TV_POSTER_ROW_GAP` | **20px** (horizontal gap between posters in TV rails) |
 
-Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, **`TV_GRID_COLUMNS` 5** (Home rail/grid; **Discover** uses adaptive **3 / 4 / 6** via **`discoverPosterGridColumns`**), poster tile title **13px**, year **11px**, section header **22px**.
+Supporting tokens (unchanged unless noted elsewhere): **`TV_HOME_CONTENT_PADDING` 10px**, poster tile title **13px**, year **11px**, section header **22px**. Inner chrome / chip strips may use smaller gaps where documented in the component; **poster rows on TV** stay **140×210**, **5 columns**, **20px** horizontal gap per [TV poster grid standard](#tv-poster-grid-standard-all-tabs).
 
 ### Left rail slots (`TV_SIDEBAR_SLOTS`)
 

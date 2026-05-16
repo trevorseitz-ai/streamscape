@@ -10,14 +10,18 @@ The absolute truth of this app's TV layout is a `20px` spacing grid.
 - All section titles, filter lists (Years/Genres), and the first movie poster of any row must perfectly align to this `20px` invisible boundary.
 - The right edge of the screen must also maintain a `20px` margin (`DISCOVER_TV_RIGHT_MARGIN`) to protect against hardware overscan.
 
-## 2. The 5-Poster Grid Math
+## 2. The 5-Poster Grid (fixed sizing — TV)
 
-Movie posters must be calculated dynamically based on window width. Do not use static widths.
+On **Android TV**, poster rails use **fixed integer** cells — not fluid row-width division (no `(usableWidth - gaps) / 5` math). Fractional pixels from dynamic sizing cause clipping and inconsistent focus rings.
 
-- **The Math:**
-  const USABLE_WIDTH = width - NAV_BAR_WIDTH - 20 - 20;
-  const POSTER_WIDTH = (USABLE_WIDTH - (GAP _ 4)) / 5;
-  const POSTER_HEIGHT = POSTER_WIDTH _ 1.5;
+| Quantity | Value |
+|----------|------|
+| Poster width | **140px** |
+| Poster height | **210px** |
+| Columns per row | **5** |
+| Horizontal gap between posters | **20px** |
+
+Shell padding (left/right **20px** from the nav and bezel) still applies around the content band; poster **cell** dimensions remain **140×210** regardless of **1080p** / **4K** logical width.
 
 ## 3. The Guillotine Effect (Focus Clipping)
 

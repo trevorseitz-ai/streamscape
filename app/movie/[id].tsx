@@ -2711,21 +2711,25 @@ const styles = StyleSheet.create({
   recommendationCardPressed: {
     opacity: 0.85,
   },
-  recommendationCardTvFocused: {
-    borderWidth: 3,
-    borderColor: ELECTRIC_CYAN,
-    borderRadius: 10,
-    padding: 2,
-  },
-  recommendationPoster: {
+  recommendationPosterShell: {
     width: 120,
     height: 180,
     borderRadius: 8,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    overflow: 'hidden',
     backgroundColor: '#1a1a1a',
   },
+  recommendationPosterShellFocused: {
+    borderColor: ELECTRIC_CYAN,
+  },
+  recommendationPoster: {
+    width: '100%',
+    height: '100%',
+  },
   recommendationPosterPlaceholder: {
-    width: 120,
-    height: 180,
+    width: '100%',
+    height: '100%',
     borderRadius: 8,
     backgroundColor: '#2d2d2d',
     alignItems: 'center',
@@ -3175,25 +3179,31 @@ function DetailsRecommendationCard({
       onPress={onPress}
       style={({ pressed }) => [
         styles.recommendationCard,
-        isFocused && styles.recommendationCardTvFocused,
         pressed && styles.recommendationCardPressed,
       ]}
     >
-      {rec.poster_path ? (
-        <Image
-          source={{
-            uri: `https://image.tmdb.org/t/p/w342${rec.poster_path}`,
-          }}
-          style={styles.recommendationPoster}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={styles.recommendationPosterPlaceholder}>
-          <Text style={styles.recommendationPosterInitial} {...tvNf}>
-            {rec.title.charAt(0)}
-          </Text>
-        </View>
-      )}
+      <View
+        style={[
+          styles.recommendationPosterShell,
+          isFocused && styles.recommendationPosterShellFocused,
+        ]}
+      >
+        {rec.poster_path ? (
+          <Image
+            source={{
+              uri: `https://image.tmdb.org/t/p/w342${rec.poster_path}`,
+            }}
+            style={styles.recommendationPoster}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.recommendationPosterPlaceholder}>
+            <Text style={styles.recommendationPosterInitial} {...tvNf}>
+              {rec.title.charAt(0)}
+            </Text>
+          </View>
+        )}
+      </View>
       <Text style={styles.recommendationTitle} numberOfLines={2} {...tvNf}>
         {rec.title}
       </Text>
