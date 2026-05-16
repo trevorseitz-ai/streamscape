@@ -3,7 +3,7 @@ import type { StreamingOption } from './streaming-rapid';
 
 /**
  * TMDB-compatible `provider_id` values used in `stream_finder_providers` /
- * Discover availability. Aliases normalize legacy HBO Max (**384**) to Max (**1899**).
+ * Discover availability. Aliases: HBO Max (**384**) → Max (**1899**); alternate Max (**24**) → **1899**.
  *
  * Title-specific paths come from RapidAPI **`StreamingOption.videoLink`** /
  * **`link`** and from **`providerContentId`** when present. **`launchStreamingApp`**
@@ -22,6 +22,10 @@ export type StreamingProviderLaunchSpec = {
   androidPackageName: string;
   /** Tried after the primary when **`IntentLauncher`** throws (typically mobile storefront id). */
   androidPackageFallbacks?: readonly string[];
+  /**
+   * OEM TV **`Intent`** extras (**Sony / Netflix Ninja **`source`**, …) merged into explicit **`ACTION_VIEW`**.
+   */
+  androidLaunchExtras?: Record<string, string>;
 };
 
 /** Rows mirror the QA “16-provider” Stream Finder milestone — confirm against `GET /api/providers` / Supabase after each sync. */
@@ -31,6 +35,8 @@ export const STREAMING_PROVIDER_ANDROID_MATRIX: StreamingProviderLaunchSpec[] = 
     label: 'Netflix',
     androidPackageName: 'com.netflix.ninja',
     androidPackageFallbacks: ['com.netflix.mediaclient'],
+    /** Netflix Ninja: **`source`** lands directly on the title from **`nflx://`** VIEW. */
+    androidLaunchExtras: { source: '30' },
   },
   { tmdbProviderId: 9, label: 'Amazon Prime Video', androidPackageName: 'com.amazon.amazonvideo.livingroom' },
   {
@@ -57,12 +63,14 @@ export const STREAMING_PROVIDER_ANDROID_MATRIX: StreamingProviderLaunchSpec[] = 
   { tmdbProviderId: 613, label: 'MGM Plus', androidPackageName: 'com.epix.epix.now' },
   { tmdbProviderId: 520, label: 'Discovery Plus', androidPackageName: 'com.discovery.discoveryplus.mobile' },
   { tmdbProviderId: 1794, label: 'FuboTV', androidPackageName: 'com.fubo.android' },
+  { tmdbProviderId: 33, label: 'Tubi', androidPackageName: 'com.tubitv' },
 ];
 
-/** HBO Max storefront id (**384**) is normalized to **1899** (Max) in `launchStreamingApp`. */
+/** Legacy storefront ids normalized via **`PROVIDER_ALIASES`** (**384** HBO Max → **1899**; **24** → **1899** Max). */
 
 const PROVIDER_ALIASES: Record<number, number> = {
   384: 1899,
+  24: 1899,
 };
 
 type ProviderRegistryEntry = {
@@ -97,6 +105,7 @@ function buildRegistry(): Record<number, ProviderRegistryEntry> {
   add(613, 'com.epix.epix.now', ['https://www.mgmplus.com/']);
   add(520, 'com.discovery.discoveryplus.mobile', ['https://www.discoveryplus.com/']);
   add(1794, 'com.fubo.android', ['https://www.fubo.tv/']);
+  add(33, 'com.tubitv', ['https://tubitv.com/']);
 
   return out;
 }
@@ -133,6 +142,7 @@ const SERVICE_NAME_TO_TMDB_PROVIDER: { needle: string; id: number }[] = [
   { needle: 'discovery+', id: 520 },
   { needle: 'discovery plus', id: 520 },
   { needle: 'fubo', id: 1794 },
+  { needle: 'tubi', id: 33 },
 ];
 
 /**
@@ -182,6 +192,20 @@ export function getAndroidTvPackageForTmdbProviderId(providerIdStr: string): str
   return list.length > 0 ? list[0] : null;
 }
 
+/**
+ * OEM **`Intent`** extras from **`STREAMING_PROVIDER_ANDROID_MATRIX`** (e.g. Netflix Ninja **`source`**).
+ */
+export function getAndroidTvLaunchExtrasForTmdbProviderId(
+  providerIdStr: string
+): Record<string, string> | undefined {
+  const pid = normalizeNumericProviderId(providerIdStr);
+  if (pid == null) return undefined;
+  const row = STREAMING_PROVIDER_ANDROID_MATRIX.find((r) => r.tmdbProviderId === pid);
+  const x = row?.androidLaunchExtras;
+  if (x == null || Object.keys(x).length === 0) return undefined;
+  return { ...x };
+}
+
 /** Netflix catalog id digits from `/watch/` or `/title/` paths. */
 const NETFLIX_ID_RE = /\/(?:watch|title)\/(\d+)/;
 
@@ -207,30 +231,135 @@ function sanitizeMaxCatalogSegment(raw: string): string | null {
   return /^[a-zA-Z0-9-]+$/.test(t) ? t : null;
 }
 
-/** Amazon Video ASIN from **`providerContentId`** (RapidAPI) or storefront URLs. */
-function extractAmazonAsinFromOption(option: StreamingOption): string | null {
+/** Tubi **`/movies/{id}`** segment (numeric or opaque slug). */
+function sanitizeTubiMovieId(raw: string): string | null {
+  const t = raw.trim();
+  if (t === '' || t.length > 128) return null;
+  return /^[a-zA-Z0-9_-]+$/.test(t) ? t : null;
+}
+
+function extractTubiMovieIdFromPath(pathname: string): string | null {
+  const norm = pathname.replace(/\/$/, '') || '/';
+  const m = norm.match(/^\/movies\/([^/?#]+)/i);
+  if (!m?.[1]) return null;
+  return sanitizeTubiMovieId(decodeURIComponent(m[1]));
+}
+
+/** Verified Prime Video ASIN: **10 chars**, **`B`** + nine alphanumerics. */
+const PRIME_VIDEO_ASIN_STRICT_RE = /^B[A-Z0-9]{9}$/i;
+
+/** Prime Video GTI: opaque catalog token (often **`amzn1.dv.gti…`**), never an ASIN. */
+const PRIME_GTI_MIN_LEN = 11;
+
+/** Research-backed ASIN probe on **`videoLink`** / **`link`** only when **`providerContentId`** is not a strict ASIN. */
+const PRIME_ASIN_FROM_LINKS_RE = /\b(B[A-Z0-9]{9})\b/i;
+
+function isStrictPrimeVideoAsin(raw: string): boolean {
+  return PRIME_VIDEO_ASIN_STRICT_RE.test(raw.trim());
+}
+
+function normalizeStrictPrimeAsin(raw: string): string {
+  return raw.trim().toUpperCase();
+}
+
+function isLikelyPrimeVideoGti(raw: string): boolean {
+  const t = raw.trim();
+  if (t === '') return false;
+  if (isStrictPrimeVideoAsin(t.toUpperCase())) return false;
+  if (t.length < PRIME_GTI_MIN_LEN) return false;
+  return /^[A-Za-z0-9._-]+$/.test(t);
+}
+
+function extractAmazonAsinFromHaystack(href: string): string | null {
+  const trimmed = href.trim();
+  if (trimmed === '') return null;
+  try {
+    const u = new URL(trimmed);
+    const qp = u.searchParams.get('asin');
+    if (qp && isStrictPrimeVideoAsin(qp)) return normalizeStrictPrimeAsin(qp);
+    const host = u.hostname.replace(/^www\./i, '').toLowerCase();
+    if (host === 'amazon.com') {
+      const parts = u.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+      if (parts.length === 1 && isStrictPrimeVideoAsin(parts[0])) {
+        return normalizeStrictPrimeAsin(parts[0]);
+      }
+      if (
+        parts.length === 2 &&
+        parts[0].toLowerCase() === 'dp' &&
+        isStrictPrimeVideoAsin(parts[1])
+      ) {
+        return normalizeStrictPrimeAsin(parts[1]);
+      }
+    }
+  } catch {
+    /* fragment or non-URL */
+  }
+  const pathAsin = trimmed.match(
+    /[/](?:gp[/]video[/]detail|detail|dp)[/]([A-Z0-9]{10})(?:[/\?#]|$)/i
+  );
+  if (pathAsin?.[1]) {
+    const up = pathAsin[1].toUpperCase();
+    if (isStrictPrimeVideoAsin(up)) return up;
+  }
+  const bAsin = trimmed.match(PRIME_ASIN_FROM_LINKS_RE);
+  if (bAsin?.[1]) return normalizeStrictPrimeAsin(bAsin[1]);
+  return null;
+}
+
+function extractPrimeGtiFromHaystack(href: string): string | null {
+  const trimmed = href.trim();
+  if (trimmed === '') return null;
+  try {
+    const u = new URL(trimmed);
+    const qp = u.searchParams.get('gti');
+    if (qp) {
+      const dec = decodeURIComponent(qp.trim());
+      if (isLikelyPrimeVideoGti(dec)) return dec;
+    }
+  } catch {
+    /* fragment or non-URL */
+  }
+  const m = trimmed.match(/[?&]gti=([^&#]+)/i);
+  if (m?.[1]) {
+    const dec = decodeURIComponent(m[1].trim());
+    if (isLikelyPrimeVideoGti(dec)) return dec;
+  }
+  return null;
+}
+
+function extractPrimeGtiFromOption(option: StreamingOption): string | null {
   if (typeof option.providerContentId === 'string') {
-    const t = option.providerContentId.trim().toUpperCase();
-    if (/^[A-Z0-9]{10}$/.test(t)) return t;
+    const t = option.providerContentId.trim();
+    if (isLikelyPrimeVideoGti(t)) return t;
   }
   const urls = [option.videoLink, option.link].filter(
     (u): u is string => typeof u === 'string' && u.trim() !== ''
   );
   for (const raw of urls) {
-    const href = raw.trim();
-    try {
-      const u = new URL(href);
-      const qp = u.searchParams.get('asin');
-      if (qp && /^[A-Z0-9]{10}$/i.test(qp)) return qp.toUpperCase();
-    } catch {
-      /* fragment or non-URL */
-    }
-    const pathAsin = href.match(
-      /[/](?:gp[/]video[/]detail|detail|dp)[/]([A-Z0-9]{10})(?:[/\?#]|$)/i
-    );
-    if (pathAsin?.[1]) return pathAsin[1].toUpperCase();
-    const b0 = href.match(/\b(B0[A-Z0-9]{8})\b/i);
-    if (b0?.[1]) return b0[1].toUpperCase();
+    const g = extractPrimeGtiFromHaystack(raw.trim());
+    if (g) return g;
+  }
+  return null;
+}
+
+/**
+ * Prime ASIN: strict **`B?????????`** on **`providerContentId`** only; otherwise **`/\b(B[A-Z0-9]{9})\b/i`** on **`videoLink`** / **`link`**.
+ */
+function extractAmazonAsinFromOption(option: StreamingOption): string | null {
+  if (typeof option.providerContentId === 'string') {
+    const t = option.providerContentId.trim().toUpperCase();
+    if (isStrictPrimeVideoAsin(t)) return normalizeStrictPrimeAsin(t);
+  }
+  const linkHaystacks: string[] = [];
+  if (typeof option.videoLink === 'string' && option.videoLink.trim() !== '') {
+    linkHaystacks.push(option.videoLink.trim());
+  }
+  if (typeof option.link === 'string' && option.link.trim() !== '') {
+    linkHaystacks.push(option.link.trim());
+  }
+  for (const h of linkHaystacks) {
+    const found = extractAmazonAsinFromHaystack(h);
+    if (found) return found;
   }
   return null;
 }
@@ -308,14 +437,20 @@ export function deriveProviderContentIdForStreamingOption(
       const forMax = sanitizeMaxCatalogSegment(t);
       if (pid === 1899 && forMax) return forMax;
       if (pid === 9) {
-        const u = t.toUpperCase();
-        if (/^[A-Z0-9]{10}$/.test(u)) return u;
+        const u = t.trim();
+        const up = u.toUpperCase();
+        if (isStrictPrimeVideoAsin(up)) return normalizeStrictPrimeAsin(u);
+        if (isLikelyPrimeVideoGti(u)) return u;
       }
       if (pid === 350) {
         const umc = extractAppleTvUmcFromString(t);
         if (umc) return umc;
       }
-      if (pid !== 8 && pid !== 1899 && pid !== 9 && pid !== 350) return t;
+      if (pid === 33) {
+        const tid = sanitizeTubiMovieId(t);
+        if (tid) return tid;
+      }
+      if (pid !== 8 && pid !== 1899 && pid !== 9 && pid !== 350 && pid !== 33) return t;
     }
   }
 
@@ -348,6 +483,23 @@ export function deriveProviderContentIdForStreamingOption(
         const fromPath = extractAppleTvUmcFromString(path + parsed.search + parsed.hash);
         if (fromPath) return fromPath;
       }
+
+      if (host.includes('tubitv.com')) {
+        const tubiId = extractTubiMovieIdFromPath(path);
+        if (tubiId) return tubiId;
+      }
+
+      if (
+        pid === 9 &&
+        (host.includes('primevideo.com') ||
+          host.includes('amazon.') ||
+          host.endsWith('amazon.com'))
+      ) {
+        const asin = extractAmazonAsinFromHaystack(href.trim());
+        if (asin) return asin;
+        const gti = extractPrimeGtiFromHaystack(href.trim());
+        if (gti) return gti;
+      }
     } catch {
       /* malformed URL — skip */
     }
@@ -355,6 +507,12 @@ export function deriveProviderContentIdForStreamingOption(
 
   return null;
 }
+
+/** No VIEW **`data`** — handoff uses **`MAIN`/`LAUNCHER`** only (Sony-safe “front door”). */
+export const TV_HANDOFF_MAIN_LAUNCH_MARKER = '__REELDIVE_TV_MAIN_LAUNCH__';
+
+/** @deprecated Use **`TV_HANDOFF_MAIN_LAUNCH_MARKER`**. */
+export const TV_HANDOFF_JUST_LAUNCH_URI = TV_HANDOFF_MAIN_LAUNCH_MARKER;
 
 function pushDedup(bucket: string[], seen: Set<string>, url: string) {
   const t = url.trim();
@@ -364,15 +522,135 @@ function pushDedup(bucket: string[], seen: Set<string>, url: string) {
 }
 
 /**
+ * Normalizes titles for **`nflx://`** / HTTPS storefront search (**ASCII letters/digits**, spaces, **`'`**, **`-`**).
+ */
+export function sanitizeMediaTitleForStorefrontSearch(title: string | undefined): string | null {
+  if (title == null) return null;
+  const t = title
+    .normalize('NFKC')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s'-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t !== '' ? t : null;
+}
+
+/** Tubi web search path (**`/search/{title}`**) after direct **`/movies/{id}`** fails on TV. */
+export function buildTubiHttpsSearchUrlFromMediaTitle(title: string | undefined): string | null {
+  const q = sanitizeMediaTitleForStorefrontSearch(title);
+  if (q == null) return null;
+  return `https://tubitv.com/search/${encodeURIComponent(q)}`;
+}
+
+function appendTvJustLaunchCandidate(bucket: string[], seen: Set<string>): void {
+  pushDedup(bucket, seen, TV_HANDOFF_MAIN_LAUNCH_MARKER);
+}
+
+function appendPrimeInstantVideoSearchCandidate(
+  bucket: string[],
+  seen: Set<string>,
+  mediaTitle: string | undefined
+): void {
+  const q = sanitizeMediaTitleForStorefrontSearch(mediaTitle);
+  if (q == null) return;
+  pushDedup(bucket, seen, `https://www.amazon.com/s?k=${encodeURIComponent(q)}&i=instant-video`);
+}
+
+function appendNetflixSearchCandidate(
+  bucket: string[],
+  seen: Set<string>,
+  mediaTitle: string | undefined
+): void {
+  const q = sanitizeMediaTitleForStorefrontSearch(mediaTitle);
+  if (q == null) return;
+  pushDedup(bucket, seen, `nflx://www.netflix.com/search?q=${encodeURIComponent(q)}`);
+}
+
+/** Optional context for storefront search fallbacks (**Netflix**, **Prime**). */
+export type CollectStreamingLaunchOptions = {
+  mediaTitle?: string;
+};
+
+/**
+ * Attempt B / implicit resolver: Netflix **`nflx://`**; Prime **`https://`** only (**Sony-safe**, no **`amzn://`**).
+ */
+export function toTvImplicitLaunchUri(
+  providerIdStr: string,
+  uri: string,
+  option: StreamingOption
+): string {
+  const pid = normalizeNumericProviderId(providerIdStr);
+  const u = uri.trim();
+  if (u === '') return u;
+
+  if (u === TV_HANDOFF_MAIN_LAUNCH_MARKER || u === TV_HANDOFF_JUST_LAUNCH_URI) return u;
+
+  if (pid === 8) {
+    if (u.startsWith('nflx://')) return u;
+    try {
+      const parsed = new URL(u);
+      if (parsed.hostname.toLowerCase().includes('netflix.com')) {
+        const path = parsed.pathname.replace(/\/$/, '') || '/';
+        const m = path.match(NETFLIX_ID_RE);
+        if (m?.[1]) {
+          return `nflx://www.netflix.com/watch/${encodeURIComponent(m[1])}`;
+        }
+      }
+    } catch {
+      /* keep raw */
+    }
+    return u;
+  }
+
+  if (pid === 9) {
+    if (u.includes('amazon.com/gp/video/detail/')) return u;
+    if (u.includes('app.primevideo.com/detail')) return u;
+    try {
+      const parsed = new URL(u);
+      const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+      if (host === 'amazon.com') {
+        const parts = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+        if (parts.length === 1 && isStrictPrimeVideoAsin(parts[0])) return u;
+        if (
+          parts.length === 2 &&
+          parts[0].toLowerCase() === 'dp' &&
+          isStrictPrimeVideoAsin(parts[1])
+        ) {
+          return u;
+        }
+      }
+    } catch {
+      /* keep parsing below */
+    }
+    const fromUriAsin = extractAmazonAsinFromHaystack(u);
+    const asin = fromUriAsin ?? extractAmazonAsinFromOption(option);
+    if (asin != null) {
+      return `https://amazon.com/${encodeURIComponent(asin)}`;
+    }
+    const gtiFromUri = extractPrimeGtiFromHaystack(u);
+    const gti = gtiFromUri ?? extractPrimeGtiFromOption(option);
+    if (gti != null) {
+      return `https://app.primevideo.com/detail?gti=${encodeURIComponent(gti)}`;
+    }
+    return u;
+  }
+
+  return u;
+}
+
+/**
  * Preferred launch URIs for **`providerId`** (TMDB) and RapidAPI **`option`**.
  *
- * **Netflix (Ninja / TV):** **`https://www.netflix.com/watch/[id]`** first, then **`nflx://www.netflix.com/watch/[id]`**.
- * **Prime (living room / TV):** **`amzn://view/details?asin=`** (**`apps/android`** variants target phones).
- * **Apple TV:** **`apple-tv://…`** keyed by storefront kind (**`movie`**, **`show`**, **`episode`**) with **`https://tv.apple.com/`** HTTPS fallbacks.
+ * **Netflix:** **`TV_HANDOFF_MAIN_LAUNCH_MARKER`** first (**front-door reliability**), then **`nflx://…/watch`**, search, HTTPS watch, links (**marker** is **`MAIN`** only — no VIEW **`data`**).
+ * **Prime (ASIN):** **`https://amazon.com/[ASIN]`** → **`https://amazon.com/dp/[ASIN]`** → **`https://www.amazon.com/gp/video/detail/[ASIN]`**; GTI → **`app.primevideo.com/detail?gti=`** (**no **`amzn://`**).
+ * **Max (1899; alias **24**):** **`https://play.max.com/video/watch/[ID]`** first (**`com.wbd.stream`**), then API links / registry.
+ * **Tubi (33):** **`https://tubitv.com/movies/[ID]`**, links, **`https://tubitv.com/`** home.
+ * **Apple TV:** **`https://tv.apple.com/{kind}/…`** first (**Sony web-wrapper**), then **`apple-tv://`**.
  */
 export function collectStreamingLaunchCandidates(
   providerId: string,
-  option: StreamingOption
+  option: StreamingOption,
+  launchOpts?: CollectStreamingLaunchOptions
 ): string[] {
   const pid = normalizeNumericProviderId(providerId);
   const entry = pid != null ? REGISTRY[pid] : undefined;
@@ -383,16 +661,20 @@ export function collectStreamingLaunchCandidates(
   const seen = new Set<string>();
 
   if (pid === 8) {
+    appendTvJustLaunchCandidate(ordered, seen);
+    if (storefrontId != null && storefrontId !== '') {
+      pushDedup(
+        ordered,
+        seen,
+        `nflx://www.netflix.com/watch/${encodeURIComponent(storefrontId)}`
+      );
+    }
+    appendNetflixSearchCandidate(ordered, seen, launchOpts?.mediaTitle);
     if (storefrontId != null && storefrontId !== '') {
       pushDedup(
         ordered,
         seen,
         `https://www.netflix.com/watch/${encodeURIComponent(storefrontId)}`
-      );
-      pushDedup(
-        ordered,
-        seen,
-        `nflx://www.netflix.com/watch/${encodeURIComponent(storefrontId)}`
       );
     }
     if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
@@ -405,11 +687,24 @@ export function collectStreamingLaunchCandidates(
 
   if (pid === 9) {
     const asin = extractAmazonAsinFromOption(option);
+    const gti = extractPrimeGtiFromOption(option);
+
     if (asin != null) {
-      pushDedup(ordered, seen, `amzn://view/details?asin=${encodeURIComponent(asin)}`);
+      const enc = encodeURIComponent(asin);
+      pushDedup(ordered, seen, `https://amazon.com/${enc}`);
+      pushDedup(ordered, seen, `https://amazon.com/dp/${enc}`);
+      pushDedup(ordered, seen, `https://www.amazon.com/gp/video/detail/${enc}`);
+    }
+    if (gti != null) {
+      pushDedup(
+        ordered,
+        seen,
+        `https://app.primevideo.com/detail?gti=${encodeURIComponent(gti)}`
+      );
     }
     if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
     if (option.link) pushDedup(ordered, seen, option.link);
+    appendPrimeInstantVideoSearchCandidate(ordered, seen, launchOpts?.mediaTitle);
     if (entry) {
       for (const u of entry.urls) pushDedup(ordered, seen, u);
     }
@@ -420,8 +715,8 @@ export function collectStreamingLaunchCandidates(
     const umc = extractAppleTvUmcIdFromOption(option);
     if (umc != null) {
       const kind = inferAppleTvPathKind(option);
-      pushDedup(ordered, seen, `apple-tv://${kind}/${encodeURIComponent(umc)}`);
       pushDedup(ordered, seen, `https://tv.apple.com/${kind}/${umc}`);
+      pushDedup(ordered, seen, `apple-tv://${kind}/${encodeURIComponent(umc)}`);
     }
     if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
     if (option.link) pushDedup(ordered, seen, option.link);
@@ -431,16 +726,41 @@ export function collectStreamingLaunchCandidates(
     return ordered;
   }
 
+  if (pid === 1899) {
+    if (storefrontId != null && storefrontId !== '') {
+      pushDedup(
+        ordered,
+        seen,
+        `https://play.max.com/video/watch/${encodeURIComponent(storefrontId)}`
+      );
+    }
+    if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
+    if (option.link) pushDedup(ordered, seen, option.link);
+    if (entry) {
+      for (const u of entry.urls) pushDedup(ordered, seen, u);
+    }
+    return ordered;
+  }
+
+  if (pid === 33) {
+    if (storefrontId != null && storefrontId !== '') {
+      pushDedup(
+        ordered,
+        seen,
+        `https://tubitv.com/movies/${encodeURIComponent(storefrontId)}`
+      );
+    }
+    if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
+    if (option.link) pushDedup(ordered, seen, option.link);
+    if (entry) {
+      for (const u of entry.urls) pushDedup(ordered, seen, u);
+    }
+    pushDedup(ordered, seen, 'https://tubitv.com/');
+    return ordered;
+  }
+
   if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
   if (option.link) pushDedup(ordered, seen, option.link);
-
-  if (pid === 1899 && storefrontId != null && storefrontId !== '') {
-    pushDedup(
-      ordered,
-      seen,
-      `https://play.max.com/video/watch/${encodeURIComponent(storefrontId)}`
-    );
-  }
 
   if (entry) {
     for (const u of entry.urls) {
@@ -454,22 +774,31 @@ export function collectStreamingLaunchCandidates(
 /**
  * First candidate from **`collectStreamingLaunchCandidates`** (typically API **`videoLink`** when present).
  */
-export function resolveStreamingLaunchUrl(providerId: string, option: StreamingOption): string | null {
-  const list = collectStreamingLaunchCandidates(providerId, option);
+export function resolveStreamingLaunchUrl(
+  providerId: string,
+  option: StreamingOption,
+  launchOpts?: CollectStreamingLaunchOptions
+): string | null {
+  const list = collectStreamingLaunchCandidates(providerId, option, launchOpts);
   return list.length > 0 ? list[0] : null;
 }
 
 /**
  * Tries **`collectStreamingLaunchCandidates`** in order with **`Linking.openURL`** until one succeeds.
  */
-export async function launchStreamingApp(providerId: string, option: StreamingOption): Promise<boolean> {
+export async function launchStreamingApp(
+  providerId: string,
+  option: StreamingOption,
+  launchOpts?: CollectStreamingLaunchOptions
+): Promise<boolean> {
   const pid = normalizeNumericProviderId(providerId);
   const entry = pid != null ? REGISTRY[pid] : undefined;
   if (!entry || pid == null) return false;
 
-  const candidates = collectStreamingLaunchCandidates(providerId, option);
+  const candidates = collectStreamingLaunchCandidates(providerId, option, launchOpts);
 
   for (const url of candidates) {
+    if (url === TV_HANDOFF_MAIN_LAUNCH_MARKER || url === TV_HANDOFF_JUST_LAUNCH_URI) continue;
     try {
       await Linking.openURL(url);
       return true;

@@ -38,6 +38,8 @@ type HandoffOverlayState = {
 
 export type WatchOnButtonProps = {
   provider: StreamingOption;
+  /** Passed into **`collectStreamingLaunchCandidates`** for **`nflx://`** / Prime Video search fallbacks on TV. */
+  mediaTitle?: string;
   /** Opens RapidAPI HTTPS URLs — used when `launchStreamingApp` exhausts candidates (and on Web / iOS). */
   onOpenStreamingUrl: (url: string) => void | Promise<void>;
   isLandscape: boolean;
@@ -45,20 +47,31 @@ export type WatchOnButtonProps = {
   tvTextNf?: Record<string, unknown>;
   focusableExplicit?: boolean;
   setEntryRef?: TvRowEntryRefSetter;
+  /** Explicit **`nextFocusDown`** (native tag). Omit until the target row has mounted. */
   tvNextFocusDown?: number | null;
+  tvNextFocusUp?: number | null;
+  /** Row index / count for **`tvOnLadderNativeTag`** registration (Android TV provider stack). */
+  tvLadderIndex?: number;
+  tvLadderSize?: number;
+  tvOnLadderNativeTag?: (index: number, nativeTag: number | null, size: number) => void;
   tvLadderNav?: boolean;
   tvClampRightEdge?: boolean;
 };
 
 export function WatchOnButton({
   provider,
+  mediaTitle,
   onOpenStreamingUrl,
   isLandscape,
   isPreferredEntry = false,
   tvTextNf = {},
   focusableExplicit = false,
   setEntryRef,
-  tvNextFocusDown = null,
+  tvNextFocusDown,
+  tvNextFocusUp,
+  tvLadderIndex,
+  tvLadderSize,
+  tvOnLadderNativeTag,
   tvLadderNav = false,
   tvClampRightEdge = false,
 }: WatchOnButtonProps) {
@@ -71,9 +84,22 @@ export function WatchOnButton({
     setEntryRef?.(node);
   };
 
+  const providerKey = resolveTmdbProviderIdForStreamingOption(provider);
   const platformName =
     provider.serviceName.trim() !== '' ? provider.serviceName.trim() : 'service';
-  const label = `Watch on ${platformName}`;
+  const isAndroidTvUi = Platform.OS === 'android' && isTvTarget();
+  let label = `Watch on ${platformName}`;
+  if (isAndroidTvUi && providerKey === '8') {
+    label = 'Go to Netflix';
+  } else if (isAndroidTvUi && providerKey === '9') {
+    label = 'Go to Amazon Prime';
+  } else if (isAndroidTvUi && providerKey === '350') {
+    label = 'Go to Apple TV';
+  } else if (isAndroidTvUi && providerKey === '1899') {
+    label = 'Watch on Max';
+  } else if (isAndroidTvUi && providerKey === '33') {
+    label = 'Watch on Tubi';
+  }
 
   useEffect(() => {
     if (!handoffOverlay) {
@@ -111,25 +137,47 @@ export function WatchOnButton({
     };
   }, [handoffOverlay]);
 
+  useEffect(() => {
+    if (
+      Platform.OS !== 'android' ||
+      !tvLadderNav ||
+      tvOnLadderNativeTag == null ||
+      tvLadderIndex == null ||
+      tvLadderSize == null
+    ) {
+      return;
+    }
+    tvOnLadderNativeTag(tvLadderIndex, localTag, tvLadderSize);
+  }, [tvLadderNav, tvOnLadderNativeTag, tvLadderIndex, tvLadderSize, localTag]);
+
   const downNav =
     tvLadderNav && tvNextFocusDown != null
       ? tvAndroidNavProps({ nextFocusDown: tvNextFocusDown })
+      : undefined;
+  const upNav =
+    tvLadderNav && tvNextFocusUp != null
+      ? tvAndroidNavProps({ nextFocusUp: tvNextFocusUp })
       : undefined;
   const rightWall =
     tvLadderNav && tvClampRightEdge && localTag != null
       ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
       : undefined;
 
-  const handlePress = useCallback(async () => {
-    const providerKey = resolveTmdbProviderIdForStreamingOption(provider);
-    const preferredHttps = (provider.videoLink ?? provider.link).trim();
-    const isAndroidTvUi = Platform.OS === 'android' && isTvTarget();
+  const tvNativeFocusable =
+    Platform.OS === 'android' && isTvTarget() ? true : focusableExplicit ? true : undefined;
+  const tvAccessible = Platform.OS === 'android' && isTvTarget() ? true : undefined;
 
-    if (isAndroidTvUi && providerKey != null) {
+  const handlePress = useCallback(async () => {
+    const preferredHttps = (provider.videoLink ?? provider.link).trim();
+    const onTvAndroid = Platform.OS === 'android' && isTvTarget();
+
+    if (onTvAndroid && providerKey != null) {
       const pkg = getAndroidTvPackageForTmdbProviderId(providerKey);
       if (pkg != null) {
         setHandoffOverlay({ providerLabel: platformName, packageName: pkg });
-        const res = await launchStreamingViaAndroidTvIntent(providerKey, provider);
+        const res = await launchStreamingViaAndroidTvIntent(providerKey, provider, {
+          mediaTitle,
+        });
         if (res.ok) return;
         if (preferredHttps !== '') {
           await onOpenStreamingUrl(preferredHttps);
@@ -140,49 +188,54 @@ export function WatchOnButton({
     }
 
     if (Platform.OS === 'android' && providerKey != null) {
-      const opened = await launchStreamingApp(providerKey, provider);
+      const opened = await launchStreamingApp(providerKey, provider, { mediaTitle });
       if (opened) return;
     }
 
     if (preferredHttps !== '') {
       await onOpenStreamingUrl(preferredHttps);
     }
-  }, [provider, onOpenStreamingUrl, platformName]);
+  }, [provider, providerKey, mediaTitle, onOpenStreamingUrl, platformName]);
 
   const initialGlyph = platformName.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <>
-      <Pressable
-        ref={mergedRef as never}
-        {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
-        focusable={focusableExplicit ? true : undefined}
-        {...(downNav ?? {})}
-        {...(rightWall ?? {})}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        onPress={() => void handlePress()}
-        style={({ pressed }) => [
-          styles.streamingTvButton,
-          isLandscape && styles.streamingTvButtonDesktop,
-          isFocused && styles.streamingTvButtonFocused,
-          pressed && styles.streamingTvButtonPressing,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityHint="Opens streaming app when available"
-      >
-        <Text
-          style={[
-            styles.streamingTvButtonText,
-            isLandscape && styles.streamingTvButtonTextDesktop,
+      {/* Slot **`pointerEvents="box-none"`**: touches hit the **`Pressable`** only; avoids parent clipping in stacked layouts. */}
+      <View style={styles.streamingTvButtonSlot} pointerEvents="box-none" collapsable={false}>
+        <Pressable
+          ref={mergedRef as never}
+          {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
+          focusable={tvNativeFocusable}
+          accessible={tvAccessible}
+          {...(downNav ?? {})}
+          {...(upNav ?? {})}
+          {...(rightWall ?? {})}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onPress={() => void handlePress()}
+          style={({ pressed }) => [
+            styles.streamingTvButton,
+            isLandscape && styles.streamingTvButtonDesktop,
+            isFocused && styles.streamingTvButtonFocused,
+            pressed && styles.streamingTvButtonPressing,
           ]}
-          numberOfLines={1}
-          {...tvTextNf}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint="Opens streaming app when available"
         >
-          {label}
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              styles.streamingTvButtonText,
+              isLandscape && styles.streamingTvButtonTextDesktop,
+            ]}
+            numberOfLines={1}
+            {...tvTextNf}
+          >
+            {label}
+          </Text>
+        </Pressable>
+      </View>
 
       <Modal visible={handoffOverlay != null} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.handoffBackdrop} pointerEvents="box-none">
@@ -210,6 +263,10 @@ export function WatchOnButton({
 }
 
 const styles = StyleSheet.create({
+  streamingTvButtonSlot: {
+    width: '100%',
+    alignSelf: 'stretch',
+  },
   streamingTvButton: {
     width: '100%',
     alignSelf: 'stretch',
@@ -228,13 +285,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 12,
   },
+  /** No **`scale`** / **`zIndex`** here — on stacked rows they inflate hit-testing and the focused row steals presses below. */
   streamingTvButtonFocused: {
     borderColor: STREAM_BTN_FOCUS,
     borderWidth: 3,
-    transform: [{ scale: 1.05 }],
     overflow: 'visible',
-    zIndex: 2,
-    elevation: 6,
   },
   streamingTvButtonPressing: {
     opacity: 0.88,

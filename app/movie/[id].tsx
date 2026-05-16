@@ -427,6 +427,38 @@ export default function MovieDetailsScreen() {
   const [streamingProviders, setStreamingProviders] = useState<
     StreamingOption[]
   >([]);
+  const streamNavOptionCount = useMemo(
+    () =>
+      (streamingProviders ?? []).filter(
+        (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
+      ).length,
+    [streamingProviders],
+  );
+  /** Native tags for each “Where to Watch” row (`nextFocusDown` chains vertically on Sony TV). */
+  const [streamLadderTags, setStreamLadderTags] = useState<(number | null)[]>([]);
+
+  useEffect(() => {
+    setStreamLadderTags((prev) => {
+      if (prev.length === streamNavOptionCount) return prev;
+      const next = new Array(streamNavOptionCount).fill(null);
+      for (let i = 0; i < Math.min(prev.length, streamNavOptionCount); i++) {
+        next[i] = prev[i] ?? null;
+      }
+      return next;
+    });
+  }, [streamNavOptionCount]);
+
+  const onStreamLadderNativeTag = useCallback(
+    (index: number, nativeTag: number | null, size: number) => {
+      setStreamLadderTags((prev) => {
+        const next =
+          prev.length === size ? [...prev] : Array.from({ length: size }, (_, i) => prev[i] ?? null);
+        next[index] = nativeTag;
+        return next;
+      });
+    },
+    [],
+  );
   /** OMDb / DB cached scores for title row (RT %, Metascore string). */
   const [omdbRatingsDisplay, setOmdbRatingsDisplay] = useState<{
     rt_score: string | null;
@@ -1353,6 +1385,10 @@ export default function MovieDetailsScreen() {
     const validStreamOptionsNav = (streamingProviders ?? []).filter(
       (opt) => typeof opt.link === 'string' && opt.link.trim() !== '',
     );
+    const streamRowAnchorUpTag =
+      validStreamOptionsNav.length > 0
+        ? streamLadderTags[validStreamOptionsNav.length - 1] ?? streamRowEntryTag
+        : streamRowEntryTag;
     const hasSimilarActionBtn = shouldShowRecommendations && recommendations.length > 0;
     const hasStreams = validStreamOptionsNav.length > 0;
     const hasTrailer = !!trailerKey;
@@ -1373,7 +1409,11 @@ export default function MovieDetailsScreen() {
       ? (castRowEntryTag ?? crewRowEntryTag)
       : null;
     const upAboveSecondary = tvLadderAndroid
-      ? (hasTrailer ? trailerRowEntryTag : streamRowEntryTag)
+      ? hasTrailer
+        ? trailerRowEntryTag
+        : hasStreams
+          ? streamRowAnchorUpTag
+          : streamRowEntryTag
       : null;
     const upOnCastLadder = tvLadderAndroid
       ? (secondaryActionRowEntryTag ?? trailerRowEntryTag ?? streamRowEntryTag)
@@ -1414,7 +1454,7 @@ export default function MovieDetailsScreen() {
       downFromSecondaryLadder,
     );
     const trailerRowNav = buildLadder(
-      hasStreams ? streamRowEntryTag : null,
+      hasStreams ? streamRowAnchorUpTag : null,
       downFromTrailerRow,
     );
     const lastWallIsSimilar = hasSimilarActionBtn;
@@ -1528,7 +1568,7 @@ export default function MovieDetailsScreen() {
         ) : null}
 
         <View
-          {...tvNf}
+          pointerEvents="box-none"
           style={[
             styles.whereToWatchStreamSection,
             isLandscape && styles.whereToWatchStreamSectionDesktop,
@@ -1549,19 +1589,40 @@ export default function MovieDetailsScreen() {
             </Text>
           ) : (
             validStreamOptionsNav.map((opt, idx) => (
-              <WatchOnButton
-                key={`${opt.serviceId}-${idx}`}
-                provider={opt}
-                onOpenStreamingUrl={handleStreamingPress}
-                isLandscape={isLandscape}
-                isPreferredEntry={detailsTvPrimary === 'stream0' && idx === 0}
-                tvTextNf={tvNf}
-                focusableExplicit={tvDpadFocus}
-                setEntryRef={idx === 0 ? setStreamRowEntryRef : undefined}
-                tvNextFocusDown={downFromStreamLadder}
-                tvLadderNav={tvLadderAndroid}
-                tvClampRightEdge={idx === validStreamOptionsNav.length - 1}
-              />
+              <View
+                key={`watch-${opt.serviceId}-${opt.link}`}
+                style={styles.watchOnProviderRow}
+                pointerEvents="box-none"
+                collapsable={false}
+              >
+                <WatchOnButton
+                  provider={opt}
+                  mediaTitle={movie.title}
+                  onOpenStreamingUrl={handleStreamingPress}
+                  isLandscape={isLandscape}
+                  isPreferredEntry={detailsTvPrimary === 'stream0' && idx === 0}
+                  tvTextNf={tvNf}
+                  focusableExplicit={tvDpadFocus}
+                  setEntryRef={idx === 0 ? setStreamRowEntryRef : undefined}
+                  tvNextFocusDown={
+                    tvLadderAndroid
+                      ? idx < validStreamOptionsNav.length - 1
+                        ? streamLadderTags[idx + 1] ?? undefined
+                        : downFromStreamLadder ?? undefined
+                      : undefined
+                  }
+                  tvNextFocusUp={
+                    tvLadderAndroid && idx > 0
+                      ? streamLadderTags[idx - 1] ?? undefined
+                      : undefined
+                  }
+                  tvLadderIndex={idx}
+                  tvLadderSize={validStreamOptionsNav.length}
+                  tvOnLadderNativeTag={onStreamLadderNativeTag}
+                  tvLadderNav={tvLadderAndroid}
+                  tvClampRightEdge={idx === validStreamOptionsNav.length - 1}
+                />
+              </View>
             ))
           )}
         </View>
@@ -2255,6 +2316,10 @@ const styles = StyleSheet.create({
   whereToWatchStreamSectionDesktop: {
     marginTop: 12,
     marginBottom: 8,
+  },
+  /** One provider row — **`collapsable={false}`** + **`box-none`** keeps stacked **`Pressable`** hit targets distinct on Android. */
+  watchOnProviderRow: {
+    width: '100%',
   },
   /** Single “Watch trailer” control below streaming, above secondary actions. */
   trailerButtonRow: {
