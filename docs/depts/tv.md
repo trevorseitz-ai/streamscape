@@ -29,6 +29,8 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 **Implementation alignment:** Mirror these values in screen constants (e.g. **`TV_FIXED_POSTER_WIDTH` / `TV_FIXED_POSTER_HEIGHT` / `TV_GRID_COLUMNS`** in **`app/(tabs)/index.tsx`**, and matching **`DISCOVER_TV_*`** tokens in **`app/(tabs)/discover.tsx`**). Horizontal TV lists should use **`gap: 20`** (or the same token) in **`contentContainerStyle`** alongside **`DISCOVER_TV_GAP`** / **`HomeTvMovieRow`** row spacing so all tabs stay uniform.
 
+**Discover page shell:** **`DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX` (34px)** — single Year chip rail height (`styles.chip` vertical math); applied as **`paddingTop`** on the Discover **`styles.container`** so clearance sits **above** the Year row. **`DISCOVER_HEADER_TO_RAIL_GAP_PX` (12px)** matches **`TvMovieGridRow`** `sectionTitleWrap.marginBottom` for monetization → section title → poster rail rhythm; **`TvMovieGridRow`** is never wrapped or margin-hacked per row.
+
 **Non-TV:** Web and phone Discover grids may still use **`discoverPosterGridColumns`** for responsive columns; that behavior does **not** override the TV fixed grid above.
 
 ---

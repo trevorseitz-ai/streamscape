@@ -101,6 +101,16 @@ const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 32;
 const YEAR_JUMP_DISTANCE = 350;
 const YEAR_CHIP_SNAP_INTERVAL = 70;
 
+/**
+ * Single Year chip rail height (`styles.chip`: paddingVertical 8×2 + label line for fontSize 14).
+ * Page-level `paddingTop` above the Year row — ground truth **34px**.
+ */
+const DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX = 34;
+/**
+ * Vertical gap between section headings and poster rails — matches `TvMovieGridRow` `sectionTitleWrap.marginBottom` (**12px**).
+ */
+const DISCOVER_HEADER_TO_RAIL_GAP_PX = 12;
+
 interface DiscoverResult {
   id: string;
   title: string;
@@ -912,7 +922,9 @@ export default function DiscoverScreen() {
                 <TvMovieGridRow
                   movies={item.movies}
                   onPress={(movie) => router.push(`/movie/${movie.id}`)}
-                  renderMovieFooter={(movie) => renderDiscoverFooter(movie as DiscoverResult)}
+                  renderMovieFooter={(movie) =>
+                    renderDiscoverFooter(movie as DiscoverResult)
+                  }
                   tvFocus={
                     Platform.OS === 'android'
                       ? {
@@ -924,7 +936,8 @@ export default function DiscoverScreen() {
                           isLastMovieRow,
                           wrapNavVersion,
                           sidebarLeftNavTag: discoverSidebarLeftTag,
-                          mainContentEntryNavTag: mainContentEntryNativeTag ?? null,
+                          mainContentEntryNavTag:
+                            mainContentEntryNativeTag ?? null,
                         }
                       : undefined
                   }
@@ -981,7 +994,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',
-    paddingTop: 8,
+    paddingTop: DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX,
     alignItems: 'stretch',
     justifyContent: 'flex-start',
   },
@@ -1062,7 +1075,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     paddingHorizontal: HORIZONTAL_PADDING,
-    marginBottom: 12,
+    marginBottom: DISCOVER_HEADER_TO_RAIL_GAP_PX,
   },
   monetizationPill: {
     paddingVertical: 8,
@@ -1133,7 +1146,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 16,
+    marginBottom: DISCOVER_HEADER_TO_RAIL_GAP_PX,
   },
   phaseDivider: {
     flexDirection: 'row',

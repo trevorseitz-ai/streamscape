@@ -23,6 +23,11 @@ On **Android TV**, poster rails use **fixed integer** cells — not fluid row-wi
 
 Shell padding (left/right **20px** from the nav and bezel) still applies around the content band; poster **cell** dimensions remain **140×210** regardless of **1080p** / **4K** logical width.
 
+### Discover page spacing (TV + shared shell)
+
+- **Page top (above Year row):** **`DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX`** = **34px** — one chip rail per **`styles.chip`** (`paddingVertical` **8** × 2 + **18px** label line). Set as **`paddingTop`** on **`styles.container`** in **`app/(tabs)/discover.tsx`** (not on **`TvMovieGridRow`**).
+- **Filter block → section title → rails:** **`DISCOVER_HEADER_TO_RAIL_GAP_PX`** = **12px**, aligned with **`TvMovieGridRow`** **`sectionTitleWrap.marginBottom`**. **`styles.monetizationRow.marginBottom`** and **`styles.sectionTitle.marginBottom`** use this token; poster grids remain unwrapped **`TvMovieGridRow`** (fixed **140×210**, **5** cols, **20px** gap, D-pad logic unchanged).
+
 ## 3. The Guillotine Effect (Focus Clipping)
 
 When a TV component scales up on focus (`transform: [{ scale: 1.05 }]`), it physically expands outside of its container.
