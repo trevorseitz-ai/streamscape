@@ -103,7 +103,7 @@ High-jitter viewports (**mobile Safari**, mobile browsers with chrome inset) emi
 
 ### Triple-Platform Adaptive Strategy
 
-1. **`lib/viewport-utils.ts`** — **`bucketViewportWidth`** (10px stability) and **`discoverPosterGridColumns`** (**3 / 4 / 6** tiers) apply to **Web** and **mobile** Discover/grid density. **Android TV** poster rails use the **fixed** **140×210**, **5** columns, **20px** horizontal gap per [`docs/depts/tv.md`](docs/depts/tv.md) — not fluid row-width division.
+1. **`lib/viewport-utils.ts`** — **`bucketViewportWidth`** (10px stability) and **`discoverPosterGridColumns`** (**3 / 4 / 6** tiers) apply to **Web** and **mobile** Discover/grid density. **Android TV** poster rails use the **fixed** **140×210** poster **image**, **5** columns, **20px** horizontal gap per [`docs/depts/tv.md`](docs/depts/tv.md) — not fluid row-width division. **TV Discover** adds a **56px** meta footer band plus a **286px** canonical vertical **`FlatList`** stride (**210 + 56 + 20**) for **`getItemLayout`** / snap — see **`docs/depts/tv.md`** / **`docs/tv_layout_rules.md`**.
 2. **Native Android security (TV stability)** — Config plugin **`plugins/withAndroidNetworkSecurity.js`** (wired via [`app.config.ts`](app.config.ts)) sets **`android:usesCleartextTraffic`** and **`network_security_config`** (cleartext for Metro dev, HTTPS for Supabase in `.env`). After plugin or `.env` changes, native TV builds use **`npm run tv:clean`**. Detail: [`docs/depts/tv.md`](docs/depts/tv.md).
 
 ### Implementation choke points

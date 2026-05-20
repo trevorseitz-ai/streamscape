@@ -36,12 +36,17 @@ import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
-import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
+import {
+  enrichWithTmdbImages,
+  enrichTmdbReleaseYearsForDiscover,
+} from '../../lib/film-show-rapid-discover';
 import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import { discoverPosterGridColumns } from '../../lib/viewport-utils';
 import {
   TvMovieGridRow,
   TV_MOVIE_GRID_COLUMNS,
+  TV_MOVIE_GRID_LIST_VERTICAL_PAD,
+  TV_MOVIE_GRID_POSTER_HEIGHT,
 } from '../../components/TvMovieGridRow';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -111,6 +116,47 @@ const DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX = 34;
  */
 const DISCOVER_HEADER_TO_RAIL_GAP_PX = 12;
 
+/** Baseline title size before compact scales — see **`DISCOVER_POSTER_META_TITLE_PX`**. */
+const DISCOVER_POSTER_META_TITLE_BASE_PX = 14;
+/**
+ * Footer meta: **75%** of baseline, then **−10%** (**11 × 0.9 → 10**) — single **`Title - Year`** string.
+ */
+const DISCOVER_POSTER_META_TITLE_PX = Math.round(
+  Math.round(DISCOVER_POSTER_META_TITLE_BASE_PX * 0.75) * 0.9
+);
+
+/** Bounded Discover poster footer — matches **140px** poster width; **56px** fits **2** wrapped lines of unified **`Title - Year`** without clipping. */
+const DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX = 6;
+const DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX = 56;
+const DISCOVER_POSTER_META_FOOTER_TOTAL_PX =
+  DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX + DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX;
+
+/**
+ * Former single-line title slot height — subtracted from Discover TV list vertical pad to tighten row rhythm
+ * while the footer keeps a fixed-height **`Title - Year`** block.
+ */
+const DISCOVER_POSTER_META_LEGACY_TITLE_SLOT_HEIGHT_PX = 20;
+const DISCOVER_TV_MOVIE_GRID_LIST_VERTICAL_PAD_PX = Math.max(
+  0,
+  TV_MOVIE_GRID_LIST_VERTICAL_PAD - DISCOVER_POSTER_META_LEGACY_TITLE_SLOT_HEIGHT_PX
+);
+
+/**
+ * Canonical **286px** vertical stride for Discover TV results **`FlatList`** (**`getItemLayout`** / **`snapToInterval`**):
+ * **210** (`TV_MOVIE_GRID_POSTER_HEIGHT`) poster image + **56** (`DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX`) unified meta footer block + **20px** vertical list gap token (`DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX`).
+ * Uniform movie-row lists use **`offset: index × 286`**; lists that include a phase divider fall back to cumulative offsets (row slot still **286px**).
+ */
+const DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX = 20;
+const DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX =
+  TV_MOVIE_GRID_POSTER_HEIGHT +
+  DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX +
+  DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX;
+
+const DISCOVER_TV_LIST_MOVIE_ROW_LAYOUT_HEIGHT_PX = DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX;
+
+/** Must track **`styles.phaseDivider`** vertical footprint (margins + text). */
+const DISCOVER_TV_LIST_PHASE_DIVIDER_HEIGHT_PX = 56;
+
 interface DiscoverResult {
   id: string;
   title: string;
@@ -118,8 +164,10 @@ interface DiscoverResult {
   /** Present when hydrated from Stream Finder cache + TMDB enrichment. */
   backdrop_url?: string | null;
   release_year: number | null;
+  /** TMDB / API **`YYYY-MM-DD`** when hydrated (Stream Finder + TMDB merges). */
+  release_date?: string | null;
   vote_average: number | null;
-  platforms: Array<{ name: string; access_type: string }>;
+  platforms: Array<{ name: string; access_type: string; logo_path?: string | null }>;
   /** TMDB id — enrichment + routing. */
   tmdb_id?: number | null;
   /** Stream Finder: rows joined from `stream_finder_providers`; sorted by name when present. */
@@ -142,6 +190,42 @@ interface TMDBDiscoverResponse {
 function toFullImageUrl(path: string | null | undefined): string | null {
   if (!path || !path.startsWith('/')) return null;
   return `${TMDB_IMAGE_BASE}${path}`;
+}
+
+function parseYearLeadingFromString(input: string | null | undefined): number | null {
+  if (!input || typeof input !== 'string') return null;
+  const t = input.trim();
+  if (t.length < 4 || !/^\d{4}/.test(t)) return null;
+  const y = parseInt(t.slice(0, 4), 10);
+  if (!Number.isFinite(y) || y < 1800 || y > 2100) return null;
+  return y;
+}
+
+/** Resolves footer year from **`release_year`**, **`release_date`**, or loose **`year` / `releaseDate`** keys. */
+function getDiscoverReleaseYearForFooter(movie: DiscoverResult): number | null {
+  if (movie.release_year != null && Number.isFinite(movie.release_year)) {
+    const y = Math.trunc(movie.release_year);
+    if (y >= 1800 && y <= 2100) return y;
+  }
+  const fromPrimaryDate = parseYearLeadingFromString(movie.release_date ?? undefined);
+  if (fromPrimaryDate != null) return fromPrimaryDate;
+
+  const loose = movie as DiscoverResult & { year?: unknown; releaseDate?: string | null };
+  if (typeof loose.year === 'number' && Number.isFinite(loose.year)) {
+    const y = Math.floor(loose.year);
+    if (y >= 1800 && y <= 2100) return y;
+  }
+  if (typeof loose.year === 'string') {
+    const y = parseYearLeadingFromString(loose.year);
+    if (y != null) return y;
+  }
+  return parseYearLeadingFromString(loose.releaseDate ?? undefined);
+}
+
+/** Discover poster footer: **`Title - YYYY`** (year omitted when unknown). */
+function formatDiscoverPosterMetaLine(movie: DiscoverResult): string {
+  const y = getDiscoverReleaseYearForFooter(movie);
+  return y != null ? `${movie.title} - ${y}` : movie.title;
 }
 
 type MonetizationType = 'flatrate' | 'rent' | 'both';
@@ -204,6 +288,7 @@ async function fetchDiscoverFromTMDB(
     release_year: m.release_date
       ? parseInt(m.release_date.slice(0, 4), 10)
       : null,
+    release_date: m.release_date ?? null,
     vote_average: m.vote_average ?? null,
     platforms: [],
   }));
@@ -350,7 +435,7 @@ export default function DiscoverScreen() {
   const verticalPeekPadding = useMemo(() => {
     if (isTV) return 0;
     const posterH = discoverPosterLayout.posterHeight;
-    const titleAndMeta = 88;
+    const titleAndMeta = DISCOVER_POSTER_META_FOOTER_TOTAL_PX + 12;
     const rowHeight = posterH + titleAndMeta + gridGap;
     return Math.round(rowHeight * 0.5);
   }, [discoverPosterLayout.posterHeight, gridGap, isTV]);
@@ -391,7 +476,9 @@ export default function DiscoverScreen() {
         }
         const enriched = await enrichWithTmdbImages(mapped);
         if (cancelled) return;
-        setPhase1Movies(enriched as DiscoverResult[]);
+        const withYears = await enrichTmdbReleaseYearsForDiscover(enriched);
+        if (cancelled) return;
+        setPhase1Movies(withYears as DiscoverResult[]);
       } catch (e) {
         console.warn('[Discover] Stream Finder cache load failed:', e);
         streamFinderCuratedFeedActiveRef.current = false;
@@ -621,6 +708,45 @@ export default function DiscoverScreen() {
     return items;
   }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns]);
 
+  const tvDiscoverListLayoutMetrics = useMemo(() => {
+    if (!isTV) return null;
+    const rowH = DISCOVER_TV_LIST_MOVIE_ROW_LAYOUT_HEIGHT_PX;
+    const divH = DISCOVER_TV_LIST_PHASE_DIVIDER_HEIGHT_PX;
+    const lengths = listData.map((it) => (it.type === 'divider' ? divH : rowH));
+    const offsets: number[] = [];
+    let acc = 0;
+    for (let i = 0; i < lengths.length; i++) {
+      offsets.push(acc);
+      acc += lengths[i]!;
+    }
+    return { lengths, offsets };
+  }, [isTV, listData]);
+
+  const discoverTvRowSnapUniform =
+    isTV && !listData.some((x) => x.type === 'divider');
+
+  const discoverTvGetItemLayout = useCallback(
+    (_data: ArrayLike<ListItem> | null | undefined, index: number) => {
+      if (discoverTvRowSnapUniform) {
+        return {
+          length: DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX,
+          offset: DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX * index,
+          index,
+        };
+      }
+      const m = tvDiscoverListLayoutMetrics;
+      if (!m) {
+        return { length: 0, offset: 0, index };
+      }
+      return {
+        length: m.lengths[index] ?? 0,
+        offset: m.offsets[index] ?? 0,
+        index,
+      };
+    },
+    [discoverTvRowSnapUniform, tvDiscoverListLayoutMetrics]
+  );
+
   const totalMovieRows = useMemo(
     () => listData.filter((x) => x.type === 'row').length,
     [listData]
@@ -834,14 +960,25 @@ export default function DiscoverScreen() {
       ) : null}
 
       {hasMovies && (
-        /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
+        /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows).
+         * TV: no `viewabilityConfig` / `itemVisiblePercentThreshold` here — vertical stride relies on `getItemLayout` + native focus bounds inside `TvMovieGridRow` Pressable.
+         */
         <FlatList
           key={
-            isTV ? `discover-tv-grid-${TV_MOVIE_GRID_COLUMNS}` : `discover-poster-grid-${numColumns}`
+            isTV
+              ? `discover-tv-list-stride-${DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX}`
+              : `discover-poster-grid-${numColumns}`
           }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}
           keyExtractor={(item) => item.key}
+          getItemLayout={isTV ? discoverTvGetItemLayout : undefined}
+          snapToInterval={
+            discoverTvRowSnapUniform ? DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX : undefined
+          }
+          snapToAlignment="start"
+          disableIntervalMomentum={discoverTvRowSnapUniform}
+          decelerationRate={isTV ? 'fast' : 'normal'}
           contentContainerStyle={[
             styles.resultsContent,
             {
@@ -896,19 +1033,29 @@ export default function DiscoverScreen() {
               );
             }
 
-            const renderDiscoverFooter = (movie: DiscoverResult) =>
-              movie.platforms.length > 0 ? (
-                <View style={styles.platformBadges}>
-                  {movie.platforms
-                    .filter((p) => p.access_type === 'subscription')
-                    .slice(0, 2)
-                    .map((p, i) => (
-                      <View key={i} style={styles.platformBadge}>
-                        <Text style={styles.platformBadgeText}>{p.name}</Text>
-                      </View>
-                    ))}
-                </View>
-              ) : null;
+            const renderDiscoverFooter = (movie: DiscoverResult) => (
+              <View style={styles.discoverPosterMetaFooter} pointerEvents="none">
+                <Text
+                  style={[
+                    styles.discoverPosterMetaCombined,
+                    {
+                      fontSize: DISCOVER_POSTER_META_TITLE_PX,
+                      lineHeight: Math.round(DISCOVER_POSTER_META_TITLE_PX * 1.45),
+                    },
+                    isTV && {
+                      fontSize: tvBodyFontSize(DISCOVER_POSTER_META_TITLE_PX),
+                      lineHeight: Math.round(
+                        tvBodyFontSize(DISCOVER_POSTER_META_TITLE_PX) * 1.45
+                      ),
+                    },
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {formatDiscoverPosterMetaLine(movie)}
+                </Text>
+              </View>
+            );
 
             if (isTV) {
               const movieRowIndex = item.movieRowIndex;
@@ -922,6 +1069,7 @@ export default function DiscoverScreen() {
                 <TvMovieGridRow
                   movies={item.movies}
                   onPress={(movie) => router.push(`/movie/${movie.id}`)}
+                  listVerticalPad={DISCOVER_TV_MOVIE_GRID_LIST_VERTICAL_PAD_PX}
                   renderMovieFooter={(movie) =>
                     renderDiscoverFooter(movie as DiscoverResult)
                   }
@@ -1178,27 +1326,22 @@ const styles = StyleSheet.create({
   endOfListEmoji: {
     fontSize: 32,
   },
+  discoverPosterMetaFooter: {
+    marginTop: DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX,
+    maxWidth: 140,
+    width: '100%',
+    height: DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX,
+    justifyContent: 'flex-start',
+  },
+  discoverPosterMetaCombined: {
+    fontWeight: '400',
+    color: '#e5e7eb',
+    width: '100%',
+  },
   endOfListText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#6b7280',
-  },
-  platformBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 6,
-  },
-  platformBadge: {
-    backgroundColor: '#1e1b4b',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  platformBadgeText: {
-    fontSize: 9,
-    color: '#a5b4fc',
-    fontWeight: '600',
   },
 });
 
