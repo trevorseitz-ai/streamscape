@@ -26,6 +26,11 @@ import { useTvSearchFocusBridge } from '../lib/tv-search-focus-context';
 /** Locked TV poster rail — see `docs/depts/tv.md`. */
 export const TV_MOVIE_GRID_POSTER_WIDTH = 140;
 export const TV_MOVIE_GRID_POSTER_HEIGHT = 210;
+/** Horizontal inset inside the focus Pressable so the cyan border clears the 140px poster edges. */
+export const TV_MOVIE_GRID_FOCUS_HALO_PADDING_H = 4;
+/** Native focus host width: poster + symmetric halo gutter (`TV_MOVIE_GRID_FOCUS_HALO_PADDING_H` × 2). */
+export const TV_MOVIE_GRID_FOCUS_CELL_WIDTH =
+  TV_MOVIE_GRID_POSTER_WIDTH + TV_MOVIE_GRID_FOCUS_HALO_PADDING_H * 2;
 export const TV_MOVIE_GRID_COLUMNS = 5;
 export const TV_MOVIE_GRID_GAP = 20;
 export const TV_MOVIE_GRID_LIST_VERTICAL_PAD = 20;
@@ -68,10 +73,23 @@ export type TvMovieGridRowProps = {
   marginBottom?: number;
   /** Tighter top inset (e.g. Home trending) — avoids extra vertical shift vs legacy rows. */
   reduceTopSpacing?: boolean;
+  /** Overrides default **`TV_MOVIE_GRID_LIST_VERTICAL_PAD`** on the horizontal list (e.g. Discover denser rails). */
+  listVerticalPad?: number;
 };
 
 const ELECTRIC_CYAN = '#00F5FF';
 const TV_FOCUS_BORDER_WIDTH = 3;
+
+/**
+ * Android TV focus-scroll diagnostics: red = cell wrapper, green = poster shell, blue = meta/footer.
+ * Release/device audits: set **`EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS=1`** (Metro dev builds also enable via **`__DEV__`**).
+ */
+function tvMovieGridFocusDiagnosticsEnabled(): boolean {
+  return (
+    (typeof __DEV__ !== 'undefined' && __DEV__) ||
+    process.env.EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS === '1'
+  );
+}
 
 function TvPosterCell({
   movie,
@@ -163,13 +181,14 @@ function TvPosterCell({
     [isFirstInRow, isLastInRow]
   );
 
-  const posterPressStyle = useMemo(
+  const diag = tvMovieGridFocusDiagnosticsEnabled();
+  const diagWrap = diag ? styles.diagnosticCellWrap : undefined;
+  const diagPoster = diag ? styles.diagnosticPosterShell : undefined;
+  const diagMeta = diag ? styles.diagnosticMetaFooter : undefined;
+
+  const pressableColumnStyle = useMemo(
     () => [
-      styles.posterPressable,
-      {
-        width: TV_MOVIE_GRID_POSTER_WIDTH,
-        height: TV_MOVIE_GRID_POSTER_HEIGHT,
-      },
+      styles.posterPressableColumn,
       ...(isFocused ? [styles.posterPressableFocused] : []),
     ],
     [isFocused]
@@ -178,15 +197,17 @@ function TvPosterCell({
   const cellWrapStyle = useMemo(
     () => [
       styles.posterCellWrap,
-      { width: TV_MOVIE_GRID_POSTER_WIDTH, flexShrink: 0 },
+      diagWrap,
+      styles.posterCellWrapLocked,
     ],
-    []
+    [diagWrap]
   );
 
   return (
     <View style={cellWrapStyle} collapsable={false}>
       <Pressable
         ref={pressableRef}
+        collapsable={false}
         {...tvFocusable()}
         focusable={true}
         {...(useNav
@@ -235,36 +256,49 @@ function TvPosterCell({
         }}
         onPress={onPress}
         android_ripple={null}
-        style={posterPressStyle}
+        style={pressableColumnStyle}
       >
-        {!showPlaceholder ? (
-          <Image
-            source={{ uri: movie.poster_url as string }}
-            style={styles.posterImageFill}
-            resizeMode="cover"
-            onError={() => setPosterLoadFailed(true)}
-          />
-        ) : (
-          <View focusable={false} style={[styles.placeholder, styles.posterImageFill]}>
-            <Text style={styles.placeholderTitle} numberOfLines={3}>
+        <View
+          style={[styles.posterImageShell, diagPoster]}
+          collapsable={false}
+          focusable={false}
+        >
+          {!showPlaceholder ? (
+            <Image
+              source={{ uri: movie.poster_url as string }}
+              style={styles.posterImageFill}
+              resizeMode="cover"
+              onError={() => setPosterLoadFailed(true)}
+            />
+          ) : (
+            <View focusable={false} style={[styles.placeholder, styles.posterImageFill]}>
+              <Text style={styles.placeholderTitle} numberOfLines={3}>
+                {movie.title}
+              </Text>
+            </View>
+          )}
+        </View>
+        {showTitleMeta ? (
+          <View style={[styles.metaFooterBand, diagMeta]} focusable={false} collapsable={false}>
+            <Text
+              style={[styles.metaTitle, { fontSize: tvBodyFontSize(14) }]}
+              numberOfLines={2}
+            >
               {movie.title}
             </Text>
+            {movie.release_year != null ? (
+              <Text style={[styles.metaYear, { fontSize: tvBodyFontSize(12) }]}>
+                {movie.release_year}
+              </Text>
+            ) : null}
           </View>
-        )}
+        ) : null}
+        {footer != null ? (
+          <View style={[styles.metaFooterBand, diagMeta]} focusable={false} collapsable={false}>
+            {footer}
+          </View>
+        ) : null}
       </Pressable>
-      {showTitleMeta ? (
-        <>
-          <Text style={[styles.metaTitle, { fontSize: tvBodyFontSize(14) }]} numberOfLines={2}>
-            {movie.title}
-          </Text>
-          {movie.release_year != null ? (
-            <Text style={[styles.metaYear, { fontSize: tvBodyFontSize(12) }]}>
-              {movie.release_year}
-            </Text>
-          ) : null}
-        </>
-      ) : null}
-      {footer}
     </View>
   );
 }
@@ -280,22 +314,25 @@ export function TvMovieGridRow({
   notifyTvContentFocus = false,
   marginBottom = 12,
   reduceTopSpacing = false,
+  listVerticalPad,
 }: TvMovieGridRowProps) {
   const rowLen = movies.length;
+
+  const vPad = listVerticalPad ?? TV_MOVIE_GRID_LIST_VERTICAL_PAD;
 
   const rowContentStyle = useMemo(
     () =>
       reduceTopSpacing
         ? {
             paddingTop: 4,
-            paddingBottom: TV_MOVIE_GRID_LIST_VERTICAL_PAD,
+            paddingBottom: vPad,
             gap: TV_MOVIE_GRID_GAP,
           }
         : {
-            paddingVertical: TV_MOVIE_GRID_LIST_VERTICAL_PAD,
+            paddingVertical: vPad,
             gap: TV_MOVIE_GRID_GAP,
           },
-    [reduceTopSpacing]
+    [reduceTopSpacing, vPad]
   );
 
   return (
@@ -363,12 +400,56 @@ const styles = StyleSheet.create({
   posterCellWrap: {
     overflow: 'visible',
   },
-  posterPressable: {
+  /** Hard-lock native footprint so narrow title text cannot shrink the focusable Pressable. */
+  posterCellWrapLocked: {
+    width: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    minWidth: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    maxWidth: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'flex-start',
+  },
+  /** Outer TV cell — diagnostic tint shows native wrapper bounds vs focus target. */
+  diagnosticCellWrap: {
+    backgroundColor: 'rgba(255, 0, 0, 0.2)',
+  },
+  /** Focus target spans poster + meta/footer so Android measures full row for scroll. */
+  posterPressableColumn: {
+    width: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    minWidth: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    maxWidth: TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+    paddingHorizontal: TV_MOVIE_GRID_FOCUS_HALO_PADDING_H,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'flex-start',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     backgroundColor: 'transparent',
     overflow: 'visible',
     borderRadius: 8,
     borderWidth: TV_FOCUS_BORDER_WIDTH,
     borderColor: 'transparent',
+  },
+  /** Title/footer band fills the locked Pressable width (no intrinsic shrink from Text). */
+  metaFooterBand: {
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  diagnosticPosterShell: {
+    backgroundColor: 'rgba(0, 255, 0, 0.2)',
+  },
+  diagnosticMetaFooter: {
+    backgroundColor: 'rgba(0, 0, 255, 0.2)',
+  },
+  posterImageShell: {
+    width: TV_MOVIE_GRID_POSTER_WIDTH,
+    height: TV_MOVIE_GRID_POSTER_HEIGHT,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'center',
+    overflow: 'hidden',
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
   },
   posterPressableFocused: {
     borderColor: ELECTRIC_CYAN,
@@ -390,11 +471,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   metaTitle: {
+    width: '100%',
     marginTop: 8,
     fontWeight: '600',
     color: '#ffffff',
   },
   metaYear: {
+    width: '100%',
     marginTop: 2,
     color: '#9ca3af',
   },

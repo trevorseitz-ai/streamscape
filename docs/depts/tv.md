@@ -31,6 +31,10 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 **Discover page shell:** **`DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX` (34px)** — single Year chip rail height (`styles.chip` vertical math); applied as **`paddingTop`** on the Discover **`styles.container`** so clearance sits **above** the Year row. **`DISCOVER_HEADER_TO_RAIL_GAP_PX` (12px)** matches **`TvMovieGridRow`** `sectionTitleWrap.marginBottom` for monetization → section title → poster rail rhythm; **`TvMovieGridRow`** is never wrapped or margin-hacked per row.
 
+**Discover poster metadata (below **140×210** poster image):** Authoritative footer band **`DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX` = `56px`** (**+ `DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX` 6px** above it, **`maxWidth` 140**) — sized so a **single unified** un-bolded (**`fontWeight` 400**) **`Text`** (**`Title - Year`** via **`formatDiscoverPosterMetaLine`**; year omitted when unknown) can wrap to **two lines** without guillotine clipping. Do **not** use split inline row layouts for title vs year; do **not** cap this footer at **40px** or **`overflow: hidden`** on the footer wrapper in a way that slices the second line. Typography ≈ **75% × 90%** of **14px** → **`DISCOVER_POSTER_META_TITLE_PX`** (**~10px**, reads **~10–11px** with TV scaling via **`tvBodyFontSize`**), **`numberOfLines={2}`**, **`ellipsizeMode="tail"`**. Discover TV rails use **`listVerticalPad`** on **`TvMovieGridRow`**; poster **image** stays **140×210**, **5** cols, **20px** gap.
+
+**Discover TV vertical list stride (scroll bounds — authoritative):** **`DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX` = `286px`** exactly — **`210`** (poster image) **`+ 56`** (combined **`Title - Year`** footer block) **`+ 20`** (vertical list gap token **`DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX`**). The Discover TV results **`FlatList`** uses this integer for **`getItemLayout`** (**`length: 286`**, **`offset: 286 × index`**) and **`snapToInterval={286}`** when the list contains **only** movie rows (no phase divider). Older ad-hoc row-height guesses for TV scroll math are **obsolete**. If a phase divider row is present, cumulative **`getItemLayout`** offsets apply, but each **movie row slot remains 286px**.
+
 **Non-TV:** Web and phone Discover grids may still use **`discoverPosterGridColumns`** for responsive columns; that behavior does **not** override the TV fixed grid above.
 
 ---
@@ -77,8 +81,9 @@ Single source for Home rail + poster grid. Implementation: **`TvSidebarTabBar.ts
 | `TV_POSTER_HEIGHT` | **210px** |
 | `TV_GRID_COLUMNS` | **5** |
 | `TV_POSTER_ROW_GAP` | **20px** (horizontal gap between posters in TV rails) |
+| `DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX` | **286px** (Discover TV vertical **`FlatList`** row stride: **210 + 56 + 20** — see [Discover TV vertical list stride](#tv-poster-grid-standard-all-tabs)) |
 
-Supporting tokens (unchanged unless noted elsewhere): **`TV_HOME_CONTENT_PADDING` 10px**, poster tile title **13px**, year **11px**, section header **22px**. Inner chrome / chip strips may use smaller gaps where documented in the component; **poster rows on TV** stay **140×210**, **5 columns**, **20px** horizontal gap per [TV poster grid standard](#tv-poster-grid-standard-all-tabs).
+Supporting tokens (unchanged unless noted elsewhere): **`TV_HOME_CONTENT_PADDING` 10px**, poster tile title **13px**, year **11px**, section header **22px**. **Discover** rail meta under the poster is **excepted**: one unified **`Title - Year`** string (up to **2** lines) per [Discover poster metadata](#tv-poster-grid-standard-all-tabs) (**~10–11px**, **56px** footer band). Inner chrome / chip strips may use smaller gaps where documented in the component; **poster image** rows on TV stay **140×210**, **5 columns**, **20px** horizontal gap per [TV poster grid standard](#tv-poster-grid-standard-all-tabs).
 
 ### Left rail slots (`TV_SIDEBAR_SLOTS`)
 

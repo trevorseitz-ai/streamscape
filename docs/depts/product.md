@@ -1,5 +1,16 @@
 # 🚀 Product & Features Office
 
+## Technology stack
+
+- Expo / Expo Router
+- React Native
+- React / React Native Web
+- TypeScript
+- Supabase
+- Stream Finder
+- TMDB
+- Android TV
+
 ## Product roadmap
 
 ### Discover Phase 1: Discovery & Stability — **100% COMPLETE** (Web / Mobile / TV)
