@@ -1,19 +1,23 @@
 /**
- * Global Discover invalidation (Profile saves streaming prefs → Discover consumes on tab focus).
- * One-shot atomic flag survives background-mounted Discover (no listener pub/sub needed).
+ * Profile **Save Preferences** → immediate Discover feed teardown (mounted Discover only).
+ * Replaces tab-focus polling: **`flushDiscoverFeedCachesAfterProfileSave`** runs right after **`user_profiles`** / AsyncStorage write succeeds.
  */
 
-let discoverNeedsRefresh = false;
+type Listener = () => void | Promise<void>;
+const listeners = new Set<Listener>();
 
-export function setDiscoverNeedsRefreshFlag(): void {
-  discoverNeedsRefresh = true;
+export function subscribeDiscoverFeedFlushAfterProfileSave(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
-/**
- * If `true`, caller must run total Discover cache flush then refetch. Clears immediately (no loops).
- */
-export function consumeDiscoverNeedsRefreshFlag(): boolean {
-  const v = discoverNeedsRefresh;
-  discoverNeedsRefresh = false;
-  return v;
+/** Call from **`profile.tsx`** **`handleSave`** immediately after persisted prefs succeed. */
+export function flushDiscoverFeedCachesAfterProfileSave(): void {
+  for (const listener of [...listeners]) {
+    try {
+      void Promise.resolve(listener());
+    } catch (err) {
+      console.warn('[Discover] Profile-save flush subscriber failed:', err);
+    }
+  }
 }

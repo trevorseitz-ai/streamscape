@@ -1,5 +1,5 @@
 /**
- * Read Stream Finder–synced rows from Supabase for Discover default (unfiltered) feed.
+ * Read Stream Finder–synced rows from Supabase for Discover (optional **`movie_availability`** filter via RPC).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -243,28 +243,101 @@ export async function fetchStreamFinderProviderCatalog(
   return providerById;
 }
 
+/** Pagination options for Supabase **`stream_finder_movies`** + **`movie_availability`**. */
+export type FetchDiscoverMoviesPageStreamFinderOpts = {
+  offset: number;
+  limit?: number;
+  /**
+   * Omit or **`null`/empty`: full catalog (**no **`movie_availability`** filter**) — UX “show all movies.”
+   * Non-empty: intersect with **`stream_finder_providers`**, then only movies linked in **`movie_availability`** to ≥1 listed provider.
+   */
+  watchProviderIds?: number[] | null;
+};
+
+type StreamFinderFilteredRpcRow = {
+  tmdb_id: number;
+  title: string;
+  popularity: number | null;
+  overview: string | null;
+  poster_path: string | null;
+  matched_total: number;
+};
+
+function parseStreamFinderPopularity(pop: unknown): number | null {
+  if (pop === null || pop === undefined) return null;
+  if (typeof pop === 'number') return Number.isFinite(pop) ? pop : null;
+  const n = Number(pop);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Paginated curated list (sorted by popularity). Callers should keep **`STREAM_FINDER_DISCOVER_PAGE_SIZE`**
  * aligned with **`docs/depts/tv.md`** and append via Infinite scroll (**`FlatList`**).
+ *
+ * **`watchProviderIds`** set → Postgres RPC **`stream_finder_discover_page_filtered`** (joined filter). Otherwise legacy unfiltered **`stream_finder_movies`** range (**same total semantics** — full mirror count).
  */
 export async function fetchDiscoverMoviesPageFromStreamFinder(
   client: SupabaseClient,
-  opts: { offset: number; limit?: number },
+  opts: FetchDiscoverMoviesPageStreamFinderOpts,
   providerById: Map<number, StreamFinderProviderRow>
 ): Promise<{ movies: FilmShowDiscoverMovie[]; totalAvailable: number }> {
   const limit =
     opts.limit != null ? Math.min(100, Math.max(1, opts.limit)) : STREAM_FINDER_DISCOVER_PAGE_SIZE;
   const offset = Math.max(0, opts.offset);
 
-  const { data: movies, error: mErr, count } = await client
-    .from('stream_finder_movies')
-    .select('tmdb_id, title, popularity, overview, poster_path', { count: 'exact' })
-    .order('popularity', { ascending: false, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+  const wantsAvailFilter =
+    Array.isArray(opts.watchProviderIds) && opts.watchProviderIds.length > 0;
 
-  if (mErr) throw new Error(mErr.message);
-  const movieRows = (movies ?? []) as StreamFinderMovieRow[];
-  const totalAvailable = count ?? 0;
+  let prunedFilterIds: number[] | null = null;
+  if (wantsAvailFilter) {
+    prunedFilterIds = await pruneProviderIdsToStreamFinderCatalog(client, opts.watchProviderIds!);
+    if (prunedFilterIds.length === 0) {
+      return { movies: [], totalAvailable: 0 };
+    }
+  }
+
+  let movieRows: StreamFinderMovieRow[];
+  let totalAvailable: number;
+
+  if (prunedFilterIds != null) {
+    const { data: rows, error: rpcErr } = await client.rpc('stream_finder_discover_page_filtered', {
+      p_provider_ids: prunedFilterIds,
+      p_offset: offset,
+      p_limit: limit,
+    });
+    if (rpcErr) throw new Error(rpcErr.message);
+
+    const list = (rows ?? []) as StreamFinderFilteredRpcRow[];
+
+    totalAvailable =
+      list.length > 0
+        ? Math.max(0, Math.trunc(Number(list[0]!.matched_total)))
+        : 0;
+    if (!Number.isFinite(totalAvailable)) {
+      totalAvailable = 0;
+    }
+
+    movieRows = list.map((r) => {
+      const popularity = parseStreamFinderPopularity(r.popularity);
+      return {
+        tmdb_id: Number(r.tmdb_id),
+        title: String(r.title ?? ''),
+        popularity,
+        overview: r.overview == null ? null : String(r.overview),
+        poster_path: r.poster_path == null ? null : String(r.poster_path),
+      };
+    });
+  } else {
+    const { data: movies, error: mErr, count } = await client
+      .from('stream_finder_movies')
+      .select('tmdb_id, title, popularity, overview, poster_path', { count: 'exact' })
+      .order('popularity', { ascending: false, nullsFirst: false })
+      .range(offset, offset + limit - 1);
+
+    if (mErr) throw new Error(mErr.message);
+    movieRows = (movies ?? []) as StreamFinderMovieRow[];
+    totalAvailable = count ?? 0;
+  }
 
   if (movieRows.length === 0) {
     return { movies: [], totalAvailable };
