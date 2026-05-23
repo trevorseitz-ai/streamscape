@@ -8,7 +8,7 @@
 
 import type { IntentLauncherParams } from 'expo-intent-launcher';
 import * as IntentLauncher from 'expo-intent-launcher';
-import * as Linking from 'expo-linking';
+import * as ExpoLinking from 'expo-linking';
 import { Platform, ToastAndroid } from 'react-native';
 import type { StreamingOption } from './streaming-rapid';
 import {
@@ -21,6 +21,7 @@ import {
   TV_HANDOFF_MAIN_LAUNCH_MARKER,
   TV_HANDOFF_JUST_LAUNCH_URI,
 } from './linking-utils';
+import { openAppleTvApp, openParamountPlusApp, openPrimeVideoApp } from '../utils/linking';
 
 /** Literal **`Intent`** action strings for OEM TVs (Sony / Fire TV strict parsing). */
 const ANDROID_INTENT_ACTION_VIEW = 'android.intent.action.VIEW';
@@ -166,13 +167,44 @@ export type AndroidTvIntentLaunchResult =
  * **Attempt A:** **`packageName`**-targeted **`VIEW`** — **Max** (**`play.max.com`** chain) keeps this first when it succeeds on TV; **Tubi** uses **`/movies/{id}`** here first.
  * **Attempt B:** implicit **`VIEW`** — **Tubi **`/movies/…`**: title **`/search/{title}`** runs **before** generic **`toTvImplicitLaunchUri`**; Netflix search skips **A**.
  * **Attempt C:** **`Linking.openURL`** (same URI order as **B** where applicable).
- * **Attempt D:** **`MAIN`** + **`LAUNCHER`** (**no data**) — Netflix / Prime / Apple TV Sony packages use explicit **`className`**; sentinel first for Netflix, **and** final **`Trevor fallback`** after all **`VIEW`** attempts fail.
+ * **Attempt D:** **`MAIN`** + **`LAUNCHER`** (**no data**) — Netflix / Prime / Apple TV / Paramount+ Sony packages use explicit **`className`**; sentinel first for Netflix, **and** final **`Trevor fallback`** after all **`VIEW`** attempts fail.
  */
 export async function launchStreamingViaAndroidTvIntent(
   providerIdStr: string,
   option: StreamingOption,
   launchOpts?: CollectStreamingLaunchOptions
 ): Promise<AndroidTvIntentLaunchResult> {
+  const handoffPid = Number.parseInt(String(providerIdStr).trim(), 10);
+  if (Number.isFinite(handoffPid) && handoffPid === 9) {
+    void option;
+    void launchOpts;
+    const ok = await openPrimeVideoApp();
+    const pkg = 'com.amazon.amazonvideo.livingroom';
+    return ok
+      ? { ok: true, packageName: pkg, uri: ANDROID_INTENT_ACTION_MAIN }
+      : { ok: false, packageName: pkg };
+  }
+
+  if (Number.isFinite(handoffPid) && handoffPid === 350) {
+    void option;
+    void launchOpts;
+    const ok = await openAppleTvApp();
+    const pkg = 'com.apple.atve.sony.appletv';
+    return ok
+      ? { ok: true, packageName: pkg, uri: ANDROID_INTENT_ACTION_MAIN }
+      : { ok: false, packageName: pkg };
+  }
+
+  if (Number.isFinite(handoffPid) && handoffPid === 531) {
+    void option;
+    void launchOpts;
+    const ok = await openParamountPlusApp();
+    const pkg = 'com.cbs.ott';
+    return ok
+      ? { ok: true, packageName: pkg, uri: ANDROID_INTENT_ACTION_MAIN }
+      : { ok: false, packageName: pkg };
+  }
+
   const pkgs = getAndroidTvPackageCandidatesForTmdbProviderId(providerIdStr);
   if (pkgs.length === 0) {
     return { ok: false, packageName: null };
@@ -268,7 +300,7 @@ export async function launchStreamingViaAndroidTvIntent(
           uri: tubiTitleSearchUrl,
           spotlight: false,
         });
-        await Linking.openURL(tubiTitleSearchUrl);
+      await ExpoLinking.openURL(tubiTitleSearchUrl);
         return { ok: true, packageName: primaryPkg ?? '', uri: tubiTitleSearchUrl };
       } catch {
         console.warn(`⚠️ [HANDOFF] Attempt C failed (Tubi /search Linking).`);
@@ -293,7 +325,7 @@ export async function launchStreamingViaAndroidTvIntent(
         uri: implicitUri,
         spotlight: false,
       });
-      await Linking.openURL(implicitUri);
+      await ExpoLinking.openURL(implicitUri);
       return { ok: true, packageName: primaryPkg ?? '', uri: implicitUri };
     } catch {
       console.warn(`⚠️ [HANDOFF] Attempt C failed (Linking.openURL).`);

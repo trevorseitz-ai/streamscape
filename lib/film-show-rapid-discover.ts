@@ -22,7 +22,9 @@ export type FilmShowDiscoverMovie = {
 };
 
 const TMDB_API_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_W500 = 'https://image.tmdb.org/t/p/w500';
+const TMDB_TV_DISCOVER_POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
+/** Larger than poster tier for optional backdrops — still avoids **`original`** decode cost on TV. */
+const TMDB_TV_DISCOVER_BACKDROP_BASE = 'https://image.tmdb.org/t/p/w780';
 
 /** Default path for Film & Show ratings "Top 100 items" (GET). Override via env if your subscription uses another route. */
 const DEFAULT_TOP_PATH =
@@ -46,7 +48,7 @@ function normalizeImageUrl(raw: unknown): string | null {
   const t = raw.trim();
   if (!t) return null;
   if (t.startsWith('http://') || t.startsWith('https://')) return t;
-  if (t.startsWith('/')) return `${TMDB_IMAGE_W500}${t}`;
+  if (t.startsWith('/')) return `${TMDB_TV_DISCOVER_POSTER_BASE}${t}`;
   return t;
 }
 
@@ -114,9 +116,14 @@ function readFilmShowAudienceRating(item: Record<string, unknown>): unknown {
   return tryProvider(rt.TMDB ?? rt.tmdb);
 }
 
-function toTmdbW500Url(path: string | null | undefined): string | null {
+function toTmdbDiscoverPosterUrl(path: string | null | undefined): string | null {
   if (!path || typeof path !== 'string' || !path.startsWith('/')) return null;
-  return `${TMDB_IMAGE_W500}${path}`;
+  return `${TMDB_TV_DISCOVER_POSTER_BASE}${path}`;
+}
+
+function toTmdbDiscoverBackdropUrl(path: string | null | undefined): string | null {
+  if (!path || typeof path !== 'string' || !path.startsWith('/')) return null;
+  return `${TMDB_TV_DISCOVER_BACKDROP_BASE}${path}`;
 }
 
 /** Map one RapidAPI Film & Show row → list row (`ids.TMDB` preserved for enrichment). */
@@ -237,8 +244,8 @@ export async function enrichWithTmdbImages(
           release_date?: string | null;
         };
 
-        const poster_from_tmdb = toTmdbW500Url(data.poster_path ?? null);
-        const backdrop_from_tmdb = toTmdbW500Url(data.backdrop_path ?? null);
+        const poster_from_tmdb = toTmdbDiscoverPosterUrl(data.poster_path ?? null);
+        const backdrop_from_tmdb = toTmdbDiscoverBackdropUrl(data.backdrop_path ?? null);
 
         const rd = typeof data.release_date === 'string' ? data.release_date : null;
         let mergedYear = m.release_year;

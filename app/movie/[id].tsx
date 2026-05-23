@@ -46,6 +46,12 @@ import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
+import { launchStreamingService } from '../../lib/streaming-universal-links';
+import {
+  openAppleTvApp,
+  openParamountPlusApp,
+  openPrimeVideoApp,
+} from '../../utils/linking';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -413,7 +419,7 @@ export default function MovieDetailsScreen() {
   const [watchlistBtnFocused, setWatchlistBtnFocused] = useState(false);
   const [similarBtnFocused, setSimilarBtnFocused] = useState(false);
   const [trailerActionBtnFocused, setTrailerActionBtnFocused] = useState(false);
-  /** “Owned” / library; toggled in UI, persisted in DB when storage exists. */
+  /** Watched shelf (`user_library`); toggled in UI, persisted in DB when storage exists. */
   const [isInLibrary, setIsInLibrary] = useState(false);
   const [libraryBtnFocused, setLibraryBtnFocused] = useState(false);
   /** Instant `findNodeHandle` for trailer row self-trap before `useTvNativeTag` commits. */
@@ -576,7 +582,7 @@ export default function MovieDetailsScreen() {
       ? (sidebarSlotNativeTags['index'] ??
         sidebarSlotNativeTags['discover'] ??
         sidebarSlotNativeTags['watchlist'] ??
-        sidebarSlotNativeTags['library'] ??
+        sidebarSlotNativeTags['watched'] ??
         null)
       : null;
 
@@ -874,10 +880,13 @@ export default function MovieDetailsScreen() {
         }
       } catch (e) {
         if (__DEV__) {
-          console.error('[MovieDetails] Library sync error:', e);
+          console.error('[MovieDetails] Watched shelf sync error:', e);
         }
         setIsInLibrary(wasInLibrary);
-        Alert.alert('Could not update', 'Your library could not be updated. Please try again.');
+        Alert.alert(
+          'Could not update',
+          'Your Watched list could not be updated. Please try again.'
+        );
       }
     };
 
@@ -1329,8 +1338,47 @@ export default function MovieDetailsScreen() {
                   styles.providerIcon,
                   pressed && styles.providerIconPressed,
                 ]}
-                onPress={() => {
-                  if (avail.direct_url) void handleStreamingPress(avail.direct_url);
+                onPress={async () => {
+                  try {
+                    if (
+                      avail.provider_id === 9 &&
+                      Platform.OS === 'android' &&
+                      isTvTarget()
+                    ) {
+                      await openPrimeVideoApp();
+                      return;
+                    }
+                    if (
+                      avail.provider_id === 350 &&
+                      Platform.OS === 'android' &&
+                      isTvTarget()
+                    ) {
+                      await openAppleTvApp();
+                      return;
+                    }
+                    if (
+                      avail.provider_id === 531 &&
+                      Platform.OS === 'android' &&
+                      isTvTarget()
+                    ) {
+                      await openParamountPlusApp();
+                      return;
+                    }
+                    const url = avail.direct_url?.trim();
+                    if (url) {
+                      await handleStreamingPress(url);
+                      return;
+                    }
+                    if (avail.provider_id > 0) {
+                      await launchStreamingService(avail.provider_id, undefined, {
+                        mediaTitle: movie.title,
+                      });
+                    }
+                  } catch (e) {
+                    if (__DEV__) {
+                      console.warn('[MovieDetails] Provider tile launch failed:', e);
+                    }
+                  }
                 }}
               >
                 <View style={isMember ? styles.providerLogoMember : undefined}>
@@ -1765,7 +1813,7 @@ export default function MovieDetailsScreen() {
               ]}
               onPress={handleLibraryPress}
               accessibilityRole="button"
-              accessibilityLabel={isInLibrary ? 'In your library' : 'Add to Library'}
+              accessibilityLabel={isInLibrary ? 'Saved to Watched' : 'Add to Watched'}
             >
               <Ionicons
                 name={isInLibrary ? 'checkmark-circle' : 'add-circle-outline'}
@@ -1780,7 +1828,7 @@ export default function MovieDetailsScreen() {
                 numberOfLines={1}
                 {...tvNf}
               >
-                {isInLibrary ? 'In Library' : 'Add to Library'}
+                {isInLibrary ? 'In Watched' : 'Add to Watched'}
               </Text>
             </Pressable>
           ) : null}

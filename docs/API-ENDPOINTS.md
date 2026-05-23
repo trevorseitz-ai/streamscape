@@ -35,7 +35,7 @@ The **JavaScript client** (`lib/supabase.ts`, `lib/supabase-server.ts`) talks to
 | Area | Typical path pattern | Purpose in this app |
 |------|----------------------|---------------------|
 | **Auth** | `/auth/v1/*` | Email/password sign-up and sign-in, sessions, `getSession` / `onAuthStateChange`. |
-| **REST (PostgREST)** | `/rest/v1/*` | Row CRUD: e.g. **`watchlist`**, **`user_library`**, **`user_profiles`**, **`media`**, and other tables used on Home, Library, Watchlist, Profile, Movie detail. |
+| **REST (PostgREST)** | `/rest/v1/*` | Row CRUD: e.g. **`watchlist`**, **`user_library`**, **`user_profiles`**, **`media`**, and other tables used on Home, **Watched**, Watchlist, Profile, Movie detail. |
 | **RPC** | `/rest/v1/rpc/*` | **`update_watchlist_order`**, Stream Finder sync helpers (e.g. **`truncate_stream_finder_cache`** in `lib/services/stream-finder-sync.ts`). |
 | **Health (diagnostics)** | `/auth/v1/health` | Optional reachability check in `app/dev/network-diag.tsx`. |
 
@@ -59,9 +59,9 @@ Representative **paths** used across the codebase:
 |------|----------|
 | **`GET /discover/movie`** | Discover grid: filters (genre, year, region, watch providers, monetization). `app/(tabs)/discover.tsx`. |
 | **`GET /search/movie`** | Search-ingest API; movie lookup by query. `app/api/search+api.ts`. |
-| **`GET /movie/{id}`** | Movie detail (also vote average on Library rows). Various screens + APIs. |
+| **`GET /movie/{id}`** | Movie detail (also vote average on Watched tab rows). Various screens + APIs. |
 | **`GET /movie/{id}/credits`** | Cast/crew for movie detail / ingest. |
-| **`GET /movie/{id}/watch/providers`** | Where to watch badges (watchlist, library, movie detail snapshots). |
+| **`GET /movie/{id}/watch/providers`** | Where to watch badges (watchlist, Watched tab list, movie detail snapshots). |
 | **`GET /movie/{id}/recommendations`** | Recommendation rail on movie detail (`app/movie/[id].tsx`). |
 | **`GET /videos`** (append to movie append) | Trailer YouTube key; movie API routes. |
 | **`GET /watch/providers/movie`** | US provider catalog for `/api/providers`. |

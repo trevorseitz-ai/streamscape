@@ -37,6 +37,19 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 **Non-TV:** Web and phone Discover grids may still use **`discoverPosterGridColumns`** for responsive columns; that behavior does **not** override the TV fixed grid above.
 
+### Discover primary feeds — pagination & posters (hardware protection)
+
+Lean-back CPUs and decode bandwidth are scarce. **Mandatory for default Stream Finder grids and mirrored TV grids:**
+
+| Rule | Requirement |
+|------|--------------|
+| **Supabase pagination** | Initial read and **`onEndReached`** pages load **`STREAM_FINDER_DISCOVER_PAGE_SIZE` = **`20`** rows (**`lib/stream-finder-supabase.ts`** + **`app/(tabs)/discover.tsx`**). Do **not** hydrate the entire mirror in one request for Discover. |
+| **Infinite scroll tuning** | TV results **`FlatList`** uses **`onEndReached`** with **`onEndReachedThreshold`** ≈ **`0.5`** so the next **`20`** titles load halfway through the current block (**`FlatList`** is vertical; **`TvMovieGridRow`** rails remain horizontal). |
+| **TMDB poster tiers** | Grid poster URLs target **`image.tmdb.org/t/p/w342`** (**`w342`**) matching **140×210** decode cost — **never** **`/original`** for these lists. Paths may use **`w185`** where sharper assets are unnecessary; **`lib/stream-finder-supabase`** uses **`STREAM_FINDER_TV_POSTER_TMDB_WIDTH`**. |
+| **Decode + cache (`TvMovieGridRow`)** | Posters render with **`expo-image`** (**`priority="high"`**, **`cachePolicy="disk"`**) so repeats and back-scroll reuse disk-backed bitmaps alongside native resizing. |
+
+**Implementation:** **`components/TvMovieGridRow.tsx`**, **`app/(tabs)/discover.tsx`** (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`** + **`discoverFeedSourceRef`** paging), **`lib/stream-finder-supabase.ts`**, **`lib/film-show-rapid-discover.ts`** (Discover enrichment uses the same **`w342`** tier).
+
 ---
 
 ## 🚀 Running the TV Emulator
@@ -94,13 +107,33 @@ const TV_SIDEBAR_SLOTS = [
   'index',      // Home
   'search',
   'watchlist',
-  'library',
+  'watched',
   'discover',
   'profile',    // bottom slot — settings, “My services,” auth-adjacent UI
 ] as const;
 ```
 
 **Authentication:** There is **no** dedicated **Account** rail slot. **Sign in** uses **`/login`**; **sign out** and session-adjacent controls are handled from the **Profile** tab (same as Web / handset). Earlier builds used a sidebar **Login / Logout** slot wired to an **`account`** route; that pattern was removed with **`app/(tabs)/account.tsx`**.
+
+### Profile tab vertical layout (`app/(tabs)/profile.tsx`)
+
+Shared implementation for **Web**, handset, and **Android TV**. Authoritative stacking for D-pad and pointer paths:
+
+| Order | Block |
+|:-----:|-------|
+| **1** | **My Services** — section title + description + catalog pruning / loading / error UI + **Search services** (`TextInput`); **`ListHeaderComponent`**. |
+| **2** | **Streaming provider tiles** — **`ScrollView`** wrapping a strict-width box (**`providerGridStrictBox`**: **`width: '100%'`**, **`maxWidth: innerContentWidth`**) matching the **`TextInput`** + save strip rails; **`flexWrap`** row of fixed **`PROFILE_PROVIDER_CELL_W_PX`** (**80**) × **`PROFILE_PROVIDER_CELL_MIN_H_PX`** (**96**) **`ProviderCard`** cells (**`flexGrow: 0`**), **`PROFILE_PROVIDER_CELL_ICON_PX`** (**48**) logos — no column math / no **`FlatList` `numColumns` stretch.** |
+| **3** | **Selection summary** (Discover filter hint panel); **`ListFooterComponent`**. Developer-only tools follow when **`__DEV__`**. *(Personal viewing stats live on the **Watched** tab.)* |
+| **4** | **Save Preferences** — **`Pressable`** inside **`profileSaveBar`**, a strip **pinned below** the **`FlatList`** (viewport bottom sibling, not scrolled away) so Save stays reachable above long grids. Per-tile toggles still persist inline via Supabase/async storage. |
+
+### Watched tab layout (`app/(tabs)/watched.tsx`)
+
+Renamed from legacy **Library**; reflects **`user_library`** (saved shelf) plus **`watched_history`** analytics.
+
+| Order | Block |
+|:-----:|-------|
+| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — stats + rating chart sourced from **`watched_history`**; mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
+| **2** | **Saved titles list** — **`user_library`** rows joined to **`media`** (existing row UI: poster, added date, provider logos, TMDB vote line). |
 
 Type tokens for the Hero text column:
 
@@ -154,6 +187,21 @@ This section is the **hybrid API contract** for curated rails (Discover default 
 ### Persisted experience
 
 Upserts into **`media`** and watchlists (**Supabase**) follow existing product flows once a title is opened or saved.
+
+---
+
+## Android universal streaming intents (HTTPS / `ACTION_VIEW`)
+
+Lean-back and handset builds **must not** fork routing per OEM (**Sony**, **TCL**, **Hisense**, …). Streaming launches rely on **standard Android resolution**:
+
+1. **`expo-intent-launcher`** **`ACTION_VIEW`** where we need explicit packages (**`lib/streaming-android-tv-intent.ts`**, **`WatchOnButton`**).
+2. **`Linking.openURL`** over **canonical HTTPS storefront URLs** (**`lib/streaming-universal-links.ts`**):
+   - **`launchStreamingService(providerId, externalMovieId?)`** tries title-aware URLs when a provider-native id is known (e.g. Netflix **`https://www.netflix.com/title/{id}`**, Prime **`watch.amazon.com/detail?gti=`** / **`asin=`**, Disney+ **`/video/`**, …), then falls back to the provider **home/browse** HTTPS URL for that TMDB **`provider_id`**.
+   - **`buildUniversalStreamingHttpsCandidates`** exposes the ordered HTTPS list for diagnostics or extensions.
+
+Full **`nflx://`**, **`collectStreamingLaunchCandidates`**, and RapidAPI **`videoLink`** chains remain in **`lib/linking-utils.ts`** (**`launchStreamingApp`**).
+
+**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones); **`app/movie/[id].tsx`** TMDB provider tiles when **`direct_url`** is absent (`launchStreamingService(provider_id)` → storefront home). **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
 
 ---
 
@@ -352,3 +400,51 @@ TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus 
 
 **State decoupling:** Keep discrete list states (like Watchlist vs. Library) completely decoupled in the UI unless the product explicitly requires them to be mutually exclusive.
 
+---
+
+## TV environment remote debugging (ADB Logcat — streaming / Prime)
+
+Use **ADB over TCP** (or USB) to stream **Logcat** from a physical **Android TV** (e.g. Sony Bravia) while exercising **ReelDive** and third-party launcher intents in **`utils/linking.ts`** (`openPrimeVideoApp` emits **`[ReelDive Debug]`** prefixes in Metro for **`expo-intent-launcher`** correlation).
+
+Replace **`<SERIAL>`** with **`adb devices`** output, or **`IP:5555`** after **`adb connect IP:5555`**.
+
+### One-shot diagnostic pipe (clean buffer + live stream)
+
+```bash
+# Clear ring buffer — start from a quiet baseline
+adb -s <SERIAL> logcat -c
+
+# Prime / RN / lifecycle — verbosity tuned for launcher tracing
+adb -s <SERIAL> logcat *:S ReactNative:V ReactNativeJS:V ActivityManager:I AmazonVideo:V Ignition:V
+```
+
+**Example** (WLAN debugging; adjust IP to your TV):
+
+```bash
+adb connect 192.168.50.5:5555
+adb -s 192.168.50.5:5555 logcat -c
+adb -s 192.168.50.5:5555 logcat *:S ReactNative:V ReactNativeJS:V ActivityManager:I AmazonVideo:V Ignition:V
+```
+
+### Logcat filter blueprint (canonical tags)
+
+| Filter token | Typical signal |
+|----------------|----------------|
+| **`*:S`** | Silence all tags unless explicitly raised below (**required baseline**). |
+| **`ReactNative:V`** | Native bridge / React Native JVM logs around intent dispatch from JS. |
+| **`ReactNativeJS:V`** | Metro **`console.log` / warn / error** from the JS thread (including **`[ReelDive Debug]`** when wired through RN logging). |
+| **`ActivityManager:I`** | **`Starting activity: Intent { ... }`**, **`result=canceled`**, task / flag lines when the system accepts or rejects a launch. |
+| **`AmazonVideo:V`** | Amazon package-scoped lines (OEM builds vary; may be sparse). |
+| **`Ignition:V`** | **`IgnitionActivity`** / Amazon TV bootstrap (tag presence depends on firmware; add **`*:W`** temporarily if the stream is too quiet). |
+
+### How to read the stream
+
+1. **`ActivityManager:I`** — When you press **Prime** in ReelDive, watch for **`Starting activity`** and whether the result is **`canceled`** or flags look wrong vs. a **home-grid** launch of the same app.
+2. **Fatals / crashes** — Note **`FATAL EXCEPTION`**, **`AndroidRuntime`**, or process death for **`com.amazon.amazonvideo.livingroom`** at the moment the splash / loader disappears.
+3. **Cross-check Metro** — Match **`[ReelDive Debug]`** timestamps (**`Using native expo-intent-launcher`** → **`opened container successfully`** vs **`failed`**) with **`ActivityManager`** / **`AndroidRuntime`** lines when the splash aborts.
+
+**JS tracers:** **`openPrimeVideoApp`** uses **`IntentLauncher.startActivityAsync`** (**`ACTION_MAIN`**, **`packageName`**, **`className`**, **`LEANBACK_LAUNCHER`**) — not **`Linking.sendIntent`**.
+
+**Apple TV (Sony Bravia Android TV)** — fullscreen container (**no **`tv.apple.com`** handoff from ReelDive on TV): package **`com.apple.atve.sony.appletv`**, verified main launch activity **`com.apple.atve.androidtv.appletv.MainActivity`** (**`dumpsys`** on production hardware) via **`utils/linking.ts`** **`openAppleTvApp`**. Profile / handset paths may still use HTTPS storefront URLs; TV **`WatchOnButton`** and movie provider tiles invoke **`openAppleTvApp`** when **`isTvTarget()`**.
+
+**Paramount+ (Sony Bravia Android TV)** — **`expo-intent-launcher`** fullscreen lean-back (**no generic **`ACTION_VIEW`** HTTPS → **BrowserStub** chain on TV): package **`com.cbs.ott`**, activity **`com.cbs.app.tv.ui.activity.HomeActivity`** via **`utils/linking.ts`** **`openParamountPlusApp`**. TV **`WatchOnButton`** and movie provider tiles use the same path when **`isTvTarget()`**; **`collectStreamingLaunchCandidates`** omits Paramount+ storefront URLs for provider **`531`** so **`launchStreamingViaAndroidTvIntent`** routes to **`openParamountPlusApp`** first.

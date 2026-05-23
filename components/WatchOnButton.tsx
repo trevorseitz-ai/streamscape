@@ -19,7 +19,9 @@ import {
   getAndroidTvPackageForTmdbProviderId,
   launchStreamingApp,
   resolveTmdbProviderIdForStreamingOption,
+  deriveProviderContentIdForStreamingOption,
 } from '../lib/linking-utils';
+import { launchStreamingService } from '../lib/streaming-universal-links';
 import { tvFocusable, tvPreferredFocusProps } from '../lib/tvFocus';
 import { tvAndroidNavProps } from '../lib/tvAndroidNavProps';
 import { useTvNativeTag } from '../hooks/useTvNativeTag';
@@ -95,6 +97,8 @@ export function WatchOnButton({
     label = 'Go to Amazon Prime';
   } else if (isAndroidTvUi && providerKey === '350') {
     label = 'Go to Apple TV';
+  } else if (isAndroidTvUi && providerKey === '531') {
+    label = 'Go to Paramount Plus';
   } else if (isAndroidTvUi && providerKey === '1899') {
     label = 'Watch on Max';
   } else if (isAndroidTvUi && providerKey === '33') {
@@ -171,6 +175,20 @@ export function WatchOnButton({
     const preferredHttps = (provider.videoLink ?? provider.link).trim();
     const onTvAndroid = Platform.OS === 'android' && isTvTarget();
 
+    const pidNum =
+      providerKey != null ? Number.parseInt(providerKey, 10) : Number.NaN;
+    const derivedCatalogId =
+      Platform.OS === 'android' && Number.isFinite(pidNum) && pidNum > 0
+        ? deriveProviderContentIdForStreamingOption(pidNum, provider)
+        : null;
+
+    const tryUniversalHttpsIntent = async (): Promise<boolean> => {
+      if (Platform.OS !== 'android' || providerKey == null) return false;
+      return launchStreamingService(providerKey, derivedCatalogId ?? undefined, {
+        mediaTitle,
+      });
+    };
+
     if (onTvAndroid && providerKey != null) {
       const pkg = getAndroidTvPackageForTmdbProviderId(providerKey);
       if (pkg != null) {
@@ -179,6 +197,9 @@ export function WatchOnButton({
           mediaTitle,
         });
         if (res.ok) return;
+        if (providerKey === '9' || providerKey === '350' || providerKey === '531') return;
+
+        if (await tryUniversalHttpsIntent()) return;
         if (preferredHttps !== '') {
           await onOpenStreamingUrl(preferredHttps);
           return;
@@ -188,6 +209,7 @@ export function WatchOnButton({
     }
 
     if (Platform.OS === 'android' && providerKey != null) {
+      if (await tryUniversalHttpsIntent()) return;
       const opened = await launchStreamingApp(providerKey, provider, { mediaTitle });
       if (opened) return;
     }

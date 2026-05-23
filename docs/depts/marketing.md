@@ -21,7 +21,7 @@ Explore a polished Discover experience built for speed and clarity. Featured-sty
 ReelDive mirrors an up-to-date provider catalog (with **broad mainstream and niche/premium coverage**) so availability isn’t a guess—it's reflected consistently across discovery and your profile.
 
 **BUILT FOR HOW YOU REALLY WATCH**  
-Save picks to your **Watchlist**, organize your **Library**, and use **Search** when you already know the title. Tune **Profile → My services** so what you care about stays aligned with the catalog the app maintains.
+Save picks to your **Watchlist**, track titles on **Watched**, and use **Search** when you already know the title. Tune **Profile → My services** so what you care about stays aligned with the catalog the app maintains.
 
 **ONE APP, YOUR SCREENS**  
 The same thoughtful flow is designed to feel at home on **iPhone and Android** today—and pairs with our lean-back **Android TV** experience when you want the living-room version.
@@ -35,7 +35,7 @@ Curated movie discovery with live streaming availability, watchlists, and a prof
 
 ### Keyword field (iOS — comma-separated; do not repeat the app name)
 
-movies,streaming,watchlist,where to watch,discover,film,cinema,OTT,providers,library
+movies,streaming,watchlist,watched,history,where to watch,discover,film,cinema,OTT,providers
 
 ---
 

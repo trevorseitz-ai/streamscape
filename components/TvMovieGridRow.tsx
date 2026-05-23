@@ -11,17 +11,22 @@ import {
   View,
   Text,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Platform,
   findNodeHandle,
   InteractionManager,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { tvFocusable } from '../lib/tvFocus';
 import { tvAndroidNavProps } from '../lib/tvAndroidNavProps';
 import { tvTitleFontSize, tvBodyFontSize } from '../lib/tvTypography';
 import { useTvSearchFocusBridge } from '../lib/tv-search-focus-context';
+
+/**
+ * Poster rails for Discover/Home — opens **`/movie/[id]`**, not streaming apps.
+ * Service launches use **`WatchOnButton`** + **`lib/streaming-universal-links`** (**`launchStreamingService`**).
+ */
 
 /** Locked TV poster rail — see `docs/depts/tv.md`. */
 export const TV_MOVIE_GRID_POSTER_WIDTH = 140;
@@ -267,7 +272,11 @@ function TvPosterCell({
             <Image
               source={{ uri: movie.poster_url as string }}
               style={styles.posterImageFill}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="disk"
+              priority="high"
+              recyclingKey={movie.id}
+              transition={null}
               onError={() => setPosterLoadFailed(true)}
             />
           ) : (

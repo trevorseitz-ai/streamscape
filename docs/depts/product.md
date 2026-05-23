@@ -17,7 +17,7 @@
 
 - **Scope:** Discover default landing aligned across **browser**, **native handsets**, and **Android TV**; **Stream Finder**-backed curation (synced catalog + provider availability—**16** mirrored providers); **TMDB** poster/backdrop enrichment; **adaptive viewport utils** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards + stable auth effect deps.
 - **Outcome:** Featured / “Top”-style landings and **~1,206** mirrored titles at scale; technical detail in [Web](web.md), [TV](tv.md), and [HQ](../../HQ.md).
-- **Phase 1 shell — clutter-free:** The main navigator has **six** substantive tabs only (**Home → Search → Watchlist → Library → Discover → Profile**). Placeholder **Account** UI and **`app/(tabs)/account.tsx`** are **removed** so Phase 1 ships without empty shells; the experience is **ready for Phase 2** feature expansion without tab-bar debt.
+- **Phase 1 shell — clutter-free:** The main navigator has **six** substantive tabs only (**Home → Search → Watchlist → Watched → Discover → Profile**). Placeholder **Account** UI and **`app/(tabs)/account.tsx`** are **removed** so Phase 1 ships without empty shells; the experience is **ready for Phase 2** feature expansion without tab-bar debt.
 
 ### UX strategy — Profile as anchor
 

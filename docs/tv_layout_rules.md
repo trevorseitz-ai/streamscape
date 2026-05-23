@@ -42,3 +42,12 @@ If a grid is shoved too far to the right, or the layout math is ignoring your pa
 
 - Always check the master layout (`_layout.tsx`) or sidebar component for rogue `gap`, `marginRight`, or `justifyContent: 'space-between'` properties.
 - **Debug Strategy:** Temporarily add `backgroundColor: 'rgba(255, 0, 0, 0.3)'` to containers to visually expose hidden boundaries.
+
+## 5. Watched tab (`app/(tabs)/watched.tsx`)
+
+The **Watched** tab (UI rename from legacy **Library**; persistence remains **`user_library`**) stacks vertically:
+
+1. **`WatchedHistoryStatsHeader`** — **`watched_history`** analytics (**`FlatList` header**).
+2. **Scroll list** — **`user_library`** rows joined to **`media`**.
+
+Canonical detail: **`docs/depts/tv.md`** (**Watched tab layout**).

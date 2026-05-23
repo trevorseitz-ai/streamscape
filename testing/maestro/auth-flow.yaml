@@ -27,14 +27,14 @@ appId: com.reeldive.app
     text: "Sign in"
     optional: true
 
-# Stable id: Discover / Library / Profile signed-out CTAs (see maestro-onboarding-login-btn).
+# Stable id: Discover / Watched / Profile signed-out CTAs (see maestro-onboarding-login-btn).
 - tapOn:
     id: "maestro-onboarding-login-btn"
     optional: true
 
 # TV lean-back splash may appear before tabs.
 - tapOn:
-    text: "Explore Library"
+    text: "Start browsing"
     optional: true
 
 - tapOn:

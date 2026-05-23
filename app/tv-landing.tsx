@@ -162,7 +162,7 @@ export default function TvLandingScreen() {
                 onPress={() => router.replace('/(tabs)')}
                 style={tvBtnState}
               >
-                <Text style={styles.actionLabel}>Explore Library</Text>
+                <Text style={styles.actionLabel}>Start browsing</Text>
               </Pressable>
               <Pressable
                 {...(tvFocus ? { focusable: true } : {})}

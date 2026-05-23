@@ -38,5 +38,5 @@ appId: com.reeldive.app
 - tapOn: "Profile"
 
 - extendedWaitUntil:
-    visible: "Your Cinematic Profile"
+    visible: "My Services"
     timeout: 30000

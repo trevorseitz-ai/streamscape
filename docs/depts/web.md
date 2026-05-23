@@ -15,7 +15,7 @@
 
 **Standard horizontal order** (mobile web and native handset **bottom tab bar**; TV mirrors this **top-to-bottom** on the sidebar):
 
-**Home → Search → Watchlist → Library → Discover → Profile**.
+**Home → Search → Watchlist → Watched → Discover → Profile**.
 
 **Profile** is intentionally **last** (anchored)—see [`product.md`](product.md).
 
@@ -99,7 +99,7 @@ Operational detail:
 User selections (`user_profiles.enabled_services` + local AsyncStorage) are **not** an open-ended TMDB ID list — they are **intersected with `stream_finder_providers`**, which mirrors **`GET /api/providers`** on each Stream Finder sync (**API as source of truth** for which services exist in the product).
 
 - **On Profile load:** After the catalog fetch, any saved ID **not** in the current provider table is **silently dropped**; storage and Supabase are updated to match. A one-time UI hint may appear when pruning occurs.
-- **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Library**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
+- **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Watched**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
 
 ### Session stability in effects
 

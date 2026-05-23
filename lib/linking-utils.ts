@@ -87,16 +87,14 @@ function buildRegistry(): Record<number, ProviderRegistryEntry> {
   };
 
   add(8, 'com.netflix.ninja', ['nflx://www.netflix.com/browse', 'https://www.netflix.com/browse']);
-  add(9, 'com.amazon.amazonvideo.livingroom', [
-    'https://app.primevideo.com/',
-    'https://www.primevideo.com/',
-  ]);
+  add(9, 'com.amazon.amazonvideo.livingroom', []);
   add(15, 'com.hulu.livingroomplus', ['https://www.hulu.com/hub/home']);
   add(337, 'com.disney.disneyplus', ['https://www.disneyplus.com/home']);
   add(1899, 'com.wbd.stream', ['https://www.max.com/', 'hbomax://deeplink/home']);
-  add(531, 'com.cbs.ott', ['https://www.paramountplus.com/']);
+  /** TV: **`utils/linking.openParamountPlusApp`** (**no HTTPS / **`ACTION_VIEW`** from collector). Phone uses storefront/registry fallbacks elsewhere. */
+  add(531, 'com.cbs.ott', []);
   add(386, 'com.peacocktv.peacockandroid', ['https://www.peacocktv.com/']);
-  add(350, 'com.apple.atve.sony.appletv', ['https://tv.apple.com/']);
+  add(350, 'com.apple.atve.sony.appletv', []);
   add(283, 'com.crunchyroll.crunchyroid', ['https://www.crunchyroll.com/']);
   add(526, 'com.amcup.android', ['https://www.amcplus.com/']);
   add(99, 'com.shudder.android', ['https://www.shudder.com/']);
@@ -642,10 +640,11 @@ export function toTvImplicitLaunchUri(
  * Preferred launch URIs for **`providerId`** (TMDB) and RapidAPI **`option`**.
  *
  * **Netflix:** **`TV_HANDOFF_MAIN_LAUNCH_MARKER`** first (**front-door reliability**), then **`nflx://…/watch`**, search, HTTPS watch, links (**marker** is **`MAIN`** only — no VIEW **`data`**).
- * **Prime (ASIN):** **`https://amazon.com/[ASIN]`** → **`https://amazon.com/dp/[ASIN]`** → **`https://www.amazon.com/gp/video/detail/[ASIN]`**; GTI → **`app.primevideo.com/detail?gti=`** (**no **`amzn://`**).
+ * **Prime (TMDB **`9`):** **`ACTION_MAIN`** + **`LEANBACK_LAUNCHER`** + explicit **`IgnitionActivity`** via **`utils/linking.openPrimeVideoApp`** (**`expo-intent-launcher`**) on Android TV (**no HTTPS / ASIN / GTI from this collector** — **phone** retains raw **`videoLink`** / **`link`** / storefront registry only).
  * **Max (1899; alias **24**):** **`https://play.max.com/video/watch/[ID]`** first (**`com.wbd.stream`**), then API links / registry.
  * **Tubi (33):** **`https://tubitv.com/movies/[ID]`**, links, **`https://tubitv.com/`** home.
- * **Apple TV:** **`https://tv.apple.com/{kind}/…`** first (**Sony web-wrapper**), then **`apple-tv://`**.
+ * **Apple TV Plus (TMDB **`350`):** Android TV (**Sony**): **`utils/linking.openAppleTvApp`** — package **`com.apple.atve.sony.appletv`**, activity **`com.apple.atve.androidtv.appletv.MainActivity`**. Non-TV: **`https://tv.apple.com/{kind}/…`**, **`apple-tv://`** via this collector.
+ * **Paramount Plus (TMDB **`531`):** Android TV: **`utils/linking.openParamountPlusApp`** — package **`com.cbs.ott`**, activity **`com.cbs.app.tv.ui.activity.HomeActivity`**. Non-TV: RapidAPI **`link`** / **`videoLink`** and storefront **`https://www.paramountplus.com/`** via other helpers.
  */
 export function collectStreamingLaunchCandidates(
   providerId: string,
@@ -686,43 +685,17 @@ export function collectStreamingLaunchCandidates(
   }
 
   if (pid === 9) {
-    const asin = extractAmazonAsinFromOption(option);
-    const gti = extractPrimeGtiFromOption(option);
-
-    if (asin != null) {
-      const enc = encodeURIComponent(asin);
-      pushDedup(ordered, seen, `https://amazon.com/${enc}`);
-      pushDedup(ordered, seen, `https://amazon.com/dp/${enc}`);
-      pushDedup(ordered, seen, `https://www.amazon.com/gp/video/detail/${enc}`);
-    }
-    if (gti != null) {
-      pushDedup(
-        ordered,
-        seen,
-        `https://app.primevideo.com/detail?gti=${encodeURIComponent(gti)}`
-      );
-    }
-    if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
-    if (option.link) pushDedup(ordered, seen, option.link);
-    appendPrimeInstantVideoSearchCandidate(ordered, seen, launchOpts?.mediaTitle);
-    if (entry) {
-      for (const u of entry.urls) pushDedup(ordered, seen, u);
-    }
+    /* TMDB **`9`** — fullscreen lean-back launch only (**`utils/linking`**); no storefront / RapidAPI **`VIEW`** URLs here. */
     return ordered;
   }
 
   if (pid === 350) {
-    const umc = extractAppleTvUmcIdFromOption(option);
-    if (umc != null) {
-      const kind = inferAppleTvPathKind(option);
-      pushDedup(ordered, seen, `https://tv.apple.com/${kind}/${umc}`);
-      pushDedup(ordered, seen, `apple-tv://${kind}/${encodeURIComponent(umc)}`);
-    }
-    if (option.videoLink) pushDedup(ordered, seen, option.videoLink);
-    if (option.link) pushDedup(ordered, seen, option.link);
-    if (entry) {
-      for (const u of entry.urls) pushDedup(ordered, seen, u);
-    }
+    /* TMDB **`350`** — fullscreen lean-back launch on TV (**`openAppleTvApp`**); no **`ACTION_VIEW`** URL chain here. */
+    return ordered;
+  }
+
+  if (pid === 531) {
+    /* TMDB **`531`** — lean-back (**`openParamountPlusApp`**); no Paramount+ **`ACTION_VIEW`/HTTPS trap** chain here on TV paths. */
     return ordered;
   }
 
