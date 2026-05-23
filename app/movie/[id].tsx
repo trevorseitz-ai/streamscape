@@ -2174,8 +2174,18 @@ export default function MovieDetailsScreen() {
         onRequestClose={() => setTrailerModalVisible(false)}
       >
         <View style={styles.trailerModalContainer} {...tvNf}>
+          {trailerKey ? (
+            <View style={styles.trailerModalPlayer}>
+              <TrailerPlayer
+                videoId={trailerKey}
+                height={Math.floor(Dimensions.get('window').height * 0.6)}
+                tvPlayGate={tvDpadFocus}
+                modalVisible={trailerModalVisible}
+              />
+            </View>
+          ) : null}
           <Pressable
-            {...(isTV && Platform.OS === 'android' ? tvPreferredFocusProps() : tvFocusable())}
+            {...tvFocusable()}
             focusable={tvDpadFocus ? true : undefined}
             onFocus={() => setTrailerCloseFocused(true)}
             onBlur={() => setTrailerCloseFocused(false)}
@@ -2187,14 +2197,6 @@ export default function MovieDetailsScreen() {
           >
             <Ionicons name="close" size={32} color="#ffffff" />
           </Pressable>
-          {trailerKey ? (
-            <View style={styles.trailerModalPlayer}>
-              <TrailerPlayer
-                videoId={trailerKey}
-                height={Math.floor(Dimensions.get('window').height * 0.6)}
-              />
-            </View>
-          ) : null}
         </View>
       </Modal>
 
