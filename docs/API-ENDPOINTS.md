@@ -1,4 +1,4 @@
-# API endpoints (StreamScape / ReelDive)
+# API endpoints (ReelDive)
 
 This document lists **HTTP(S) APIs and first-party route handlers** the app uses, and what each is for. Values in **angle brackets** come from your environment (`.env` / hosting).
 

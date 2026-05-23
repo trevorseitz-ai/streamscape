@@ -86,7 +86,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'Content-Type': 'application/json',
-      'X-Client-Info': 'streamscape-supabase-js',
+      'X-Client-Info': 'reeldive-supabase-js',
     },
   },
 });

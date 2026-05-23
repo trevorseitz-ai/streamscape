@@ -1,6 +1,6 @@
 # README_DEV — Developer flight manual
 
-Quick orientation for engineers joining **StreamScape / ReelDive**: one codebase, multiple surfaces, TV-specific focus rules, and Supabase behind the scenes.
+Quick orientation for engineers joining **ReelDive**: one codebase, multiple surfaces, TV-specific focus rules, and Supabase behind the scenes.
 
 ---
 

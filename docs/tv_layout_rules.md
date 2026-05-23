@@ -1,6 +1,6 @@
 # 📐 Android TV UI & Layout Guidelines
 
-**Core Directive:** This document dictates the strict mathematical layout for all Android TV interfaces in Streamscape. Never rely on flexbox guesses for horizontal TV grids.
+**Core Directive:** This document dictates the strict mathematical layout for all Android TV interfaces in ReelDive. Never rely on flexbox guesses for horizontal TV grids.
 
 ## 1. The 20-Pixel Law
 
