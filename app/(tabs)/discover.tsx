@@ -47,7 +47,7 @@ import {
   resolvePrunedProviderSelections,
   type StreamFinderProviderRow,
 } from '../../lib/stream-finder-supabase';
-import { consumeDiscoverNeedsRefreshFlag } from '../../lib/discover-streaming-preferences-reset';
+import { subscribeDiscoverFeedFlushAfterProfileSave } from '../../lib/discover-streaming-preferences-reset';
 import { discoverPosterGridColumns } from '../../lib/viewport-utils';
 import {
   TvMovieGridRow,
@@ -311,6 +311,17 @@ type ListItem =
   | { type: 'row'; movies: DiscoverResult[]; key: string; movieRowIndex: number }
   | { type: 'divider'; title: string; key: string };
 
+/** Pre-network Supabase / TMDB payload dump for Metro + device Logcat. */
+function logDiscoverDatabaseNetworkPayloadAudit(
+  auditLabel: string,
+  debugQueryPayload: Record<string, unknown>
+): void {
+  console.log('🚨 [ReelDive Debug] DATABASE NETWORK PAYLOAD AUDIT —————————————————');
+  console.log(`🔖 ${auditLabel}`);
+  console.log('📦 FULL RAW PARAMETERS:', JSON.stringify(debugQueryPayload, null, 2));
+  console.log('————————————————————————————————————————————————————————————————');
+}
+
 export default function DiscoverScreen() {
   const router = useRouter();
   const status = useWatchlistStatus();
@@ -358,6 +369,9 @@ export default function DiscoverScreen() {
   const [error, setError] = useState<string | null>(null);
   const [monetization, setMonetization] = useState<MonetizationType>('both');
   const [providerIds, setProviderIds] = useState<number[]>([]);
+  const providerIdsRef = useRef(providerIds);
+  providerIdsRef.current = providerIds;
+
   /** Bumps Discover Stream Finder hydrate after Profile saves prefs (Discover tab stays mounted). */
   const [discoverStreamFinderHydrationGeneration, setDiscoverStreamFinderHydrationGeneration] =
     useState(0);
@@ -447,9 +461,56 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
+  /** Hard reset Stream Finder + TMDB feed state when Profile **Save Preferences** succeeds (Discover may stay mounted behind Profile). */
+  const flushDiscoverCachesAfterProfilePreferenceSave = useCallback(() => {
+    fetchingRef.current = false;
+    loadingMoreRef.current = false;
+
+    setSelectedYear(null);
+    setSelectedGenres([]);
+    setMonetization('both');
+
+    setPhase1Movies([]);
+    setPhase2Movies([]);
+    setPage(1);
+    setTotalPages(1);
+    setFetchPhase(1);
+    setError(null);
+    setLoadingMore(false);
+    setLoading(false);
+    phase1IdsRef.current = new Set();
+
+    streamFinderHydrationDismissedRef.current = false;
+    discoverFeedSourceRef.current = 'stream-finder';
+    streamFinderPageOffsetRef.current = 0;
+    streamFinderTotalRef.current = 0;
+    streamFinderProvidersRef.current = null;
+
+    void (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const uid = data.session?.user?.id ?? null;
+        const ids = await resolvePrunedProviderSelections(supabase, { userId: uid });
+        setProviderIds(ids);
+        setDiscoverStreamFinderHydrationGeneration((n) => n + 1);
+        if (__DEV__) {
+          console.log(
+            '[ReelDive Debug] Discover cache flushed from Profile Save Preferences; re-hydrating Stream Finder from Supabase.'
+          );
+        }
+      } catch (err) {
+        console.warn('[Discover] Profile-save cache flush follow-up failed:', err);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeDiscoverFeedFlushAfterProfileSave(flushDiscoverCachesAfterProfilePreferenceSave);
+  }, [flushDiscoverCachesAfterProfilePreferenceSave]);
+
   /**
    * Curated default Discover — paginated Stream Finder cache (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`**) +
-   * TMDB poster / release-year enrichment. Re-runs when **`discoverStreamFinderHydrationGeneration`** bumps (Profile **`setDiscoverNeedsRefreshFlag`** → consumed on Discover focus).
+   * TMDB poster / release-year enrichment. Re-runs when **`discoverStreamFinderHydrationGeneration`** bumps (Profile **Save Preferences** → **`flushDiscoverFeedCachesAfterProfileSave`**).
    */
   useEffect(() => {
     let cancelled = false;
@@ -464,10 +525,93 @@ export default function DiscoverScreen() {
         if (cancelled || streamFinderHydrationDismissedRef.current) return;
         streamFinderProvidersRef.current = providerById;
 
+        const { data: hydrateAuth } = await supabase.auth.getSession();
+        const hydrateUid = hydrateAuth.session?.user?.id ?? null;
+        const freshWatchProviderIds = await resolvePrunedProviderSelections(supabase, {
+          userId: hydrateUid,
+        });
+        setProviderIds(freshWatchProviderIds);
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchStreamFinderProviderCatalog (post-fetch, pre-movies)',
+          {
+            activeProviderIdsSavedProfile: freshWatchProviderIds,
+            providerIdsStringAtRequest:
+              freshWatchProviderIds.join('|') ||
+              '(empty — full stream_finder mirror; TMDB Discover path still applies own provider filter)',
+            currentFeedSource: discoverFeedSourceRef.current,
+            streamFinderHydrationGeneration: discoverStreamFinderHydrationGeneration,
+            supabaseOperation: {
+              table: 'stream_finder_providers',
+              columns: 'provider_id, name, logo_path',
+              filter: '(none — full catalog)',
+            },
+            curatedFeedNote:
+              freshWatchProviderIds.length > 0
+                ? `Stream Finder Hydrate applies RPC stream_finder_discover_page_filtered ∩ movie_availability for [${freshWatchProviderIds.join(', ')}].`
+                : 'Stream Finder Hydrate: empty selection uses full popularity-sorted stream_finder_movies mirror (RPC filter omitted).',
+          }
+        );
+
+        const streamFinderRange = {
+          offset: 0,
+          limit: STREAM_FINDER_DISCOVER_PAGE_SIZE,
+        };
+
+        const streamFinderMoviesHydrateAuditOps =
+          freshWatchProviderIds.length > 0
+            ? [
+                {
+                  kind: 'rpc' as const,
+                  name: 'stream_finder_discover_page_filtered',
+                  params: {
+                    p_provider_ids: freshWatchProviderIds,
+                    p_offset: streamFinderRange.offset,
+                    p_limit: streamFinderRange.limit,
+                  },
+                  filterSemantics:
+                    'Eligible rows = stream_finder_movies m WHERE EXISTS (SELECT 1 FROM movie_availability a WHERE a.movie_id = m.tmdb_id AND a.provider_id = ANY (p_provider_ids)); pruned IDs ⊆ stream_finder_providers inside fetchDiscoverMoviesPageFromStreamFinder.',
+                  order: 'popularity DESC NULLS LAST',
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id IN (page tmdb_ids) — hydrate platform logos',
+                },
+              ]
+            : [
+                {
+                  table: 'stream_finder_movies' as const,
+                  select: 'tmdb_id, title, popularity, overview, poster_path',
+                  order: 'popularity desc',
+                  range: `range(${streamFinderRange.offset}, ${streamFinderRange.offset + streamFinderRange.limit - 1})`,
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id in (page tmdb_ids)',
+                },
+              ];
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchDiscoverMoviesPageFromStreamFinder (hydrate, pre-request)',
+          {
+            activeProviderIdsSavedProfile: freshWatchProviderIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            streamFinderPagination: streamFinderRange,
+            supabaseOperations: streamFinderMoviesHydrateAuditOps,
+          }
+        );
+
         const { movies: mapped, totalAvailable } =
           await fetchDiscoverMoviesPageFromStreamFinder(
             supabase,
-            { offset: 0, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE },
+            {
+              offset: streamFinderRange.offset,
+              limit: streamFinderRange.limit,
+              watchProviderIds: freshWatchProviderIds,
+            },
             providerById
           );
         if (cancelled || streamFinderHydrationDismissedRef.current) return;
@@ -535,12 +679,41 @@ export default function DiscoverScreen() {
             : providerIdsString
               ? providerIdsString.split('|').map(Number).filter(Boolean)
               : [];
+        logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 1 (pre-request)', {
+          activeProviderIdsUsedInQuery: providers,
+          currentFeedSource: discoverFeedSourceRef.current,
+          currentPageRequested: 1,
+          tmdbDiscoverParams: {
+            year,
+            monetization: monet,
+            tmdbPage: 1,
+            watchProvidersForUrl: providers,
+            genreIds: genres,
+            discoverPhase: 1,
+            watchRegion: selectedCountry,
+          },
+        });
+
         const data = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
+          logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 2 fallback (pre-request)', {
+            activeProviderIdsUsedInQuery: providers,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            tmdbDiscoverParams: {
+              year,
+              monetization: monet,
+              tmdbPage: 1,
+              watchProvidersForUrl: providers,
+              genreIds: genres,
+              discoverPhase: 2,
+              watchRegion: selectedCountry,
+            },
+          });
           const data2 = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 2, selectedCountry);
           setPhase2Movies(data2.movies);
           setTotalPages(data2.total_pages);
@@ -571,46 +744,13 @@ export default function DiscoverScreen() {
           mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
         );
         const uid = incoming?.user?.id ?? null;
-        const shouldFlushDiscover = consumeDiscoverNeedsRefreshFlag();
 
         try {
           const ids = await resolvePrunedProviderSelections(supabase, {
             userId: uid,
           });
           if (cancelled) return;
-
-          if (shouldFlushDiscover) {
-            console.log(
-              '[ReelDive Debug] Invalidation flag detected on Discover focus. Executing total cache flush.'
-            );
-            fetchingRef.current = false;
-            loadingMoreRef.current = false;
-
-            setSelectedYear(null);
-            setSelectedGenres([]);
-            setMonetization('both');
-
-            setPhase1Movies([]);
-            setPhase2Movies([]);
-            setPage(1);
-            setTotalPages(1);
-            setFetchPhase(1);
-            setError(null);
-            setLoadingMore(false);
-            setLoading(false);
-            phase1IdsRef.current = new Set();
-
-            streamFinderHydrationDismissedRef.current = false;
-            discoverFeedSourceRef.current = 'stream-finder';
-            streamFinderPageOffsetRef.current = 0;
-            streamFinderTotalRef.current = 0;
-            streamFinderProvidersRef.current = null;
-
-            setProviderIds(ids);
-            setDiscoverStreamFinderHydrationGeneration((n) => n + 1);
-          } else {
-            setProviderIds(ids);
-          }
+          setProviderIds(ids);
         } catch (err) {
           console.warn('[Discover] focus session / provider resolve failed:', err);
         }
@@ -635,10 +775,62 @@ export default function DiscoverScreen() {
       setLoadingMore(true);
 
       try {
+        const wmIds = [...providerIdsRef.current];
+        const sfPag = { offset: nextOffset, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE };
+        const streamFinderMoviesLoadMoreAuditOps =
+          wmIds.length > 0
+            ? [
+                {
+                  kind: 'rpc' as const,
+                  name: 'stream_finder_discover_page_filtered',
+                  params: {
+                    p_provider_ids: wmIds,
+                    p_offset: sfPag.offset,
+                    p_limit: sfPag.limit,
+                  },
+                  filterSemantics:
+                    'stream_finder_movies ∩ movie_availability via EXISTS(provider_id = ANY(p_provider_ids))',
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id IN (page tmdb_ids)',
+                },
+              ]
+            : [
+                {
+                  table: 'stream_finder_movies' as const,
+                  select: 'tmdb_id, title, popularity, overview, poster_path',
+                  order: 'popularity desc',
+                  range: `range(${sfPag.offset}, ${sfPag.offset + sfPag.limit - 1})`,
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id in (page tmdb_ids)',
+                },
+              ];
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchDiscoverMoviesPageFromStreamFinder (loadMore, pre-request)',
+          {
+            activeProviderIdsSavedProfile: wmIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: typeof page !== 'undefined' ? page : 1,
+            streamFinderPagination: sfPag,
+            streamFinderTotalKnown: total,
+            supabaseOperations: streamFinderMoviesLoadMoreAuditOps,
+          }
+        );
+
         const { movies: pageMovies, totalAvailable } =
           await fetchDiscoverMoviesPageFromStreamFinder(
             supabase,
-            { offset: nextOffset, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE },
+            {
+              offset: nextOffset,
+              limit: STREAM_FINDER_DISCOVER_PAGE_SIZE,
+              watchProviderIds: wmIds,
+            },
             pmap
           );
         if (discoverFeedSourceRef.current !== 'stream-finder') return;
@@ -668,6 +860,20 @@ export default function DiscoverScreen() {
         setFetchPhase(2);
 
         try {
+          logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 2 (loadMore bridge, pre-request)', {
+            activeProviderIdsUsedInQuery: providerIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            tmdbDiscoverParams: {
+              year: selectedYear,
+              monetization,
+              tmdbPage: 1,
+              watchProvidersForUrl: providerIds,
+              genreIds: selectedGenres,
+              discoverPhase: 2,
+              watchRegion: selectedCountry,
+            },
+          });
           const data = await fetchDiscoverFromTMDB(
             selectedYear, monetization, 1, providerIds, selectedGenres, 2, selectedCountry
           );
@@ -693,6 +899,20 @@ export default function DiscoverScreen() {
     const nextPage = page + 1;
 
     try {
+      logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB pagination (loadMore, pre-request)', {
+        activeProviderIdsUsedInQuery: providerIds,
+        currentFeedSource: discoverFeedSourceRef.current,
+        currentPageRequested: nextPage,
+        tmdbDiscoverParams: {
+          year: selectedYear,
+          monetization,
+          tmdbPage: nextPage,
+          watchProvidersForUrl: providerIds,
+          genreIds: selectedGenres,
+          discoverPhase: fetchPhase,
+          watchRegion: selectedCountry,
+        },
+      });
       const data = await fetchDiscoverFromTMDB(
         selectedYear, monetization, nextPage, providerIds, selectedGenres, fetchPhase, selectedCountry
       );

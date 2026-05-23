@@ -16,6 +16,7 @@ import {
   Image,
   Pressable,
   Alert,
+  Modal,
   Platform,
   useWindowDimensions,
 } from 'react-native';
@@ -27,8 +28,9 @@ import {
   saveProviderIds,
 } from '../../lib/provider-preferences';
 import { resolveStreamFinderProviderLogoUrl } from '../../lib/stream-finder-supabase';
-import { setDiscoverNeedsRefreshFlag } from '../../lib/discover-streaming-preferences-reset';
-import { isTvTarget } from '../../lib/isTv';
+import { flushDiscoverFeedCachesAfterProfileSave } from '../../lib/discover-streaming-preferences-reset';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvPreferredFocusProps } from '../../lib/tvFocus';
 
 const CONTENT_HORIZONTAL_PAD = 20;
 const PROFILE_GRID_GAP = 10;
@@ -42,6 +44,12 @@ interface ProviderEntry {
   name: string;
   logo_url: string;
 }
+
+type ProfileSaveFeedback = {
+  variant: 'success' | 'error';
+  title: string;
+  message: string;
+};
 
 /** Normalize TMDB / Supabase / storage IDs so Set membership never fails on 8 vs "8". */
 function normalizeProviderId(id: unknown): string {
@@ -69,6 +77,8 @@ export default function SettingsScreen() {
   const innerContentWidth =
     viewportBucket - CONTENT_HORIZONTAL_PAD * 2;
   const isTV = isTvTarget();
+  /** Native Alert dialogs do not receive D-pad focus on Android TV — use an in-tree Modal instead. */
+  const useTvSaveFeedbackModal = shouldUseTvDpadFocus();
   /** Android TV: list / chrome must not become accidental focus targets after grid updates. */
   const tvNf =
     isTV && Platform.OS === 'android'
@@ -81,6 +91,8 @@ export default function SettingsScreen() {
   const [catalogPrunedNotice, setCatalogPrunedNotice] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [profileSaveFeedback, setProfileSaveFeedback] =
+    useState<ProfileSaveFeedback | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -244,33 +256,92 @@ export default function SettingsScreen() {
 
   /** Two-way: add or remove provider id from selection (new Set each update). */
   const handleSave = useCallback(async () => {
-    const idsArray = providerIdsToNumberArray(selectedIds).filter((id) =>
-      activeProviderIdSet.has(id)
-    );
+    console.log('[ReelDive Debug] Save Preferences: handler entered (button press / onPress).');
+
     try {
+      const idsArray = providerIdsToNumberArray(selectedIds).filter((id) =>
+        activeProviderIdSet.has(id)
+      );
+      console.log('[ReelDive Debug] Save Preferences: normalized provider id array for persist:', {
+        count: idsArray.length,
+        ids: idsArray,
+        sessionPresent: session != null,
+        sessionUserId: session?.user?.id ?? '(none)',
+        catalogSize: activeProviderIdSet.size,
+      });
+
+      console.log('[ReelDive Debug] Save Preferences: writing to AsyncStorage via saveProviderIds...');
       await saveProviderIds(idsArray);
+      console.log('[ReelDive Debug] Save Preferences: AsyncStorage saveProviderIds resolved OK.');
+
       setSelectedIds(providerIdSetFromValues(idsArray as unknown[]));
+      console.log('[ReelDive Debug] Save Preferences: React selectedIds state synced to saved array.');
+
       if (session) {
+        console.log(
+          '[ReelDive Debug] Save Preferences: session exists — initiating Supabase user_profiles upsert...'
+        );
         const { error } = await supabase
           .from('user_profiles')
           .upsert(
             { id: session.user.id, enabled_services: idsArray },
             { onConflict: 'id' }
           );
+        console.log('[ReelDive Debug] Save Preferences: Supabase upsert await finished.', {
+          hasError: error != null,
+          errorMessage: error?.message ?? null,
+          errorDetails: error ?? null,
+        });
+
         if (error) {
-          Alert.alert('Error', error.message);
+          console.error('[ReelDive Debug] Save Preferences: Supabase returned error — aborting flush & success UI.', error);
+          if (useTvSaveFeedbackModal) {
+            setProfileSaveFeedback({ variant: 'error', title: 'Error', message: error.message });
+          } else {
+            Alert.alert('Error', error.message);
+          }
           return;
         }
+      } else {
+        console.log(
+          '[ReelDive Debug] Save Preferences: no session object — skipping Supabase upsert (local storage only path).'
+        );
       }
-      setDiscoverNeedsRefreshFlag();
-      Alert.alert('Success', 'Providers saved successfully!');
-    } catch (e) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Could not save preferences'
+
+      console.log(
+        '[ReelDive Debug] Save Preferences: persistence successful — invoking flushDiscoverFeedCachesAfterProfileSave()...'
       );
+      flushDiscoverFeedCachesAfterProfileSave();
+      console.log(
+        '[ReelDive Debug] Save Preferences: flushDiscoverFeedCachesAfterProfileSave() returned (sync dispatcher done).'
+      );
+
+      if (useTvSaveFeedbackModal) {
+        setProfileSaveFeedback({
+          variant: 'success',
+          title: 'Success',
+          message: 'Providers saved successfully!',
+        });
+      } else {
+        Alert.alert('Success', 'Providers saved successfully!');
+      }
+      console.log(
+        `[ReelDive Debug] Save Preferences: success ${useTvSaveFeedbackModal ? 'TV modal' : 'Alert'} queued; handler exiting normally.`
+      );
+    } catch (catchError) {
+      console.error(
+        '[ReelDive Debug] CRITICAL UNHANDLED EXCEPTION inside Profile handleSave:',
+        catchError
+      );
+      const msg =
+        catchError instanceof Error ? catchError.message : 'Could not save preferences';
+      if (useTvSaveFeedbackModal) {
+        setProfileSaveFeedback({ variant: 'error', title: 'Error', message: msg });
+      } else {
+        Alert.alert('Error', msg);
+      }
     }
-  }, [selectedIds, session, activeProviderIdSet]);
+  }, [selectedIds, session, activeProviderIdSet, useTvSaveFeedbackModal]);
 
   const sortedFilteredProviders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -461,6 +532,34 @@ export default function SettingsScreen() {
       <View style={styles.profileSaveBar} collapsable={false} {...tvNf}>
         <SavePreferencesButton onPress={handleSave} stickyBar />
       </View>
+
+      {useTvSaveFeedbackModal ? (
+        <Modal
+          visible={profileSaveFeedback != null}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setProfileSaveFeedback(null)}
+        >
+          <View style={styles.profileSaveModalOverlay} collapsable={false} {...tvNf}>
+            <View style={styles.profileSaveModalCard} collapsable={false}>
+              {profileSaveFeedback ? (
+                <>
+                  <Text style={styles.profileSaveModalTitle} {...tvNf}>
+                    {profileSaveFeedback.title}
+                  </Text>
+                  <Text style={styles.profileSaveModalBody} {...tvNf}>
+                    {profileSaveFeedback.message}
+                  </Text>
+                  <ProfileSaveModalOkButton
+                    onPress={() => setProfileSaveFeedback(null)}
+                  />
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -751,7 +850,81 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 10,
   },
+  profileSaveModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  profileSaveModalCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    paddingVertical: 26,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  profileSaveModalTitle: {
+    color: '#f9fafb',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  profileSaveModalBody: {
+    color: '#9ca3af',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+  profileSaveModalOk: {
+    alignSelf: 'stretch',
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  profileSaveModalOkFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+  },
+  profileSaveModalOkPressing: {
+    opacity: 0.88,
+  },
+  profileSaveModalOkText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
+
+/** Single focus target for TV save/error overlay — **`hasTVPreferredFocus`** lands D-pad on OK immediately. */
+function ProfileSaveModalOkButton({ onPress }: { onPress: () => void }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <Pressable
+      {...tvPreferredFocusProps()}
+      focusable
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      style={({ pressed }) => [
+        styles.profileSaveModalOk,
+        isFocused && styles.profileSaveModalOkFocused,
+        pressed && styles.profileSaveModalOkPressing,
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="OK"
+    >
+      <Text style={styles.profileSaveModalOkText}>OK</Text>
+    </Pressable>
+  );
+}
 
 type SavePreferencesButtonProps = {
   onPress: () => void;
