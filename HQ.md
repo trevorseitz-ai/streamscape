@@ -1,6 +1,8 @@
-# 🏛️ Streamscape Headquarters — Lobby
+# 🏛️ ReelDive Headquarters — Lobby
 
 > **Central directory.** Open a **department office** below for focused work, or use shared references. This file stays lightweight; deep context lives in `docs/depts/` and `docs/`.
+>
+> **Legacy product name:** If you still see **StreamScape** somewhere, check [`HQ/streamscape-remnants-map.md`](HQ/streamscape-remnants-map.md) (intentional vs planned renames).
 
 ---
 
