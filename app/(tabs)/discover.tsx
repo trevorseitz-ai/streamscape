@@ -40,7 +40,14 @@ import {
   enrichWithTmdbImages,
   enrichTmdbReleaseYearsForDiscover,
 } from '../../lib/film-show-rapid-discover';
-import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
+import {
+  STREAM_FINDER_DISCOVER_PAGE_SIZE,
+  fetchDiscoverMoviesPageFromStreamFinder,
+  fetchStreamFinderProviderCatalog,
+  resolvePrunedProviderSelections,
+  type StreamFinderProviderRow,
+} from '../../lib/stream-finder-supabase';
+import { consumeDiscoverNeedsRefreshFlag } from '../../lib/discover-streaming-preferences-reset';
 import { discoverPosterGridColumns } from '../../lib/viewport-utils';
 import {
   TvMovieGridRow,
@@ -50,7 +57,8 @@ import {
 } from '../../components/TvMovieGridRow';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+/** Discover list posters — **`w342`** / **`w185`** tier only; avoid **`original`** on TV grids. */
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
 
 /** Local Discover auth snapshot — aligns Supabase Session with tri-state Discover UI. */
 type DiscoverLocalSession =
@@ -314,33 +322,6 @@ export default function DiscoverScreen() {
   const [session, setSession] = useState<DiscoverLocalSession>(undefined);
 
   useEffect(() => {
-    console.log('🍏 [Discover] MOUNTED on platform:', Platform.OS);
-    return () => console.log('🍎 [Discover] UNMOUNTED');
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      watchlistRefetchRef.current?.();
-      let cancelled = false;
-      supabase.auth.getSession().then(({ data: { session: incoming } }) => {
-        if (cancelled) return;
-        setSession((prev) =>
-          mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
-        );
-        const uid = incoming?.user?.id ?? null;
-        resolvePrunedProviderSelections(supabase, { userId: uid }).then(
-          (ids) => {
-            if (!cancelled) setProviderIds(ids);
-          }
-        );
-      });
-      return () => {
-        cancelled = true;
-      };
-    }, [])
-  );
-
-  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, s) =>
         setSession((prev) => mergeDiscoverAuth(prev, s as DiscoverLocalSession))
@@ -377,15 +358,25 @@ export default function DiscoverScreen() {
   const [error, setError] = useState<string | null>(null);
   const [monetization, setMonetization] = useState<MonetizationType>('both');
   const [providerIds, setProviderIds] = useState<number[]>([]);
+  /** Bumps Discover Stream Finder hydrate after Profile saves prefs (Discover tab stays mounted). */
+  const [discoverStreamFinderHydrationGeneration, setDiscoverStreamFinderHydrationGeneration] =
+    useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [streamFinderListHydrating, setStreamFinderListHydrating] = useState(false);
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
-  /** True while the default grid is the Stream Finder–cached list (no TMDB discover pagination). */
-  const streamFinderCuratedFeedActiveRef = useRef(false);
-  /** Ensures Stream Finder cache hydration runs once per mount. */
-  const streamFinderCuratedFetchedRef = useRef(false);
+  /** Default landing: **`stream-finder`** paginates via Supabase; filters switch to **`tmdb`** (TMDB **`/discover`**). */
+  const discoverFeedSourceRef = useRef<'stream-finder' | 'tmdb'>('stream-finder');
+  /** When **`true`**, in-flight Stream Finder hydration must **not** call **`setPhase1Movies`** (user applied filters first). */
+  const streamFinderHydrationDismissedRef = useRef(false);
+  /** Next Supabase **`range`** offset for Stream Finder (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`** stride). */
+  const streamFinderPageOffsetRef = useRef(0);
+  /** Stream Finder **`stream_finder_movies`** row count (exact count query). */
+  const streamFinderTotalRef = useRef(0);
+  const streamFinderProvidersRef = useRef<Map<number, StreamFinderProviderRow> | null>(
+    null
+  );
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const genreListRef = useRef<FlatList>(null);
@@ -457,31 +448,46 @@ export default function DiscoverScreen() {
   }, [phase1Movies]);
 
   /**
-   * Curated default Discover — Stream Finder cache in Supabase (+ TMDB poster/backdrop enrichment).
+   * Curated default Discover — paginated Stream Finder cache (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`**) +
+   * TMDB poster / release-year enrichment. Re-runs when **`discoverStreamFinderHydrationGeneration`** bumps (Profile **`setDiscoverNeedsRefreshFlag`** → consumed on Discover focus).
    */
   useEffect(() => {
-    if (streamFinderCuratedFetchedRef.current) return;
-    streamFinderCuratedFetchedRef.current = true;
-
     let cancelled = false;
-    streamFinderCuratedFeedActiveRef.current = true;
     setStreamFinderListHydrating(true);
 
     (async () => {
       try {
-        const mapped = await fetchDiscoverMoviesFromStreamFinder(supabase);
-        if (cancelled) return;
+        streamFinderHydrationDismissedRef.current = false;
+        discoverFeedSourceRef.current = 'stream-finder';
+
+        const providerById = await fetchStreamFinderProviderCatalog(supabase);
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+        streamFinderProvidersRef.current = providerById;
+
+        const { movies: mapped, totalAvailable } =
+          await fetchDiscoverMoviesPageFromStreamFinder(
+            supabase,
+            { offset: 0, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE },
+            providerById
+          );
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+
         if (__DEV__) {
-          console.log(`[Discover] Stream Finder hydrate: ${mapped.length} titles (cache read OK)`);
+          console.log(
+            `[Discover] Stream Finder hydrate: page1=${mapped.length} titles, catalogTotal=${totalAvailable} (cache read OK)`
+          );
         }
+
+        streamFinderPageOffsetRef.current = mapped.length;
+        streamFinderTotalRef.current = totalAvailable;
+
         const enriched = await enrichWithTmdbImages(mapped);
-        if (cancelled) return;
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
         const withYears = await enrichTmdbReleaseYearsForDiscover(enriched);
-        if (cancelled) return;
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
         setPhase1Movies(withYears as DiscoverResult[]);
       } catch (e) {
         console.warn('[Discover] Stream Finder cache load failed:', e);
-        streamFinderCuratedFeedActiveRef.current = false;
       } finally {
         if (!cancelled) setStreamFinderListHydrating(false);
       }
@@ -490,7 +496,7 @@ export default function DiscoverScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [discoverStreamFinderHydrationGeneration]);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -498,10 +504,16 @@ export default function DiscoverScreen() {
   );
 
   const fetchMovies = useCallback(
-    async (year: number | null, monet: MonetizationType, genres: number[]) => {
+    async (
+      year: number | null,
+      monet: MonetizationType,
+      genres: number[],
+      opts?: { providerIdsOverride?: number[] | null }
+    ) => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
-      streamFinderCuratedFeedActiveRef.current = false;
+      streamFinderHydrationDismissedRef.current = true;
+      discoverFeedSourceRef.current = 'tmdb';
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -511,9 +523,18 @@ export default function DiscoverScreen() {
       setTotalPages(1);
 
       try {
-        const providers = providerIdsString
-          ? providerIdsString.split('|').map(Number).filter(Boolean)
-          : [];
+        const providers =
+          opts?.providerIdsOverride != null
+            ? [
+                ...new Set(
+                  opts.providerIdsOverride
+                    .map((id) => Math.trunc(Number(id)))
+                    .filter((n) => Number.isFinite(n) && n > 0)
+                ),
+              ]
+            : providerIdsString
+              ? providerIdsString.split('|').map(Number).filter(Boolean)
+              : [];
         const data = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
@@ -539,13 +560,106 @@ export default function DiscoverScreen() {
     [selectedCountry, providerIdsString]
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      watchlistRefetchRef.current?.();
+      let cancelled = false;
+
+      supabase.auth.getSession().then(async ({ data: { session: incoming } }) => {
+        if (cancelled) return;
+        setSession((prev) =>
+          mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
+        );
+        const uid = incoming?.user?.id ?? null;
+        const shouldFlushDiscover = consumeDiscoverNeedsRefreshFlag();
+
+        try {
+          const ids = await resolvePrunedProviderSelections(supabase, {
+            userId: uid,
+          });
+          if (cancelled) return;
+
+          if (shouldFlushDiscover) {
+            console.log(
+              '[ReelDive Debug] Invalidation flag detected on Discover focus. Executing total cache flush.'
+            );
+            fetchingRef.current = false;
+            loadingMoreRef.current = false;
+
+            setSelectedYear(null);
+            setSelectedGenres([]);
+            setMonetization('both');
+
+            setPhase1Movies([]);
+            setPhase2Movies([]);
+            setPage(1);
+            setTotalPages(1);
+            setFetchPhase(1);
+            setError(null);
+            setLoadingMore(false);
+            setLoading(false);
+            phase1IdsRef.current = new Set();
+
+            streamFinderHydrationDismissedRef.current = false;
+            discoverFeedSourceRef.current = 'stream-finder';
+            streamFinderPageOffsetRef.current = 0;
+            streamFinderTotalRef.current = 0;
+            streamFinderProvidersRef.current = null;
+
+            setProviderIds(ids);
+            setDiscoverStreamFinderHydrationGeneration((n) => n + 1);
+          } else {
+            setProviderIds(ids);
+          }
+        } catch (err) {
+          console.warn('[Discover] focus session / provider resolve failed:', err);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading) return;
-    /**
-     * Same guard on Web and native: infinite scroll must not append TMDB /discover pages into the
-     * Stream Finder–cached default list while `streamFinderCuratedFeedActiveRef` is true.
-     */
-    if (streamFinderCuratedFeedActiveRef.current) return;
+
+    if (discoverFeedSourceRef.current === 'stream-finder') {
+      const nextOffset = streamFinderPageOffsetRef.current;
+      const total = streamFinderTotalRef.current;
+      const pmap = streamFinderProvidersRef.current;
+      if (pmap == null || total === 0 || nextOffset >= total) return;
+
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+
+      try {
+        const { movies: pageMovies, totalAvailable } =
+          await fetchDiscoverMoviesPageFromStreamFinder(
+            supabase,
+            { offset: nextOffset, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE },
+            pmap
+          );
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+
+        streamFinderTotalRef.current = totalAvailable;
+
+        const enriched = await enrichWithTmdbImages(pageMovies);
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+        const withYears = await enrichTmdbReleaseYearsForDiscover(enriched);
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+
+        setPhase1Movies((prev) => [...prev, ...(withYears as DiscoverResult[])]);
+        streamFinderPageOffsetRef.current = nextOffset + pageMovies.length;
+      } catch (err) {
+        console.error('[Discover] Stream Finder loadMore:', err);
+      } finally {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+      return;
+    }
 
     if (page >= totalPages) {
       if (fetchPhase === 1) {
@@ -991,7 +1105,7 @@ export default function DiscoverScreen() {
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled
           onEndReached={loadMore}
-          onEndReachedThreshold={1.5}
+          onEndReachedThreshold={0.5}
           windowSize={5}
           maxToRenderPerBatch={10}
           initialNumToRender={20}

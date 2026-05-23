@@ -15,7 +15,7 @@ function getTabIcon(routeName: string, focused: boolean) {
     index: { active: 'home', inactive: 'home-outline' },
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
-    library: { active: 'library', inactive: 'library-outline' },
+    watched: { active: 'eye', inactive: 'eye-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
     profile: { active: 'person', inactive: 'person-outline' },
   };
@@ -125,7 +125,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', headerShown: false }} />
       <Tabs.Screen name="search" options={{ title: 'Search', headerShown: false }} />
       <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist', headerShown: false }} />
-      <Tabs.Screen name="library" options={{ title: 'Library', headerShown: false }} />
+      <Tabs.Screen name="watched" options={{ title: 'Watched', headerShown: false }} />
       <Tabs.Screen name="discover" options={{ title: 'Discover', headerShown: false }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile', headerShown: false }} />
     </Tabs>

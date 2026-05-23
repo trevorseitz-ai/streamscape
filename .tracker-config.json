@@ -1,10 +1,8 @@
 {
   "project_name": "ReelDive",
-  "description": "Curated movie discovery with live streaming availability, watchlists, and a profile tuned to your services.",
+  "description": "Full audit unavailable: Unterminated string in JSON at position 22871 (line 148 column 16117). Copy .tracker-config.json below — it was built from your form.",
   "model_used": "none",
-  "stack": [
-    "Expo (Expo Router) React Native React (web via React Native Web) TypeScript Supabase Stream Finder (backend + sync into Supabase) TMDB Android TV (native / Expo prebuild) Zod Vercel (if you ship API routes there — implied by devDep; optional)"
-  ],
+  "stack": [],
   "status": "Active",
   "blockers": [
     "TV App links"
@@ -14,5 +12,5 @@
   ],
   "tracker_url": "http://localhost:3000/api/project-update",
   "agent_key": "dev-agent-key",
-  "prepped_at": "2026-05-20T18:05:16.723Z"
+  "prepped_at": "2026-05-20T18:44:27.339Z"
 }

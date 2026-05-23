@@ -44,10 +44,12 @@ _Add concrete URLs and repos here when they are finalized._
 
 ### Navigation architecture (shared tab shell)
 
-**Standard tab order** (horizontal on Web / handset bottom bar; mirrored top-to-bottom on TV sidebar): **Home → Search → Watchlist → Library → Discover → Profile**.
+**Standard tab order** (horizontal on Web / handset bottom bar; mirrored top-to-bottom on TV sidebar): **Home → Search → Watchlist → Watched → Discover → Profile**.
 
 - **Profile** is the **anchor** slot (far right / bottom)—see [`docs/depts/product.md`](docs/depts/product.md).
 - **Account** is **not** a tab: Phase 1 removed the unused **`account`** route from **`app/(tabs)/`**—see [`docs/depts/web.md`](docs/depts/web.md).
+
+**Profile screen structure** (shared Web / mobile / TV — **`app/(tabs)/profile.tsx`**): **`My Services`** block and **service search field** appear **first** in the scroll stack, then provider tiles, then supplementary footer content; **`Save Preferences`** stays **pinned to the bottom edge of the viewport** (outside the **`FlatList`**). Personal viewing statistics (**`watched_history`**) render on **`app/(tabs)/watched.tsx`** — see **`docs/depts/tv.md`** (**Watched tab layout**).
 
 ---
 

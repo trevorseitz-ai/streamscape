@@ -39,6 +39,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-image",
       "./plugins/withAndroidNetworkSecurity.js",
       "./plugins/withAndroidTvLauncher.js",
       "./plugins/withAndroidStreamingPackageQueries.js"

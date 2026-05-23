@@ -48,7 +48,7 @@ const TV_SIDEBAR_SLOTS = [
   'index',
   'search',
   'watchlist',
-  'library',
+  'watched',
   'discover',
   'profile',
 ] as const;
@@ -67,7 +67,7 @@ function labelForSlot(routeName: SlotName, optionsTitle: string | undefined): st
     index: 'Home',
     search: 'Search',
     watchlist: 'Watchlist',
-    library: 'Library',
+    watched: 'Watched',
     discover: 'Discover',
     profile: 'Profile',
   };
@@ -85,7 +85,7 @@ function iconForSlot(
     index: { active: 'home', inactive: 'home-outline' },
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
-    library: { active: 'library', inactive: 'library-outline' },
+    watched: { active: 'eye', inactive: 'eye-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
     profile: { active: 'person', inactive: 'person-outline' },
   };
