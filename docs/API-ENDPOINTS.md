@@ -2,6 +2,8 @@
 
 This document lists **HTTP(S) APIs and first-party route handlers** the app uses, and what each is for. Values in **angle brackets** come from your environment (`.env` / hosting).
 
+**Metro vs production web vs native callers:** **[`docs/NATIVE_OPERATIONAL_URLS.md`](NATIVE_OPERATIONAL_URLS.md)** — which **origin** resolves **`/api/*`**, **`vercel.json`** behavior, and when native talks to third parties directly.
+
 ---
 
 ## 1. First-party routes (Expo Router / web)
@@ -149,6 +151,8 @@ These are **not** used by the production app bundle in normal flows:
 | `EXPO_PUBLIC_RAPIDAPI_FILMSHOW_HOST`, optional `EXPO_PUBLIC_RAPIDAPI_FILMSHOW_TOP_PATH` | Film & Show RapidAPI list |
 | `EXPO_PUBLIC_OMDB_API_KEY` | OMDb ratings |
 | `STREAM_FINDER_KEY`, `STREAM_FINDER_MOVIES_URL` | Stream Finder sync / audits |
+
+**See also:** **[`docs/NATIVE_OPERATIONAL_URLS.md`](NATIVE_OPERATIONAL_URLS.md)** (operational origins for **`/api/*`**).
 
 ---
 

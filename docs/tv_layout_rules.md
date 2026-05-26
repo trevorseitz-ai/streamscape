@@ -2,6 +2,8 @@
 
 **Core Directive:** This document dictates the strict mathematical layout for all Android TV interfaces in ReelDive. Never rely on flexbox guesses for horizontal TV grids.
 
+**Web vs TV framing (product + copy):** **[`docs/depts/web-tv-parity.md`](depts/web-tv-parity.md)** — this file is **TV layout math only**; parity there explains what the browser does differently.
+
 ## 1. The 20-Pixel Law
 
 The absolute truth of this app's TV layout is a `20px` spacing grid.

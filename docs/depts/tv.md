@@ -2,6 +2,8 @@
 
 > **Phone / Web poster columns:** **`bucketViewportWidth`** and **`discoverPosterGridColumns`** in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) may still drive responsive column counts on **handsets and browsers** — see [Shared components](shared.md). Those helpers are **not** the sizing authority for **Android TV** poster rails; TV uses the **fixed integer grid** in [TV poster grid standard (all tabs)](#tv-poster-grid-standard-all-tabs) below.
 
+> **Web ↔ Android TV — high-level parity & crossover:** [Web ↔ TV parity & crossover](web-tv-parity.md).
+
 ---
 
 ## Success story: resolving `Network request failed` on TV

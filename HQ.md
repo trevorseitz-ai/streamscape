@@ -12,11 +12,11 @@
 | :--- | :--- |
 | **Android TV UI** | Refining Discover/Home layouts; follow `docs/tv_layout_rules.md`. |
 | **Backend** | Supabase auth, profiles, watchlists; schema in `docs/database_schema.md`. |
-| **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE** on all three—Discover + hybrid data + adaptive grids; verified scale **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md). |
+| **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE** on all three—Discover + hybrid data + adaptive grids; verified scale **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md). **Web × TV parity:** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md). |
 
 _Update this table when priorities shift._
 
-**Milestone — Phase 1: Discovery & Stability (**100% COMPLETE** — Web / Mobile / TV):** Same **Stream Finder** default Discover ships on browser, handset, and lean-back (**`GET /api/providers`** → **16** services; **`~1,206`** mirrored titles in Supabase checkpoints). **TMDB** enriches imagery; **`lib/viewport-utils.ts`** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards align density without layout thrash; Profile catalog + pruning match sync. Detail: **`web.md`**, **`product.md`**, **`tv.md`**.
+**Milestone — Phase 1: Discovery & Stability (**100% COMPLETE** — Web / Mobile / TV):** Same **Stream Finder** default Discover ships on browser, handset, and lean-back (**`GET /api/providers`** → **16** services; **`~1,206`** mirrored titles in Supabase checkpoints). **TMDB** enriches imagery; **`lib/viewport-utils.ts`** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards align density without layout thrash; Profile catalog + pruning match sync. Detail: **`web.md`**, **`product.md`**, **`tv.md`**, **`docs/depts/web-tv-parity.md`**.
 
 ---
 
@@ -33,13 +33,17 @@ _Update this table when priorities shift._
 
 ## 🗺️ Platform Map (ReelDive ecosystem)
 
-Three product surfaces; each can ship on its own URL or store listing.
+Four delivery surfaces (**four pillars** / matrix in **`docs/depts/marketing.md`**). **Commercial launch posture:** **Web** + **Android TV** targeted **launch-ready**; **iOS** + **Android mobile** storefront timing **TBD** (same codebase may still ship handsets technically—do not treat as public launch until Product/marketing bible dates them).
+
+Three product URLs / store identities; handset and TV listings need not debut on the same day.
+
+**Web ↔ Android TV (what’s shared vs different):** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md).
 
 | Branch | What it is |
 | :--- | :--- |
-| **Waitlist Portal** | **https://getreeldive.com** — signup, positioning, and handoff to the app. Independent of the main Expo app origin (see Verified Ecosystem Map below). |
-| **ReelDive Web** | Browser: libraries, discovery, profile settings—**shared `app/` routes** with native and TV (no placeholder tabs); sign-in **`/login`**. |
-| **ReelDive Mobile** | **iOS / Android** handsets: same **Expo Router** tree, **Stream Finder** Discover, **viewport-utils** adaptive grids. |
+| **Waitlist Portal** | **[getreeldive.com](https://getreeldive.com)** — signup & positioning (**source repo:** [`github.com/trevorseitz-ai/v0-reel-dive-landing-page`](https://github.com/trevorseitz-ai/v0-reel-dive-landing-page)). Independent of main Expo origin. **FAQ parity:** Draft in [`docs/marketing/FAQ.md`](docs/marketing/FAQ.md), publish copy on landing site — see **`docs/depts/marketing.md`**. |
+| **ReelDive Web** | Browser: shared **`app/`** routes; **`/login`**. Pre–GA (**see `docs/depts/web.md` + `marketing.md`):** reachable URL may show **Coming soon** until an **announced** ship date documented in **`marketing.md`**; **then countdown** alongside landing + campaigns. |
+| **ReelDive Mobile** | **iOS / Android** handsets: same **Expo Router** tree, **Stream Finder** Discover, **viewport-utils** adaptive grids. **App Store / Play public launch TBD** (see **`docs/depts/marketing.md`**)—do not promise dated handset ship in external copy until Product updates. |
 | **ReelDive TV** | **Android TV** lean-back client — Expo/React Native, D-pad focus, **six-slot** left sidebar (`docs/tv_layout_rules.md`; **Profile** anchors the bottom slot). |
 
 _Add concrete URLs and repos here when they are finalized._
@@ -59,8 +63,8 @@ _Add concrete URLs and repos here when they are finalized._
 
 Authoritative notes on how the pieces connect in this repo and in production.
 
-- **Waitlist (frontend):** External portal at [getreeldive.com](https://getreeldive.com). No direct database write access to the waitlist from the main app; the app links out to that site.
-- **ReelDive App (shared core):** Single **Expo Router** project: **Web**, **mobile (native)**, and **Android TV** use one **`app/`** tree—shared routes and components with **`Platform` / `isTvTarget`** guards where needed.
+- **Waitlist (frontend):** [getreeldive.com](https://getreeldive.com); **landing source:** [`github.com/trevorseitz-ai/v0-reel-dive-landing-page`](https://github.com/trevorseitz-ai/v0-reel-dive-landing-page). FAQ **dual source:** [`docs/marketing/FAQ.md`](docs/marketing/FAQ.md) ↔ live site (**sync on change** — **`docs/depts/marketing.md`**).
+- **ReelDive App (shared core):** Single **Expo Router** project: **Web**, **mobile (native)**, and **Android TV** use one **`app/`** tree—shared routes and components with **`Platform` / `isTvTarget`** guards where needed. **Cross-surface parity (Web × TV)** — [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md).
 - **Authentication:** Centralized on **Supabase**. **Web** persists the session with **localStorage**; **TV / native** use **AsyncStorage** (via `lib/supabase.ts`).
 
 ---
@@ -75,8 +79,9 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 | **Product & Features** | [docs/depts/product.md](docs/depts/product.md) | Roadmap, specs, UX flows, prioritization. |
 | **3D Design & Creative** | [docs/depts/creative.md](docs/depts/creative.md) | Blender, STL, visual/3D asset pipeline. |
 | **Web App** | [docs/depts/web.md](docs/depts/web.md) | ReelDive Web: React/Expo web, responsive UI, browser UX. |
+| **iOS / native handset rules** | [docs/depts/ios-rules.md](docs/depts/ios-rules.md) | Apple platforms: orientation, Safe Area, **`isTvTarget()`**/`extra.isTV`, sessions, Store boundaries. See **[`docs/IOS_NATIVE_DEVELOPER_ONBOARDING.md`](IOS_NATIVE_DEVELOPER_ONBOARDING.md)** for full onboarding. |
 | **TV App** | [docs/depts/tv.md](docs/depts/tv.md) | Android TV: D-pad focus, sidebar, lean-back layout. |
-| **Shared components** | [docs/depts/shared.md](docs/depts/shared.md) | Cross-surface primitives (e.g. `MovieRow` / viewport bucketing). |
+| **Shared components** | [docs/depts/shared.md](docs/depts/shared.md) | Cross-surface primitives (e.g. `MovieRow` / viewport bucketing). See also [Web ↔ TV parity](docs/depts/web-tv-parity.md). |
 | **QA & Automation** | [docs/depts/qa.md](docs/depts/qa.md) | Test matrix, **`npm run report:qa`** autonomous digest (**Resend**), nightly schedule (**08:00 UTC**) — **Operational**. |
 
 ---
@@ -129,6 +134,12 @@ Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stre
 
 ## 📐 Shared engineering docs
 
+- **Native iOS — welcome email & onboarding pack:** [docs/ios-developer-welcome-pack.md](ios-developer-welcome-pack.md)
+- **Native / web operational origins:** [docs/NATIVE_OPERATIONAL_URLS.md](NATIVE_OPERATIONAL_URLS.md) — Metro vs Vercel vs third-party bases.
+- **EAS template:** [eas.json](eas.json) — build/submit scaffold; run **`eas init`** to link Expo project IDs.
+- **Web ↔ Android TV parity & crossover:** [docs/depts/web-tv-parity.md](docs/depts/web-tv-parity.md)
+- **Public FAQ drafts (dual with getreeldive.com):** [docs/marketing/FAQ.md](docs/marketing/FAQ.md)
+- **Claude prompt — pre-launch autonomous marketing (standalone paste):** [docs/REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md](REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md)
 - **HTTP APIs & integrations (canonical list):** [docs/API-ENDPOINTS.md](docs/API-ENDPOINTS.md) — first-party `/api/*` routes, Supabase, TMDB, RapidAPI, Stream Finder, OMDb, env checklist.
 - **QA & Triple-Platform test matrix:** [docs/depts/qa.md](docs/depts/qa.md)
 - **TV layout rules:** [docs/tv_layout_rules.md](docs/tv_layout_rules.md)

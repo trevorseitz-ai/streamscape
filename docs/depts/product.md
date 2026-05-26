@@ -11,12 +11,22 @@
 - TMDB
 - Android TV
 
+**Native iOS / handset onboarding** (secrets to request, operational URLs **`/api/*`**, repos, dashboards): **[`docs/IOS_NATIVE_DEVELOPER_ONBOARDING.md`](../IOS_NATIVE_DEVELOPER_ONBOARDING.md)** · **[`docs/NATIVE_OPERATIONAL_URLS.md`](../NATIVE_OPERATIONAL_URLS.md)** · **engineering rules**: **[`docs/depts/ios-rules.md`](ios-rules.md)** · **EAS template**: **[`eas.json`](../../eas.json)**.
+
 ## Product roadmap
+
+### Commercial launch posture (GTM vs engineering)
+
+Engineering ships **one Expo codebase** spanning **Web**, **TV**, **iOS/Android handsets**. **Outbound / store timing** differs: **Web** + **Android TV** are **launch-ready surfaces** at product launch per **`docs/depts/marketing.md`**. **iOS** App Store + **Android** Play handset releases are **TBD** until dated in Product + Marketing bible—do **not** promise simultaneous handset storefronts externally.
+
+**Web ↔ Android TV (parity):** **[`docs/depts/web-tv-parity.md`](web-tv-parity.md)** — what both surfaces share, shared user state, and per-surface limitations ( grids, inputs, framing for copy).
+
+**Pre-GA hosted web UX:** **`docs/depts/web.md`** + **`docs/depts/marketing.md`** describe **Coming soon** vs **announcement countdown** (**no date in public copy until dated in Marketing bible).** FAQs: **`docs/marketing/FAQ.md`** (dual-stewarded with **getreeldive.com**).
 
 ### Discover Phase 1: Discovery & Stability — **100% COMPLETE** (Web / Mobile / TV)
 
 - **Scope:** Discover default landing aligned across **browser**, **native handsets**, and **Android TV**; **Stream Finder**-backed curation (synced catalog + provider availability—**16** mirrored providers); **TMDB** poster/backdrop enrichment; **adaptive viewport utils** (**`bucketViewportWidth`**, **`discoverPosterGridColumns`**) + mount guards + stable auth effect deps.
-- **Outcome:** Featured / “Top”-style landings and **~1,206** mirrored titles at scale; technical detail in [Web](web.md), [TV](tv.md), and [HQ](../../HQ.md).
+- **Outcome:** Featured / “Top”-style landings and **~1,206** mirrored titles at scale; technical detail in [Web](web.md), [TV](tv.md), [Web ↔ TV parity](web-tv-parity.md), and [HQ](../../HQ.md).
 - **Phase 1 shell — clutter-free:** The main navigator has **six** substantive tabs only (**Home → Search → Watchlist → Watched → Discover → Profile**). Placeholder **Account** UI and **`app/(tabs)/account.tsx`** are **removed** so Phase 1 ships without empty shells; the experience is **ready for Phase 2** feature expansion without tab-bar debt.
 
 ### UX strategy — Profile as anchor
@@ -46,7 +56,7 @@ Operational implementation: [`lib/stream-finder-supabase.ts`](../../lib/stream-f
 
 | Feature | Description |
 |:--------|:-------------|
-| **Universal accessibility (TV / Web / Mobile)** | **Completed** — Single Expo Router codebase ships **Web**, **iOS/Android**, and **Android TV** with shared Discover/Profile/Movie flows; **Stream Finder + TMDB** hybrid stack; **`lib/viewport-utils.ts`** adaptive **3 / 4 / 6** grid; TV native **`withAndroidNetworkSecurity`** + **`tv:clean`** workflow documented in [TV](tv.md). |
+| **Universal accessibility (TV / Web / Mobile)** | **Completed** — Single Expo Router codebase ships **Web**, **iOS/Android**, and **Android TV** with shared Discover/Profile/Movie flows; **Stream Finder + TMDB** hybrid stack; **`lib/viewport-utils.ts`** adaptive **3 / 4 / 6** grid; TV native **`withAndroidNetworkSecurity`** + **`tv:clean`** workflow documented in [TV](tv.md). **Web × TV parity sheet:** **[`web-tv-parity.md`](web-tv-parity.md)**. |
 | **Streaming Service Integration** | **Verified & live** — Discover and Profile use the **Stream Finder** provider catalog mirrored from **`GET /api/providers`**. **Profile → “My services”** reflects the synced roster with auto-pruning. |
 | **Comprehensive Provider Coverage** | **✅ Completed (scale milestone)** — **16 active providers** mirrored from the authoritative API—including flagship streamers and niche/premium catalogs upstream ships (**AMC+, Shudder, Criterion Channel**, etc.)—surfaced consistently across **Discover** and **Profile**. |
 | **Real-time streaming badges** | Curated Discover cards show **where a title streams** using provider logos from the **Stream Finder cache** (TMDB **w92**–sized logos + **generic SVG fallback** when the API omits a logo), so users see availability at a glance without opening the detail sheet first. |

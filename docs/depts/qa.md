@@ -39,7 +39,7 @@
 
 > **Office status:** **Operational** (Phase 1 / v1.0.0). Reporting driver: [`scripts/generate-qa-report.ts`](../../scripts/generate-qa-report.ts) — **`npm run report:qa`**.
 
-Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.md), [**`web.md`**](web.md), [**`tv.md`**](tv.md), [**`shared.md`**](shared.md).
+Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.md), [**`web-tv-parity.md`**](web-tv-parity.md), [**`web.md`**](web.md), [**`tv.md`**](tv.md), [**`shared.md`**](shared.md).
 
 ---
 

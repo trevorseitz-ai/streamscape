@@ -3,7 +3,7 @@
 **Purpose:** Define what an **autonomous marketing capability** means for ReelDive, how it differs from **engineering automation** (QA digests, Maestro), and how to stand it up **without losing brand control**.
 
 **Audience:** Founder / Growth lead integrating with Product (`docs/depts/product.md`), Web (`docs/depts/web.md`), and HQ (`HQ.md`).  
-Canonical brand voice, four-platform matrix, and agent guardrails: **`docs/depts/marketing.md`** (Marketing Bible).
+Canonical brand voice, **four-pillar** (four-surface) matrix, and agent guardrails: **`docs/depts/marketing.md`** (Marketing Bible). **Launch posture:** **Web** + **Android TV** at launch; **iOS / Android handset** storefront timing **TBD** until dated in **`marketing.md`** / Product. **Web × TV factual parity:** **`docs/depts/web-tv-parity.md`**.
 
 ---
 
@@ -64,7 +64,9 @@ Keep **marketing keys out of Expo** unless a specific surface needs public analy
 ## 5. Concrete deliverables checklist (paste into tickets)
 
 - [ ] **ICP one-pager** — who watches what, geography, competitors (2 pages max).
-- [ ] **Message house** — 3 pillars + proof points (must match **`marketing.md`** + Product reality).
+- [ ] **FAQ parity** — update [`docs/marketing/FAQ.md`](../marketing/FAQ.md); mirror approved answers to **`getreeldive.com`** (**[`github.com/trevorseitz-ai/v0-reel-dive-landing-page`](https://github.com/trevorseitz-ai/v0-reel-dive-landing-page)**).
+
+- [ ] **Message house** — 3 positioning pillars + proof points (must match **`marketing.md`** + Product reality; **do not** conflate these with the **four platform pillars**—see **Launch posture** in **`marketing.md`**: Web + TV launch; handset iOS/Android **TBD**).
 - [ ] **Consent & suppression** — how waitlist/email maps to lawful basis; unsub in one click.
 - [ ] **Weekly digest automation** — “traffic, signups, top posts, anomalies” emailed Monday 08:00 (parallel to QA cron philosophy).
 - [ ] **Playbook templates** — 5 email templates + 10 social stubs with `{variable}` injection from Product releases.
@@ -83,6 +85,7 @@ Keep **marketing keys out of Expo** unless a specific surface needs public analy
 ## 7. Repo touchpoints
 
 - Marketing Bible & core brand protocol: **`docs/depts/marketing.md`**
+- **Public FAQ (in-repo drafts):** **`docs/marketing/FAQ.md`** ↔ mirror approved answers on **`getreeldive.com`**
 - Roadmap overlap: **`docs/depts/product.md`**, **`HQ.md`**
 - Do **not** label **`npm run report:qa`** or **`reporter.py`** as marketing—they are engineering/QA/ops telemetry unless you deliberately repurpose payloads (document that decision here if you do).
 
@@ -91,3 +94,8 @@ Keep **marketing keys out of Expo** unless a specific surface needs public analy
 ## 8. Optional next doc (when scope firms up)
 
 Create **`docs/depts/marketing-autonomous-runbook.md`** with: ESP webhooks fields, Cron schedule URLs, escalation contacts, and a **living “forbidden claims”** list synced with Legal/Product.
+
+**Claude Projects — pre-launch action plan:**
+
+- **Standalone prompt (recommended):** **`docs/REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md`** — zero carry-over from onboarding.
+- **Legacy inline block:** **`docs/REELDIVE_LLM_ONBOARDING_PROMPT.md`** → **Part D** (`BEGIN PRELAUNCH …`/`END`).
