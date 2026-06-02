@@ -87,13 +87,11 @@ const TV_FOCUS_BORDER_WIDTH = 3;
 
 /**
  * Android TV focus-scroll diagnostics: red = cell wrapper, green = poster shell, blue = meta/footer.
- * Release/device audits: set **`EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS=1`** (Metro dev builds also enable via **`__DEV__`**).
+ * Opt-in only — set **`EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS=1`** to enable (kept off in
+ * normal dev builds so the Discover grid doesn't show debug borders).
  */
 function tvMovieGridFocusDiagnosticsEnabled(): boolean {
-  return (
-    (typeof __DEV__ !== 'undefined' && __DEV__) ||
-    process.env.EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS === '1'
-  );
+  return process.env.EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS === '1';
 }
 
 function TvPosterCell({
