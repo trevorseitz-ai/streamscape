@@ -1,0 +1,84 @@
+# Automated login — run standalone or included from smoke-test.yaml
+#
+# Variables (supply via CLI or shell export):
+#   MAESTRO_TEST_USER_EMAIL — Supabase Auth test user email
+#   MAESTRO_TEST_USER_PASSWORD — Supabase Auth test user password (never commit)
+#
+# Example:
+#   maestro test -e MAESTRO_TEST_USER_EMAIL="qa@yourdomain.com" -e MAESTRO_TEST_USER_PASSWORD="$(cat .maestro_pw)" testing/maestro/auth-flow.yaml
+#
+# Note: Kotlin template syntax ${VAR}; empty vars fail inputText at runtime.
+#
+appId: com.reeldive.app
+---
+- launchApp:
+    clearState: true
+
+# Optional entry points → /login (see app/index.tsx, empty states).
+- tapOn:
+    text: "Get Started"
+    optional: true
+
+- tapOn:
+    text: "Sign in to discover movies"
+    optional: true
+
+- tapOn:
+    text: "Sign in"
+    optional: true
+
+# Stable id: Discover / Watched / Profile signed-out CTAs (see maestro-onboarding-login-btn).
+- tapOn:
+    id: "maestro-onboarding-login-btn"
+    optional: true
+
+# TV lean-back splash may appear before tabs.
+- tapOn:
+    text: "Start browsing"
+    optional: true
+
+- tapOn:
+    text: "Sign in to discover movies"
+    optional: true
+
+# Fallback: open Profile rail / tab, then use blackout Log In (same testID as above).
+- tapOn:
+    id: "maestro-tab-profile"
+    optional: true
+
+- tapOn:
+    id: "maestro-onboarding-login-btn"
+    optional: true
+
+- extendedWaitUntil:
+    visible:
+      id: "maestro-login-header"
+    timeout: 45000
+
+- tapOn:
+    id: "maestro-login-email"
+
+- inputText: ${MAESTRO_TEST_USER_EMAIL}
+
+- tapOn:
+    id: "maestro-login-password"
+
+- inputText: ${MAESTRO_TEST_USER_PASSWORD}
+
+# Dismiss Android TV IME (Back); does not pop /login while the field had focus.
+- back
+
+# Wait until Log in is unobstructed (no fixed sleep — Maestro has no waitMs).
+- extendedWaitUntil:
+    visible:
+      id: "maestro-login-submit"
+    timeout: 20000
+
+- tapOn:
+    id: "maestro-login-submit"
+
+# Tabs shell is ready when the Discover target is in the tree (works even if Home rails are empty).
+- extendedWaitUntil:
+    visible:
+      id: "maestro-tab-discover"
+    timeout: 90000

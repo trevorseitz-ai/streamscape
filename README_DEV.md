@@ -1,12 +1,14 @@
 # README_DEV — Developer flight manual
 
-Quick orientation for engineers joining **StreamScape / ReelDive**: one codebase, multiple surfaces, TV-specific focus rules, and Supabase behind the scenes.
+Quick orientation for engineers joining **ReelDive**: one codebase, multiple surfaces, TV-specific focus rules, and Supabase behind the scenes.
 
 ---
 
 ## Project vision
 
 **ReelDive** is a subscription-aware discovery and watchlist experience: search and browse film and TV with filters that respect what you actually pay for, then curate what to watch next. The product ships as a **single universal Expo app** — same router and shared screens for **Web** and **Android TV**, with platform-specific UI and input paths where lean-back usage demands it.
+
+**Web ↔ Android TV summary (parity, shared state, boundaries):** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md).
 
 ---
 
@@ -31,7 +33,7 @@ Layout and row math for TV home rows are documented in [`docs/tv_layout_rules.md
 
 - **Database:** **Supabase** (managed **PostgreSQL**), with Row Level Security for user-scoped data. App code talks to Supabase through the JS client; schema reference: [`docs/database_schema.md`](docs/database_schema.md) (regenerated via tooling below).
 - **Auth:** **Shared** Supabase Auth across Web and native. The app client is [`lib/supabase.ts`](lib/supabase.ts): **Web** persists sessions in **localStorage**; **TV / native** use **AsyncStorage** so tokens survive app restarts on device.
-- **Waitlist:** Signup and marketing funnel live **outside** this app at **[getreeldive.com](https://getreeldive.com)**. The main app **does not** insert into the `waitlist` table; it links out. Moving waitlisted users into Auth uses the service-role script (see below and [`docs/user_migration.md`](docs/user_migration.md)).
+- **Waitlist:** Signup and marketing funnel live **outside** this app at **[getreeldive.com](https://getreeldive.com)** (**landing repo:** [`github.com/trevorseitz-ai/v0-reel-dive-landing-page`](https://github.com/trevorseitz-ai/v0-reel-dive-landing-page)). The main app **does not** insert into the waitlist table; it links out. **FAQ drafts** ↔ live site parity: **`docs/marketing/FAQ.md`**. Moving waitlisted users into Auth uses the service-role script (see below and [`docs/user_migration.md`](docs/user_migration.md)).
 
 ---
 
@@ -55,5 +57,7 @@ When you change architecture or process, update **HQ** and the relevant **dept**
 
 ## See also
 
+- **Native iOS / handset onboarding:** [`docs/IOS_NATIVE_DEVELOPER_ONBOARDING.md`](docs/IOS_NATIVE_DEVELOPER_ONBOARDING.md) — secrets, operational URLs, [`eas.json`](eas.json) template; rules: [`docs/depts/ios-rules.md`](docs/depts/ios-rules.md)
+- **Operational URL matrix:** [`docs/NATIVE_OPERATIONAL_URLS.md`](docs/NATIVE_OPERATIONAL_URLS.md)
 - TV layout rules: [`docs/tv_layout_rules.md`](docs/tv_layout_rules.md)
 - Cursor / team conventions: [`.cursorrules`](.cursorrules)

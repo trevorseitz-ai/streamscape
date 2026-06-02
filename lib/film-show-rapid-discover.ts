@@ -9,6 +9,8 @@ export type FilmShowDiscoverMovie = {
   poster_url: string | null;
   backdrop_url: string | null;
   release_year: number | null;
+  /** TMDB / upstream **`YYYY-MM-DD`** when merged from detail enrichment. */
+  release_date?: string | null;
   vote_average: number | null;
   platforms: Array<{ name: string; access_type: string; logo_path?: string | null }>;
   /** RapidAPI `ids.TMDB` — used for TMDB image enrichment (not for list source). */
@@ -20,7 +22,9 @@ export type FilmShowDiscoverMovie = {
 };
 
 const TMDB_API_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_W500 = 'https://image.tmdb.org/t/p/w500';
+const TMDB_TV_DISCOVER_POSTER_BASE = 'https://image.tmdb.org/t/p/w342';
+/** Larger than poster tier for optional backdrops — still avoids **`original`** decode cost on TV. */
+const TMDB_TV_DISCOVER_BACKDROP_BASE = 'https://image.tmdb.org/t/p/w780';
 
 /** Default path for Film & Show ratings "Top 100 items" (GET). Override via env if your subscription uses another route. */
 const DEFAULT_TOP_PATH =
@@ -44,7 +48,7 @@ function normalizeImageUrl(raw: unknown): string | null {
   const t = raw.trim();
   if (!t) return null;
   if (t.startsWith('http://') || t.startsWith('https://')) return t;
-  if (t.startsWith('/')) return `${TMDB_IMAGE_W500}${t}`;
+  if (t.startsWith('/')) return `${TMDB_TV_DISCOVER_POSTER_BASE}${t}`;
   return t;
 }
 
@@ -112,9 +116,14 @@ function readFilmShowAudienceRating(item: Record<string, unknown>): unknown {
   return tryProvider(rt.TMDB ?? rt.tmdb);
 }
 
-function toTmdbW500Url(path: string | null | undefined): string | null {
+function toTmdbDiscoverPosterUrl(path: string | null | undefined): string | null {
   if (!path || typeof path !== 'string' || !path.startsWith('/')) return null;
-  return `${TMDB_IMAGE_W500}${path}`;
+  return `${TMDB_TV_DISCOVER_POSTER_BASE}${path}`;
+}
+
+function toTmdbDiscoverBackdropUrl(path: string | null | undefined): string | null {
+  if (!path || typeof path !== 'string' || !path.startsWith('/')) return null;
+  return `${TMDB_TV_DISCOVER_BACKDROP_BASE}${path}`;
 }
 
 /** Map one RapidAPI Film & Show row → list row (`ids.TMDB` preserved for enrichment). */
@@ -128,7 +137,20 @@ export function mapFilmShowRowToDiscoverResult(row: unknown, index: number): Fil
   const tmdb_id = readIdsTmdb(item);
   const id = tmdb_id != null ? String(tmdb_id) : `film-show-${index}`;
 
-  const release_year = pickYear(item.year);
+  const release_year = pickYear(
+    item.year,
+    item.release_year,
+    item.releaseYear,
+    item.release_date,
+    item.releaseDate
+  );
+
+  const release_date_raw =
+    typeof item.release_date === 'string'
+      ? item.release_date
+      : typeof item.releaseDate === 'string'
+        ? item.releaseDate
+        : null;
 
   const vote_raw = readFilmShowAudienceRating(item);
   const vote_average = normalizeVoteAverage(vote_raw);
@@ -147,6 +169,7 @@ export function mapFilmShowRowToDiscoverResult(row: unknown, index: number): Fil
     poster_url: posterFallback ?? backdropFallback ?? null,
     backdrop_url: backdropFallback ?? null,
     release_year,
+    release_date: release_date_raw,
     vote_average,
     platforms: [],
     tmdb_id,
@@ -218,15 +241,25 @@ export async function enrichWithTmdbImages(
         const data = (await res.json()) as {
           poster_path?: string | null;
           backdrop_path?: string | null;
+          release_date?: string | null;
         };
 
-        const poster_from_tmdb = toTmdbW500Url(data.poster_path ?? null);
-        const backdrop_from_tmdb = toTmdbW500Url(data.backdrop_path ?? null);
+        const poster_from_tmdb = toTmdbDiscoverPosterUrl(data.poster_path ?? null);
+        const backdrop_from_tmdb = toTmdbDiscoverBackdropUrl(data.backdrop_path ?? null);
+
+        const rd = typeof data.release_date === 'string' ? data.release_date : null;
+        let mergedYear = m.release_year;
+        if (mergedYear == null && rd != null && rd.length >= 4) {
+          const y = parseInt(rd.slice(0, 4), 10);
+          if (Number.isFinite(y) && y >= 1800 && y <= 2100) mergedYear = y;
+        }
 
         return {
           ...m,
           poster_url: poster_from_tmdb ?? m.poster_url,
           backdrop_url: backdrop_from_tmdb ?? m.backdrop_url,
+          release_year: mergedYear,
+          release_date: rd ?? m.release_date,
         };
       } catch {
         return m;
@@ -235,4 +268,54 @@ export async function enrichWithTmdbImages(
   );
 
   return [...enrichedSlice, ...rest];
+}
+
+/** Caps parallel TMDB movie-detail calls so Discover hydrate stays bounded (full mirror often **~1.2k** rows). */
+const MAX_TMDB_RELEASE_YEAR_ENRICH = 1200;
+const TMDB_YEAR_ENRICH_CONCURRENCY = 14;
+
+/**
+ * Fills **`release_year`** / **`release_date`** from TMDB **`/movie/{id}`** for rows still missing a year
+ * (e.g. Stream Finder cache rows). Runs after **`enrichWithTmdbImages`**.
+ */
+export async function enrichTmdbReleaseYearsForDiscover(
+  movies: FilmShowDiscoverMovie[]
+): Promise<FilmShowDiscoverMovie[]> {
+  const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+  if (!apiKey || movies.length === 0) return movies;
+
+  const out = movies.map((m) => ({ ...m }));
+  const targets: number[] = [];
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].tmdb_id != null && out[i].release_year == null) targets.push(i);
+  }
+  const capped = targets.slice(0, MAX_TMDB_RELEASE_YEAR_ENRICH);
+
+  for (let start = 0; start < capped.length; start += TMDB_YEAR_ENRICH_CONCURRENCY) {
+    const wave = capped.slice(start, start + TMDB_YEAR_ENRICH_CONCURRENCY);
+    await Promise.all(
+      wave.map(async (i) => {
+        const m = out[i];
+        try {
+          const url = `${TMDB_API_BASE}/movie/${m.tmdb_id}`;
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
+          if (!res.ok) return;
+          const data = (await res.json()) as { release_date?: string | null };
+          const rd = typeof data.release_date === 'string' ? data.release_date : null;
+          if (rd != null && rd.length >= 4) {
+            const y = parseInt(rd.slice(0, 4), 10);
+            if (Number.isFinite(y) && y >= 1800 && y <= 2100) {
+              out[i] = { ...m, release_year: y, release_date: rd };
+            }
+          }
+        } catch {
+          /* ignore per-title failures */
+        }
+      })
+    );
+  }
+
+  return out;
 }

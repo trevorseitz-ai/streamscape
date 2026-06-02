@@ -15,7 +15,7 @@ function getTabIcon(routeName: string, focused: boolean) {
     index: { active: 'home', inactive: 'home-outline' },
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
-    library: { active: 'library', inactive: 'library-outline' },
+    watched: { active: 'eye', inactive: 'eye-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
     profile: { active: 'person', inactive: 'person-outline' },
   };
@@ -28,6 +28,8 @@ export default function TabLayout() {
   /**
    * Shell is binary: TV rail vs default bottom tabs. No breakpoint-based tab tree swap here.
    * No auth redirects (`router.replace`); those live in routed screens guarded with `useEffect`.
+   *
+   * **TV branding:** left-rail hero mark lives in **`TvSidebarTabBar`** (`assets/reeldive-sonar-reel-hero-mark.png`).
    */
   const isTV = isTvTarget();
   const tvDpad = shouldUseTvDpadFocus();
@@ -45,6 +47,8 @@ export default function TabLayout() {
                 width: TV_SIDEBAR_WIDTH,
                 minWidth: TV_SIDEBAR_WIDTH,
                 maxWidth: TV_SIDEBAR_WIDTH,
+                height: '100%',
+                alignSelf: 'stretch',
                 flexGrow: 0,
                 flexShrink: 0,
                 margin: 0,
@@ -101,10 +105,18 @@ export default function TabLayout() {
               },
             }
           : {}),
-        ...(!isTV && tvDpad
+        ...(!isTV
           ? {
               tabBarButton: (props: BottomTabBarButtonProps) => (
-                <PlatformPressable {...props} focusable />
+                <PlatformPressable
+                  {...props}
+                  {...(tvDpad ? { focusable: true as const } : {})}
+                  {...(route.name === 'discover'
+                    ? { testID: 'maestro-tab-discover' }
+                    : route.name === 'profile'
+                      ? { testID: 'maestro-tab-profile' }
+                      : {})}
+                />
               ),
             }
           : {}),
@@ -113,7 +125,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', headerShown: false }} />
       <Tabs.Screen name="search" options={{ title: 'Search', headerShown: false }} />
       <Tabs.Screen name="watchlist" options={{ title: 'My Watchlist', headerShown: false }} />
-      <Tabs.Screen name="library" options={{ title: 'Library', headerShown: false }} />
+      <Tabs.Screen name="watched" options={{ title: 'Watched', headerShown: false }} />
       <Tabs.Screen name="discover" options={{ title: 'Discover', headerShown: false }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile', headerShown: false }} />
     </Tabs>
@@ -124,7 +136,9 @@ export default function TabLayout() {
       style={{
         flex: 1,
         width: '100%',
+        height: '100%',
         minWidth: 0,
+        minHeight: '100%',
         flexDirection: 'row',
         gap: 0,
         margin: 0,
@@ -133,8 +147,21 @@ export default function TabLayout() {
         justifyContent: 'flex-start',
       }}
     >
-      {/** Single flex child so the navigator fills width (avoids intrinsic-width gap). */}
-      <View style={{ flex: 1, minWidth: 0, margin: 0, padding: 0 }}>{tabs}</View>
+      {/** Navigator fills width; BottomTabView lays out rail + scene as a horizontal row inside. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          flex: 1,
+          alignSelf: 'stretch',
+          minWidth: 0,
+          width: '100%',
+          height: '100%',
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        {tabs}
+      </View>
     </TvFocusGuideView>
   ) : (
     tabs

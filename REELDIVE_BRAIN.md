@@ -1,4 +1,4 @@
-# ReelDive / StreamScape — long-term memory
+# ReelDive — long-term memory
 
 ## Database schema
 

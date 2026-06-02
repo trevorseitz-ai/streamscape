@@ -58,7 +58,15 @@ The backend must implement a relational PostgreSQL database (via Supabase) using
 
 ## Getting Started
 
-### 1. Environment Variables
+### 1. API endpoints & integrations
+
+All external HTTP APIs and in-app **`/api/*`** routes used by ReelDive are cataloged here:
+
+**[docs/API-ENDPOINTS.md](docs/API-ENDPOINTS.md)** — TMDB, Supabase paths, RapidAPI (streaming + Film & Show), Stream Finder, OMDb, Vercel proxy, env mapping.
+
+Repo navigation hub: **[HQ.md](HQ.md)**.
+
+### 2. Environment Variables
 
 Copy `.env.example` to `.env` (or create `.env`) and fill in:
 
@@ -67,7 +75,7 @@ Copy `.env.example` to `.env` (or create `.env`) and fill in:
 - `SUPABASE_SERVICE_ROLE_KEY` – **Required for scrape API.** From Supabase Dashboard > Project Settings > API > `service_role` (secret)
 - `TMDB_API_KEY` – From [TMDB API Settings](https://www.themoviedb.org/settings/api) (server-side only, never exposed to frontend)
 
-### 2. Run the App
+### 3. Run the App
 
 ```bash
 # Install dependencies
@@ -83,6 +91,6 @@ npm run ios
 npm run android
 ```
 
-### 3. Test the Search
+### 4. Test the Search
 
 Type a movie title (e.g. **"Inception"**) in the search bar and press Enter. The app will call the search API, fetch data via TMDB (with JustWatch streaming info), save it to Supabase, and display the result.

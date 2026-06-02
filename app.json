@@ -14,18 +14,23 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.reeldive"
+      "bundleIdentifier": "com.reeldive.app"
     },
     "android": {
       "isTV": true,
+      "package": "com.reeldive.app",
+      "softwareKeyboardLayoutMode": "pan",
       "banner": "./assets/tv-banner.png",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "package": "com.anonymous.reeldive"
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#0f0f0f"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -33,7 +38,11 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-image",
+      "./plugins/withAndroidNetworkSecurity.js",
+      "./plugins/withAndroidTvLauncher.js",
+      "./plugins/withAndroidStreamingPackageQueries.js"
     ]
   }
 }

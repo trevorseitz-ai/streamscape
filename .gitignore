@@ -41,6 +41,23 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# QA report (generated locally / CI artifact; do not commit)
+qa-audit-summary.json
+
 # generated native folders
 /ios
 /android
+
+# Supabase CLI local state (regenerated per machine; never commit)
+supabase/.temp/
+supabase/.branches/
+
+# Large binary marketing assets (keep in cloud storage, not git)
+RealDive Launch Deck/*.mp3
+
+# Generated LLM context bundles (regenerated; do not commit)
+reeldive-llm-context.zip
+reeldive-llm-pack-*/
+
+# Local-only state/scratch docs
+reeldive_state.md

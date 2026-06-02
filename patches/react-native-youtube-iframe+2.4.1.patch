@@ -1,0 +1,42 @@
+diff --git a/node_modules/react-native-youtube-iframe/index.d.ts b/node_modules/react-native-youtube-iframe/index.d.ts
+index 5e00e80..daaab4a 100644
+--- a/node_modules/react-native-youtube-iframe/index.d.ts
++++ b/node_modules/react-native-youtube-iframe/index.d.ts
+@@ -27,6 +27,11 @@ export interface YoutubeIframeRef {
+   getPlaybackRate: () => Promise<number>;
+   getAvailablePlaybackRates: () => Promise<number[]>;
+   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
++  /**
++   * Runs **`player.playVideo()`** inside the iframe via **`injectJavaScript`** (stronger than the
++   * **`play`** prop alone on some Android TV WebViews). Optionally requests native WebView focus.
++   */
++  playVideo: () => void;
+ }
+ 
+ export interface InitialPlayerParams {
+diff --git a/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js b/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
+index 0be2dad..a54ccf0 100644
+--- a/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
++++ b/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
+@@ -101,6 +101,21 @@ const YoutubeIframe = (props, ref) => {
+     },
+     seekTo: (seconds, allowSeekAhead) => {
+       webViewRef.current.injectJavaScript(_PlayerScripts.PLAYER_FUNCTIONS.seekToScript(seconds, allowSeekAhead));
++    },
++    /** Direct iframe API — complements RN **`play`** prop (fixes TV WebView where postMessage is delayed). */
++    playVideo: () => {
++      const wv = webViewRef.current;
++      if (!wv) {
++        return;
++      }
++      wv.injectJavaScript(_PlayerScripts.PLAYER_FUNCTIONS.playVideo);
++      setTimeout(() => {
++        try {
++          if (typeof wv.requestFocus === 'function') {
++            wv.requestFocus();
++          }
++        } catch (_e) {}
++      }, 80);
+     }
+   }), []);
+   (0, _react.useEffect)(() => {

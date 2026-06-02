@@ -16,7 +16,6 @@ import {
   ActivityIndicator,
   Pressable,
   FlatList,
-  Image,
   useWindowDimensions,
   TouchableOpacity,
   Platform,
@@ -33,19 +32,33 @@ import {
 import { useWatchlistStatus } from '../../lib/watchlist-status-context';
 import { useCountry } from '../../lib/country-context';
 import { isTvTarget } from '../../lib/isTv';
-import { tvFocusable } from '../../lib/tvFocus';
-import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
-import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
-import { enrichWithTmdbImages } from '../../lib/film-show-rapid-discover';
-import { fetchDiscoverMoviesFromStreamFinder, resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
+import {
+  enrichWithTmdbImages,
+  enrichTmdbReleaseYearsForDiscover,
+} from '../../lib/film-show-rapid-discover';
+import {
+  STREAM_FINDER_DISCOVER_PAGE_SIZE,
+  fetchDiscoverMoviesPageFromStreamFinder,
+  fetchStreamFinderProviderCatalog,
+  resolvePrunedProviderSelections,
+  type StreamFinderProviderRow,
+} from '../../lib/stream-finder-supabase';
+import { subscribeDiscoverFeedFlushAfterProfileSave } from '../../lib/discover-streaming-preferences-reset';
 import { discoverPosterGridColumns } from '../../lib/viewport-utils';
+import {
+  TvMovieGridRow,
+  TV_MOVIE_GRID_COLUMNS,
+  TV_MOVIE_GRID_LIST_VERTICAL_PAD,
+  TV_MOVIE_GRID_POSTER_HEIGHT,
+} from '../../components/TvMovieGridRow';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+/** Discover list posters — **`w342`** / **`w185`** tier only; avoid **`original`** on TV grids. */
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
 
 /** Local Discover auth snapshot — aligns Supabase Session with tri-state Discover UI. */
 type DiscoverLocalSession =
@@ -93,16 +106,64 @@ const GENRES = [
 const HORIZONTAL_PADDING = 20;
 const GRID_GAP_PHONE = 12;
 const GRID_GAP_TV = 20;
-/** Discover TV: nav + horizontal buffers (content shell padding; includes side inset for width math). */
-/** Matches Home’s 20px inset from the main column edge (nav + buffer). */
-const DISCOVER_TV_CONTENT_BUFFER = 20;
+/** TV content shell: left inset clears sidebar-adjacent focus ring; right keeps bezel breathing room. */
+const DISCOVER_TV_CONTENT_PAD_LEFT = 24;
 const DISCOVER_TV_RIGHT_MARGIN = 20;
-const DISCOVER_TV_GAP = 20;
-const DISCOVER_TV_LIST_VERTICAL_PAD = 20;
 /** TV: small bottom pad so the focus “floor” isn’t a huge empty scroll region. */
 const DISCOVER_TV_RESULTS_PADDING_BOTTOM = 32;
 const YEAR_JUMP_DISTANCE = 350;
 const YEAR_CHIP_SNAP_INTERVAL = 70;
+
+/**
+ * Single Year chip rail height (`styles.chip`: paddingVertical 8×2 + label line for fontSize 14).
+ * Page-level `paddingTop` above the Year row — ground truth **34px**.
+ */
+const DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX = 34;
+/**
+ * Vertical gap between section headings and poster rails — matches `TvMovieGridRow` `sectionTitleWrap.marginBottom` (**12px**).
+ */
+const DISCOVER_HEADER_TO_RAIL_GAP_PX = 12;
+
+/** Baseline title size before compact scales — see **`DISCOVER_POSTER_META_TITLE_PX`**. */
+const DISCOVER_POSTER_META_TITLE_BASE_PX = 14;
+/**
+ * Footer meta: **75%** of baseline, then **−10%** (**11 × 0.9 → 10**) — single **`Title - Year`** string.
+ */
+const DISCOVER_POSTER_META_TITLE_PX = Math.round(
+  Math.round(DISCOVER_POSTER_META_TITLE_BASE_PX * 0.75) * 0.9
+);
+
+/** Bounded Discover poster footer — matches **140px** poster width; **56px** fits **2** wrapped lines of unified **`Title - Year`** without clipping. */
+const DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX = 6;
+const DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX = 56;
+const DISCOVER_POSTER_META_FOOTER_TOTAL_PX =
+  DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX + DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX;
+
+/**
+ * Former single-line title slot height — subtracted from Discover TV list vertical pad to tighten row rhythm
+ * while the footer keeps a fixed-height **`Title - Year`** block.
+ */
+const DISCOVER_POSTER_META_LEGACY_TITLE_SLOT_HEIGHT_PX = 20;
+const DISCOVER_TV_MOVIE_GRID_LIST_VERTICAL_PAD_PX = Math.max(
+  0,
+  TV_MOVIE_GRID_LIST_VERTICAL_PAD - DISCOVER_POSTER_META_LEGACY_TITLE_SLOT_HEIGHT_PX
+);
+
+/**
+ * Canonical **286px** vertical stride for Discover TV results **`FlatList`** (**`getItemLayout`** / **`snapToInterval`**):
+ * **210** (`TV_MOVIE_GRID_POSTER_HEIGHT`) poster image + **56** (`DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX`) unified meta footer block + **20px** vertical list gap token (`DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX`).
+ * Uniform movie-row lists use **`offset: index × 286`**; lists that include a phase divider fall back to cumulative offsets (row slot still **286px**).
+ */
+const DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX = 20;
+const DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX =
+  TV_MOVIE_GRID_POSTER_HEIGHT +
+  DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX +
+  DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX;
+
+const DISCOVER_TV_LIST_MOVIE_ROW_LAYOUT_HEIGHT_PX = DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX;
+
+/** Must track **`styles.phaseDivider`** vertical footprint (margins + text). */
+const DISCOVER_TV_LIST_PHASE_DIVIDER_HEIGHT_PX = 56;
 
 interface DiscoverResult {
   id: string;
@@ -111,8 +172,10 @@ interface DiscoverResult {
   /** Present when hydrated from Stream Finder cache + TMDB enrichment. */
   backdrop_url?: string | null;
   release_year: number | null;
+  /** TMDB / API **`YYYY-MM-DD`** when hydrated (Stream Finder + TMDB merges). */
+  release_date?: string | null;
   vote_average: number | null;
-  platforms: Array<{ name: string; access_type: string }>;
+  platforms: Array<{ name: string; access_type: string; logo_path?: string | null }>;
   /** TMDB id — enrichment + routing. */
   tmdb_id?: number | null;
   /** Stream Finder: rows joined from `stream_finder_providers`; sorted by name when present. */
@@ -135,6 +198,42 @@ interface TMDBDiscoverResponse {
 function toFullImageUrl(path: string | null | undefined): string | null {
   if (!path || !path.startsWith('/')) return null;
   return `${TMDB_IMAGE_BASE}${path}`;
+}
+
+function parseYearLeadingFromString(input: string | null | undefined): number | null {
+  if (!input || typeof input !== 'string') return null;
+  const t = input.trim();
+  if (t.length < 4 || !/^\d{4}/.test(t)) return null;
+  const y = parseInt(t.slice(0, 4), 10);
+  if (!Number.isFinite(y) || y < 1800 || y > 2100) return null;
+  return y;
+}
+
+/** Resolves footer year from **`release_year`**, **`release_date`**, or loose **`year` / `releaseDate`** keys. */
+function getDiscoverReleaseYearForFooter(movie: DiscoverResult): number | null {
+  if (movie.release_year != null && Number.isFinite(movie.release_year)) {
+    const y = Math.trunc(movie.release_year);
+    if (y >= 1800 && y <= 2100) return y;
+  }
+  const fromPrimaryDate = parseYearLeadingFromString(movie.release_date ?? undefined);
+  if (fromPrimaryDate != null) return fromPrimaryDate;
+
+  const loose = movie as DiscoverResult & { year?: unknown; releaseDate?: string | null };
+  if (typeof loose.year === 'number' && Number.isFinite(loose.year)) {
+    const y = Math.floor(loose.year);
+    if (y >= 1800 && y <= 2100) return y;
+  }
+  if (typeof loose.year === 'string') {
+    const y = parseYearLeadingFromString(loose.year);
+    if (y != null) return y;
+  }
+  return parseYearLeadingFromString(loose.releaseDate ?? undefined);
+}
+
+/** Discover poster footer: **`Title - YYYY`** (year omitted when unknown). */
+function formatDiscoverPosterMetaLine(movie: DiscoverResult): string {
+  const y = getDiscoverReleaseYearForFooter(movie);
+  return y != null ? `${movie.title} - ${y}` : movie.title;
 }
 
 type MonetizationType = 'flatrate' | 'rent' | 'both';
@@ -197,6 +296,7 @@ async function fetchDiscoverFromTMDB(
     release_year: m.release_date
       ? parseInt(m.release_date.slice(0, 4), 10)
       : null,
+    release_date: m.release_date ?? null,
     vote_average: m.vote_average ?? null,
     platforms: [],
   }));
@@ -211,296 +311,16 @@ type ListItem =
   | { type: 'row'; movies: DiscoverResult[]; key: string; movieRowIndex: number }
   | { type: 'divider'; title: string; key: string };
 
-type DiscoverTvHorizontalRowProps = {
-  movies: DiscoverResult[];
-  router: ReturnType<typeof useRouter>;
-  /** Pixel width/height of one poster cell; must match 5× `rowGap` ladder math. */
-  posterWidth: number;
-  posterHeight: number;
-  rowGap: number;
-  /** Ordinal of this row among all movie rows (0-based). */
-  movieRowIndex: number;
-  /** First cell of the next row (Z-pattern: right on last item → first of next). */
-  nextRowEntryTag: number | null;
-  /** Last row’s last cell tag for `nextFocusRightSelf` (right-edge wall on bottom-right). */
-  lastRowLastCellWallTag: number | null;
-  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  renderMovieFooter?: (movie: DiscoverResult) => ReactNode;
-  isLastMovieRow: boolean;
-  /** Bumps when row entry/exit native tags change so cells re-apply D-pad links. */
-  wrapNavVersion: number;
-  discoverSidebarLeftTag?: number | null;
-  mainContentEntryNavTag?: number | null;
-};
-
-function DiscoverTvPosterCell({
-  movie,
-  posterWidth,
-  posterHeight,
-  onPress,
-  footer,
-  colIndex,
-  rowLen,
-  isLastMovieRow,
-  nextRowEntryTag,
-  lastRowLastCellWallTag,
-  setRowEntryRef,
-  setRowExitRef,
-  rowRefIndex,
-  discoverSidebarLeftTag,
-  mainContentEntryNavTag,
-}: {
-  movie: DiscoverResult;
-  posterWidth: number;
-  posterHeight: number;
-  onPress: () => void;
-  footer: ReactNode | null;
-  colIndex: number;
-  rowLen: number;
-  isLastMovieRow: boolean;
-  nextRowEntryTag: number | null;
-  lastRowLastCellWallTag: number | null;
-  setRowEntryRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  setRowExitRef: (rowIdx: number) => (node: ComponentRef<typeof Pressable> | null) => void;
-  rowRefIndex: number;
-  discoverSidebarLeftTag: number | null;
-  mainContentEntryNavTag: number | null;
-}) {
-  const [isFocused, setIsFocused] = useState(false);
-  const [posterLoadFailed, setPosterLoadFailed] = useState(false);
-  /** Native tag of this cell’s `Pressable` (self-trap when cross-row target not registered yet). */
-  const [localTag, setLocalTag] = useState<number | null>(null);
-
-  const cellWrapStyle = useMemo(
-    () => [discoverTvPosterStyles.posterCellWrap, { width: posterWidth, flexShrink: 0 }],
-    [posterWidth]
-  );
-
-  useEffect(() => {
-    setPosterLoadFailed(false);
-  }, [movie.id, movie.poster_url]);
-
-  const showPlaceholder = !movie.poster_url || posterLoadFailed;
-  const useNav = Platform.OS === 'android';
-  const isLastInRow = colIndex === rowLen - 1;
-  const isFirstInRow = colIndex === 0;
-  /** Z-pattern: right from last col → first of next row, or self until that tag exists. */
-  const rightCarriage =
-    isLastInRow && !isLastMovieRow
-      ? (nextRowEntryTag ?? localTag)
-      : null;
-  /** Bottom-right: right wall; prefer shared ref tag else local so first frame is trapped. */
-  const rightWallSelf =
-    isLastInRow && isLastMovieRow
-      ? (lastRowLastCellWallTag ?? localTag)
-      : null;
-  /** Every row’s first cell: left goes to sidebar, or self-trap if sidebar tag not ready. */
-  const leftToSidebar =
-    isFirstInRow ? (discoverSidebarLeftTag ?? localTag) : null;
-
-  const pressableRef = useCallback(
-    (node: ComponentRef<typeof Pressable> | null) => {
-      if (Platform.OS === 'android') {
-        setLocalTag(node ? findNodeHandle(node) : null);
-      } else {
-        setLocalTag(null);
-      }
-      if (isFirstInRow) setRowEntryRef(rowRefIndex)(node);
-      if (isLastInRow) setRowExitRef(rowRefIndex)(node);
-    },
-    [
-      isFirstInRow,
-      isLastInRow,
-      rowRefIndex,
-      setRowEntryRef,
-      setRowExitRef,
-    ]
-  );
-
-  const posterPressStyle = useMemo(
-    () => [
-      discoverTvPosterStyles.posterPressable,
-      { width: posterWidth, height: posterHeight },
-      ...(isFocused ? [discoverTvPosterStyles.posterPressableFocused] : []),
-    ],
-    [posterWidth, posterHeight, isFocused]
-  );
-
-  return (
-    <View style={cellWrapStyle} collapsable={false}>
-      <Pressable
-        ref={pressableRef}
-        {...tvFocusable()}
-        focusable={true}
-        {...(useNav
-          ? tvAndroidNavProps({
-              ...(isFirstInRow && leftToSidebar != null
-                ? { nextFocusLeft: leftToSidebar }
-                : {}),
-              ...(isLastInRow && !isLastMovieRow && rightCarriage != null
-                ? { nextFocusRight: rightCarriage }
-                : {}),
-              ...(isLastInRow && isLastMovieRow && rightWallSelf != null
-                ? { nextFocusRightSelf: rightWallSelf }
-                : {}),
-              ...(isLastMovieRow && mainContentEntryNavTag != null
-                ? { nextFocusDown: mainContentEntryNavTag }
-                : {}),
-            })
-          : {})}
-        onFocus={() => {
-          setIsFocused(true);
-          if (__DEV__) {
-            console.log(
-              `[D-PAD FOCUS] Landed on: ${movie.title || 'Unknown'}`
-            );
-          }
-        }}
-        onBlur={() => {
-          setIsFocused(false);
-          if (__DEV__) {
-            console.log(`[D-PAD BLUR] Left: ${movie.title || 'Unknown'}`);
-          }
-        }}
-        onPress={onPress}
-        android_ripple={null}
-        style={posterPressStyle}
-      >
-        {!showPlaceholder ? (
-          <Image
-            source={{ uri: movie.poster_url as string }}
-            style={discoverTvPosterStyles.posterImageFill}
-            resizeMode="cover"
-            onError={() => setPosterLoadFailed(true)}
-          />
-        ) : (
-          <View
-            focusable={false}
-            style={[
-              discoverTvPosterStyles.placeholder,
-              discoverTvPosterStyles.posterImageFill,
-            ]}
-          >
-            <Text style={discoverTvPosterStyles.placeholderTitle} numberOfLines={3}>
-              {movie.title}
-            </Text>
-          </View>
-        )}
-      </Pressable>
-      {footer}
-    </View>
-  );
+/** Pre-network Supabase / TMDB payload dump for Metro + device Logcat. */
+function logDiscoverDatabaseNetworkPayloadAudit(
+  auditLabel: string,
+  debugQueryPayload: Record<string, unknown>
+): void {
+  console.log('🚨 [ReelDive Debug] DATABASE NETWORK PAYLOAD AUDIT —————————————————');
+  console.log(`🔖 ${auditLabel}`);
+  console.log('📦 FULL RAW PARAMETERS:', JSON.stringify(debugQueryPayload, null, 2));
+  console.log('————————————————————————————————————————————————————————————————');
 }
-
-function DiscoverTvHorizontalMovieRow({
-  movies,
-  router,
-  posterWidth,
-  posterHeight,
-  rowGap,
-  movieRowIndex,
-  nextRowEntryTag,
-  lastRowLastCellWallTag,
-  setRowEntryRef,
-  setRowExitRef,
-  renderMovieFooter,
-  isLastMovieRow,
-  wrapNavVersion,
-  discoverSidebarLeftTag = null,
-  mainContentEntryNavTag = null,
-}: DiscoverTvHorizontalRowProps) {
-  const rowLen = movies.length;
-  const rowContentStyle = useMemo(
-    () => ({
-      paddingVertical: DISCOVER_TV_LIST_VERTICAL_PAD,
-      gap: rowGap,
-    }),
-    [rowGap]
-  );
-  return (
-    <View style={discoverTvRowStyles.rowWrap}>
-      <FlatList
-        horizontal
-        data={movies}
-        keyExtractor={(m) => m.id}
-        showsHorizontalScrollIndicator={false}
-        removeClippedSubviews={false}
-        style={discoverTvRowStyles.rowFlatList}
-        contentContainerStyle={rowContentStyle}
-        extraData={wrapNavVersion}
-        renderItem={({ item, index: colIndex }) => (
-          <DiscoverTvPosterCell
-            movie={item}
-            posterWidth={posterWidth}
-            posterHeight={posterHeight}
-            onPress={() => router.push(`/movie/${item.id}`)}
-            footer={renderMovieFooter?.(item) ?? null}
-            colIndex={colIndex}
-            rowLen={rowLen}
-            isLastMovieRow={isLastMovieRow}
-            nextRowEntryTag={nextRowEntryTag}
-            lastRowLastCellWallTag={lastRowLastCellWallTag}
-            setRowEntryRef={setRowEntryRef}
-            setRowExitRef={setRowExitRef}
-            rowRefIndex={movieRowIndex}
-            discoverSidebarLeftTag={discoverSidebarLeftTag}
-            mainContentEntryNavTag={mainContentEntryNavTag}
-          />
-        )}
-      />
-    </View>
-  );
-}
-
-const discoverTvRowStyles = StyleSheet.create({
-  rowWrap: {
-    width: '100%',
-    maxWidth: '100%',
-    alignSelf: 'stretch',
-    marginBottom: 12,
-    overflow: 'visible',
-  },
-  rowFlatList: {
-    width: '100%',
-    overflow: 'visible',
-  },
-});
-
-const discoverTvPosterStyles = StyleSheet.create({
-  posterCellWrap: {
-    overflow: 'visible',
-  },
-  posterPressable: {
-    backgroundColor: 'transparent',
-    overflow: 'visible',
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: 'transparent',
-  },
-  posterPressableFocused: {
-    borderColor: '#00F5FF',
-    transform: [{ scale: 1.05 }],
-    zIndex: 2,
-    elevation: 10,
-  },
-  posterImageFill: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholder: {
-    backgroundColor: '#080C10',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  placeholderTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#e5e7eb',
-    textAlign: 'center',
-  },
-});
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -511,33 +331,6 @@ export default function DiscoverScreen() {
   const { selectedCountry } = useCountry();
   /** `undefined` = auth not resolved yet — do not treat as signed-out or gate on this for redirects. */
   const [session, setSession] = useState<DiscoverLocalSession>(undefined);
-
-  useEffect(() => {
-    console.log('🍏 [Discover] MOUNTED on platform:', Platform.OS);
-    return () => console.log('🍎 [Discover] UNMOUNTED');
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      watchlistRefetchRef.current?.();
-      let cancelled = false;
-      supabase.auth.getSession().then(({ data: { session: incoming } }) => {
-        if (cancelled) return;
-        setSession((prev) =>
-          mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
-        );
-        const uid = incoming?.user?.id ?? null;
-        resolvePrunedProviderSelections(supabase, { userId: uid }).then(
-          (ids) => {
-            if (!cancelled) setProviderIds(ids);
-          }
-        );
-      });
-      return () => {
-        cancelled = true;
-      };
-    }, [])
-  );
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -557,51 +350,8 @@ export default function DiscoverScreen() {
   const { sidebarSlotNativeTags, mainContentEntryNativeTag } = useTvSearchFocusBridge();
   const discoverSidebarLeftTag =
     isTV && Platform.OS === 'android' ? (sidebarSlotNativeTags['discover'] ?? null) : null;
-  /** TV: shell `discoverTvContentWrap` supplies 20 / 20 horizontal padding — no extra horizontal inset here. */
+  /** TV: shell `discoverTvContentWrap` supplies horizontal padding — results FlatList omits extra horizontal inset. */
   const contentPadX = isTV ? 0 : HORIZONTAL_PADDING;
-  const [tvDiscoverShellW, setTvDiscoverShellW] = useState(0);
-  /** TV rail applies only on native TV builds — never on mobile web (bottom tabs / no rail). */
-  const discoverTvSidebarOffset =
-    isTV && Platform.OS !== 'web' ? TV_SIDEBAR_WIDTH : 0;
-  const tvRowUsableWidth = useMemo(() => {
-    if (!isTV) return 0;
-    if (tvDiscoverShellW > 0) {
-      return (
-        tvDiscoverShellW -
-        DISCOVER_TV_CONTENT_BUFFER -
-        DISCOVER_TV_RIGHT_MARGIN
-      );
-    }
-    return (
-      screenWidth -
-      discoverTvSidebarOffset -
-      DISCOVER_TV_CONTENT_BUFFER -
-      DISCOVER_TV_RIGHT_MARGIN
-    );
-  }, [
-    isTV,
-    tvDiscoverShellW,
-    screenWidth,
-    discoverTvSidebarOffset,
-  ]);
-  /**
-   * TV grid: column count scales with usable row width (3 / 4 / 6) so 65" layouts don’t use huge cells.
-   * Inner width ≈ shell minus buffers; gaps = columns - 1.
-   */
-  const discoverTvGridLayout = useMemo(() => {
-    if (!isTV) {
-      return { itemWidth: 0, itemHeight: 0, rowGap: DISCOVER_TV_GAP, columns: 0 };
-    }
-    const rowGap = DISCOVER_TV_GAP;
-    const inner = Math.max(0, tvRowUsableWidth);
-    const columns = discoverPosterGridColumns(inner);
-    const itemWidth = Math.max(
-      0,
-      (inner - rowGap * (columns - 1)) / columns
-    );
-    const itemHeight = itemWidth * 1.5;
-    return { itemWidth, itemHeight, rowGap, columns };
-  }, [isTV, tvRowUsableWidth]);
   const gridGap = isTV ? Math.round(GRID_GAP_TV * tvScale) : GRID_GAP_PHONE;
 
   const discoverPosterLayout = useMemo(
@@ -619,15 +369,28 @@ export default function DiscoverScreen() {
   const [error, setError] = useState<string | null>(null);
   const [monetization, setMonetization] = useState<MonetizationType>('both');
   const [providerIds, setProviderIds] = useState<number[]>([]);
+  const providerIdsRef = useRef(providerIds);
+  providerIdsRef.current = providerIds;
+
+  /** Bumps Discover Stream Finder hydrate after Profile saves prefs (Discover tab stays mounted). */
+  const [discoverStreamFinderHydrationGeneration, setDiscoverStreamFinderHydrationGeneration] =
+    useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [streamFinderListHydrating, setStreamFinderListHydrating] = useState(false);
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
-  /** True while the default grid is the Stream Finder–cached list (no TMDB discover pagination). */
-  const streamFinderCuratedFeedActiveRef = useRef(false);
-  /** Ensures Stream Finder cache hydration runs once per mount. */
-  const streamFinderCuratedFetchedRef = useRef(false);
+  /** Default landing: **`stream-finder`** paginates via Supabase; filters switch to **`tmdb`** (TMDB **`/discover`**). */
+  const discoverFeedSourceRef = useRef<'stream-finder' | 'tmdb'>('stream-finder');
+  /** When **`true`**, in-flight Stream Finder hydration must **not** call **`setPhase1Movies`** (user applied filters first). */
+  const streamFinderHydrationDismissedRef = useRef(false);
+  /** Next Supabase **`range`** offset for Stream Finder (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`** stride). */
+  const streamFinderPageOffsetRef = useRef(0);
+  /** Stream Finder **`stream_finder_movies`** row count (exact count query). */
+  const streamFinderTotalRef = useRef(0);
+  const streamFinderProvidersRef = useRef<Map<number, StreamFinderProviderRow> | null>(
+    null
+  );
   const phase1IdsRef = useRef<Set<string>>(new Set());
   const yearListRef = useRef<FlatList>(null);
   const genreListRef = useRef<FlatList>(null);
@@ -677,7 +440,7 @@ export default function DiscoverScreen() {
   const verticalPeekPadding = useMemo(() => {
     if (isTV) return 0;
     const posterH = discoverPosterLayout.posterHeight;
-    const titleAndMeta = 88;
+    const titleAndMeta = DISCOVER_POSTER_META_FOOTER_TOTAL_PX + 12;
     const rowHeight = posterH + titleAndMeta + gridGap;
     return Math.round(rowHeight * 0.5);
   }, [discoverPosterLayout.posterHeight, gridGap, isTV]);
@@ -698,30 +461,177 @@ export default function DiscoverScreen() {
     phase1IdsRef.current = new Set(phase1Movies.map((m) => m.id));
   }, [phase1Movies]);
 
+  /** Hard reset Stream Finder + TMDB feed state when Profile **Save Preferences** succeeds (Discover may stay mounted behind Profile). */
+  const flushDiscoverCachesAfterProfilePreferenceSave = useCallback(() => {
+    fetchingRef.current = false;
+    loadingMoreRef.current = false;
+
+    setSelectedYear(null);
+    setSelectedGenres([]);
+    setMonetization('both');
+
+    setPhase1Movies([]);
+    setPhase2Movies([]);
+    setPage(1);
+    setTotalPages(1);
+    setFetchPhase(1);
+    setError(null);
+    setLoadingMore(false);
+    setLoading(false);
+    phase1IdsRef.current = new Set();
+
+    streamFinderHydrationDismissedRef.current = false;
+    discoverFeedSourceRef.current = 'stream-finder';
+    streamFinderPageOffsetRef.current = 0;
+    streamFinderTotalRef.current = 0;
+    streamFinderProvidersRef.current = null;
+
+    void (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const uid = data.session?.user?.id ?? null;
+        const ids = await resolvePrunedProviderSelections(supabase, { userId: uid });
+        setProviderIds(ids);
+        setDiscoverStreamFinderHydrationGeneration((n) => n + 1);
+        if (__DEV__) {
+          console.log(
+            '[ReelDive Debug] Discover cache flushed from Profile Save Preferences; re-hydrating Stream Finder from Supabase.'
+          );
+        }
+      } catch (err) {
+        console.warn('[Discover] Profile-save cache flush follow-up failed:', err);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeDiscoverFeedFlushAfterProfileSave(flushDiscoverCachesAfterProfilePreferenceSave);
+  }, [flushDiscoverCachesAfterProfilePreferenceSave]);
+
   /**
-   * Curated default Discover — Stream Finder cache in Supabase (+ TMDB poster/backdrop enrichment).
+   * Curated default Discover — paginated Stream Finder cache (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`**) +
+   * TMDB poster / release-year enrichment. Re-runs when **`discoverStreamFinderHydrationGeneration`** bumps (Profile **Save Preferences** → **`flushDiscoverFeedCachesAfterProfileSave`**).
    */
   useEffect(() => {
-    if (streamFinderCuratedFetchedRef.current) return;
-    streamFinderCuratedFetchedRef.current = true;
-
     let cancelled = false;
-    streamFinderCuratedFeedActiveRef.current = true;
     setStreamFinderListHydrating(true);
 
     (async () => {
       try {
-        const mapped = await fetchDiscoverMoviesFromStreamFinder(supabase);
-        if (cancelled) return;
+        streamFinderHydrationDismissedRef.current = false;
+        discoverFeedSourceRef.current = 'stream-finder';
+
+        const providerById = await fetchStreamFinderProviderCatalog(supabase);
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+        streamFinderProvidersRef.current = providerById;
+
+        const { data: hydrateAuth } = await supabase.auth.getSession();
+        const hydrateUid = hydrateAuth.session?.user?.id ?? null;
+        const freshWatchProviderIds = await resolvePrunedProviderSelections(supabase, {
+          userId: hydrateUid,
+        });
+        setProviderIds(freshWatchProviderIds);
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchStreamFinderProviderCatalog (post-fetch, pre-movies)',
+          {
+            activeProviderIdsSavedProfile: freshWatchProviderIds,
+            providerIdsStringAtRequest:
+              freshWatchProviderIds.join('|') ||
+              '(empty — full stream_finder mirror; TMDB Discover path still applies own provider filter)',
+            currentFeedSource: discoverFeedSourceRef.current,
+            streamFinderHydrationGeneration: discoverStreamFinderHydrationGeneration,
+            supabaseOperation: {
+              table: 'stream_finder_providers',
+              columns: 'provider_id, name, logo_path',
+              filter: '(none — full catalog)',
+            },
+            curatedFeedNote:
+              freshWatchProviderIds.length > 0
+                ? `Stream Finder Hydrate applies RPC stream_finder_discover_page_filtered ∩ movie_availability for [${freshWatchProviderIds.join(', ')}].`
+                : 'Stream Finder Hydrate: empty selection uses full popularity-sorted stream_finder_movies mirror (RPC filter omitted).',
+          }
+        );
+
+        const streamFinderRange = {
+          offset: 0,
+          limit: STREAM_FINDER_DISCOVER_PAGE_SIZE,
+        };
+
+        const streamFinderMoviesHydrateAuditOps =
+          freshWatchProviderIds.length > 0
+            ? [
+                {
+                  kind: 'rpc' as const,
+                  name: 'stream_finder_discover_page_filtered',
+                  params: {
+                    p_provider_ids: freshWatchProviderIds,
+                    p_offset: streamFinderRange.offset,
+                    p_limit: streamFinderRange.limit,
+                  },
+                  filterSemantics:
+                    'Eligible rows = stream_finder_movies m WHERE EXISTS (SELECT 1 FROM movie_availability a WHERE a.movie_id = m.tmdb_id AND a.provider_id = ANY (p_provider_ids)); pruned IDs ⊆ stream_finder_providers inside fetchDiscoverMoviesPageFromStreamFinder.',
+                  order: 'popularity DESC NULLS LAST',
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id IN (page tmdb_ids) — hydrate platform logos',
+                },
+              ]
+            : [
+                {
+                  table: 'stream_finder_movies' as const,
+                  select: 'tmdb_id, title, popularity, overview, poster_path',
+                  order: 'popularity desc',
+                  range: `range(${streamFinderRange.offset}, ${streamFinderRange.offset + streamFinderRange.limit - 1})`,
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id in (page tmdb_ids)',
+                },
+              ];
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchDiscoverMoviesPageFromStreamFinder (hydrate, pre-request)',
+          {
+            activeProviderIdsSavedProfile: freshWatchProviderIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            streamFinderPagination: streamFinderRange,
+            supabaseOperations: streamFinderMoviesHydrateAuditOps,
+          }
+        );
+
+        const { movies: mapped, totalAvailable } =
+          await fetchDiscoverMoviesPageFromStreamFinder(
+            supabase,
+            {
+              offset: streamFinderRange.offset,
+              limit: streamFinderRange.limit,
+              watchProviderIds: freshWatchProviderIds,
+            },
+            providerById
+          );
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+
         if (__DEV__) {
-          console.log(`[Discover] Stream Finder hydrate: ${mapped.length} titles (cache read OK)`);
+          console.log(
+            `[Discover] Stream Finder hydrate: page1=${mapped.length} titles, catalogTotal=${totalAvailable} (cache read OK)`
+          );
         }
+
+        streamFinderPageOffsetRef.current = mapped.length;
+        streamFinderTotalRef.current = totalAvailable;
+
         const enriched = await enrichWithTmdbImages(mapped);
-        if (cancelled) return;
-        setPhase1Movies(enriched as DiscoverResult[]);
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+        const withYears = await enrichTmdbReleaseYearsForDiscover(enriched);
+        if (cancelled || streamFinderHydrationDismissedRef.current) return;
+        setPhase1Movies(withYears as DiscoverResult[]);
       } catch (e) {
         console.warn('[Discover] Stream Finder cache load failed:', e);
-        streamFinderCuratedFeedActiveRef.current = false;
       } finally {
         if (!cancelled) setStreamFinderListHydrating(false);
       }
@@ -730,7 +640,7 @@ export default function DiscoverScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [discoverStreamFinderHydrationGeneration]);
 
   const providerIdsString = useMemo(
     () => providerIds.join('|'),
@@ -738,10 +648,16 @@ export default function DiscoverScreen() {
   );
 
   const fetchMovies = useCallback(
-    async (year: number | null, monet: MonetizationType, genres: number[]) => {
+    async (
+      year: number | null,
+      monet: MonetizationType,
+      genres: number[],
+      opts?: { providerIdsOverride?: number[] | null }
+    ) => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
-      streamFinderCuratedFeedActiveRef.current = false;
+      streamFinderHydrationDismissedRef.current = true;
+      discoverFeedSourceRef.current = 'tmdb';
       setLoading(true);
       setPhase1Movies([]);
       setPhase2Movies([]);
@@ -751,15 +667,53 @@ export default function DiscoverScreen() {
       setTotalPages(1);
 
       try {
-        const providers = providerIdsString
-          ? providerIdsString.split('|').map(Number).filter(Boolean)
-          : [];
+        const providers =
+          opts?.providerIdsOverride != null
+            ? [
+                ...new Set(
+                  opts.providerIdsOverride
+                    .map((id) => Math.trunc(Number(id)))
+                    .filter((n) => Number.isFinite(n) && n > 0)
+                ),
+              ]
+            : providerIdsString
+              ? providerIdsString.split('|').map(Number).filter(Boolean)
+              : [];
+        logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 1 (pre-request)', {
+          activeProviderIdsUsedInQuery: providers,
+          currentFeedSource: discoverFeedSourceRef.current,
+          currentPageRequested: 1,
+          tmdbDiscoverParams: {
+            year,
+            monetization: monet,
+            tmdbPage: 1,
+            watchProvidersForUrl: providers,
+            genreIds: genres,
+            discoverPhase: 1,
+            watchRegion: selectedCountry,
+          },
+        });
+
         const data = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 1, selectedCountry);
         const phase1Results = data.movies;
         setPhase1Movies(phase1Results);
 
         if (phase1Results.length === 0) {
           setFetchPhase(2);
+          logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 2 fallback (pre-request)', {
+            activeProviderIdsUsedInQuery: providers,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            tmdbDiscoverParams: {
+              year,
+              monetization: monet,
+              tmdbPage: 1,
+              watchProvidersForUrl: providers,
+              genreIds: genres,
+              discoverPhase: 2,
+              watchRegion: selectedCountry,
+            },
+          });
           const data2 = await fetchDiscoverFromTMDB(year, monet, 1, providers, genres, 2, selectedCountry);
           setPhase2Movies(data2.movies);
           setTotalPages(data2.total_pages);
@@ -779,13 +733,125 @@ export default function DiscoverScreen() {
     [selectedCountry, providerIdsString]
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      watchlistRefetchRef.current?.();
+      let cancelled = false;
+
+      supabase.auth.getSession().then(async ({ data: { session: incoming } }) => {
+        if (cancelled) return;
+        setSession((prev) =>
+          mergeDiscoverAuth(prev, incoming as DiscoverLocalSession)
+        );
+        const uid = incoming?.user?.id ?? null;
+
+        try {
+          const ids = await resolvePrunedProviderSelections(supabase, {
+            userId: uid,
+          });
+          if (cancelled) return;
+          setProviderIds(ids);
+        } catch (err) {
+          console.warn('[Discover] focus session / provider resolve failed:', err);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading) return;
-    /**
-     * Same guard on Web and native: infinite scroll must not append TMDB /discover pages into the
-     * Stream Finder–cached default list while `streamFinderCuratedFeedActiveRef` is true.
-     */
-    if (streamFinderCuratedFeedActiveRef.current) return;
+
+    if (discoverFeedSourceRef.current === 'stream-finder') {
+      const nextOffset = streamFinderPageOffsetRef.current;
+      const total = streamFinderTotalRef.current;
+      const pmap = streamFinderProvidersRef.current;
+      if (pmap == null || total === 0 || nextOffset >= total) return;
+
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+
+      try {
+        const wmIds = [...providerIdsRef.current];
+        const sfPag = { offset: nextOffset, limit: STREAM_FINDER_DISCOVER_PAGE_SIZE };
+        const streamFinderMoviesLoadMoreAuditOps =
+          wmIds.length > 0
+            ? [
+                {
+                  kind: 'rpc' as const,
+                  name: 'stream_finder_discover_page_filtered',
+                  params: {
+                    p_provider_ids: wmIds,
+                    p_offset: sfPag.offset,
+                    p_limit: sfPag.limit,
+                  },
+                  filterSemantics:
+                    'stream_finder_movies ∩ movie_availability via EXISTS(provider_id = ANY(p_provider_ids))',
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id IN (page tmdb_ids)',
+                },
+              ]
+            : [
+                {
+                  table: 'stream_finder_movies' as const,
+                  select: 'tmdb_id, title, popularity, overview, poster_path',
+                  order: 'popularity desc',
+                  range: `range(${sfPag.offset}, ${sfPag.offset + sfPag.limit - 1})`,
+                },
+                {
+                  table: 'movie_availability' as const,
+                  select: 'movie_id, provider_id',
+                  filter: 'movie_id in (page tmdb_ids)',
+                },
+              ];
+
+        logDiscoverDatabaseNetworkPayloadAudit(
+          'STREAM_FINDER: fetchDiscoverMoviesPageFromStreamFinder (loadMore, pre-request)',
+          {
+            activeProviderIdsSavedProfile: wmIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: typeof page !== 'undefined' ? page : 1,
+            streamFinderPagination: sfPag,
+            streamFinderTotalKnown: total,
+            supabaseOperations: streamFinderMoviesLoadMoreAuditOps,
+          }
+        );
+
+        const { movies: pageMovies, totalAvailable } =
+          await fetchDiscoverMoviesPageFromStreamFinder(
+            supabase,
+            {
+              offset: nextOffset,
+              limit: STREAM_FINDER_DISCOVER_PAGE_SIZE,
+              watchProviderIds: wmIds,
+            },
+            pmap
+          );
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+
+        streamFinderTotalRef.current = totalAvailable;
+
+        const enriched = await enrichWithTmdbImages(pageMovies);
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+        const withYears = await enrichTmdbReleaseYearsForDiscover(enriched);
+        if (discoverFeedSourceRef.current !== 'stream-finder') return;
+
+        setPhase1Movies((prev) => [...prev, ...(withYears as DiscoverResult[])]);
+        streamFinderPageOffsetRef.current = nextOffset + pageMovies.length;
+      } catch (err) {
+        console.error('[Discover] Stream Finder loadMore:', err);
+      } finally {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+      return;
+    }
 
     if (page >= totalPages) {
       if (fetchPhase === 1) {
@@ -794,6 +860,20 @@ export default function DiscoverScreen() {
         setFetchPhase(2);
 
         try {
+          logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB phase 2 (loadMore bridge, pre-request)', {
+            activeProviderIdsUsedInQuery: providerIds,
+            currentFeedSource: discoverFeedSourceRef.current,
+            currentPageRequested: 1,
+            tmdbDiscoverParams: {
+              year: selectedYear,
+              monetization,
+              tmdbPage: 1,
+              watchProvidersForUrl: providerIds,
+              genreIds: selectedGenres,
+              discoverPhase: 2,
+              watchRegion: selectedCountry,
+            },
+          });
           const data = await fetchDiscoverFromTMDB(
             selectedYear, monetization, 1, providerIds, selectedGenres, 2, selectedCountry
           );
@@ -819,6 +899,20 @@ export default function DiscoverScreen() {
     const nextPage = page + 1;
 
     try {
+      logDiscoverDatabaseNetworkPayloadAudit('TMDB: fetchDiscoverFromTMDB pagination (loadMore, pre-request)', {
+        activeProviderIdsUsedInQuery: providerIds,
+        currentFeedSource: discoverFeedSourceRef.current,
+        currentPageRequested: nextPage,
+        tmdbDiscoverParams: {
+          year: selectedYear,
+          monetization,
+          tmdbPage: nextPage,
+          watchProvidersForUrl: providerIds,
+          genreIds: selectedGenres,
+          discoverPhase: fetchPhase,
+          watchRegion: selectedCountry,
+        },
+      });
       const data = await fetchDiscoverFromTMDB(
         selectedYear, monetization, nextPage, providerIds, selectedGenres, fetchPhase, selectedCountry
       );
@@ -919,7 +1013,7 @@ export default function DiscoverScreen() {
 
   const listData = useMemo(() => {
     const items: ListItem[] = [];
-    const perRow = isTV ? Math.max(1, discoverTvGridLayout.columns) : numColumns;
+    const perRow = isTV ? TV_MOVIE_GRID_COLUMNS : numColumns;
     let movieRowIndex = 0;
 
     for (let i = 0; i < phase1Movies.length; i += perRow) {
@@ -946,7 +1040,46 @@ export default function DiscoverScreen() {
     }
 
     return items;
-  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns, discoverTvGridLayout.columns]);
+  }, [phase1Movies, phase2Movies, fetchPhase, dividerTitle, isTV, numColumns]);
+
+  const tvDiscoverListLayoutMetrics = useMemo(() => {
+    if (!isTV) return null;
+    const rowH = DISCOVER_TV_LIST_MOVIE_ROW_LAYOUT_HEIGHT_PX;
+    const divH = DISCOVER_TV_LIST_PHASE_DIVIDER_HEIGHT_PX;
+    const lengths = listData.map((it) => (it.type === 'divider' ? divH : rowH));
+    const offsets: number[] = [];
+    let acc = 0;
+    for (let i = 0; i < lengths.length; i++) {
+      offsets.push(acc);
+      acc += lengths[i]!;
+    }
+    return { lengths, offsets };
+  }, [isTV, listData]);
+
+  const discoverTvRowSnapUniform =
+    isTV && !listData.some((x) => x.type === 'divider');
+
+  const discoverTvGetItemLayout = useCallback(
+    (_data: ArrayLike<ListItem> | null | undefined, index: number) => {
+      if (discoverTvRowSnapUniform) {
+        return {
+          length: DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX,
+          offset: DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX * index,
+          index,
+        };
+      }
+      const m = tvDiscoverListLayoutMetrics;
+      if (!m) {
+        return { length: 0, offset: 0, index };
+      }
+      return {
+        length: m.lengths[index] ?? 0,
+        offset: m.offsets[index] ?? 0,
+        index,
+      };
+    },
+    [discoverTvRowSnapUniform, tvDiscoverListLayoutMetrics]
+  );
 
   const totalMovieRows = useMemo(
     () => listData.filter((x) => x.type === 'row').length,
@@ -1013,13 +1146,6 @@ export default function DiscoverScreen() {
 
   const discoverMain = (
     <>
-      <View style={[styles.header, { paddingHorizontal: contentPadX }]}>
-        <Text style={[styles.title, isTV && { fontSize: tvTitleFontSize(32) }]}>Discover</Text>
-        <Text style={[styles.subtitle, isTV && { fontSize: tvBodyFontSize(16) }]}>
-          Browse movies by year & genre
-        </Text>
-      </View>
-
       <View style={styles.chipRowContainer}>
         <View style={styles.yearListWrapper}>
           <FlatList
@@ -1124,6 +1250,8 @@ export default function DiscoverScreen() {
           label="All"
           isSelected={monetization === 'both'}
           onPress={() => handleMonetizationChange('both')}
+          nativeID="discoverAllFilterButton"
+          collapsable={false}
         />
       </View>
 
@@ -1166,14 +1294,25 @@ export default function DiscoverScreen() {
       ) : null}
 
       {hasMovies && (
-        /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows). */
+        /* Non-TV row spread via MoviePosterRow + distributePosterRow (vertical list cannot use columnWrapperStyle / numColumns with divider rows).
+         * TV: no `viewabilityConfig` / `itemVisiblePercentThreshold` here — vertical stride relies on `getItemLayout` + native focus bounds inside `TvMovieGridRow` Pressable.
+         */
         <FlatList
           key={
-            isTV ? `discover-tv-grid-${discoverTvGridLayout.columns}` : `discover-poster-grid-${numColumns}`
+            isTV
+              ? `discover-tv-list-stride-${DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX}`
+              : `discover-poster-grid-${numColumns}`
           }
           data={listData}
           extraData={isTV ? wrapNavVersion : undefined}
           keyExtractor={(item) => item.key}
+          getItemLayout={isTV ? discoverTvGetItemLayout : undefined}
+          snapToInterval={
+            discoverTvRowSnapUniform ? DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX : undefined
+          }
+          snapToAlignment="start"
+          disableIntervalMomentum={discoverTvRowSnapUniform}
+          decelerationRate={isTV ? 'fast' : 'normal'}
           contentContainerStyle={[
             styles.resultsContent,
             {
@@ -1186,7 +1325,7 @@ export default function DiscoverScreen() {
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled
           onEndReached={loadMore}
-          onEndReachedThreshold={1.5}
+          onEndReachedThreshold={0.5}
           windowSize={5}
           maxToRenderPerBatch={10}
           initialNumToRender={20}
@@ -1228,19 +1367,29 @@ export default function DiscoverScreen() {
               );
             }
 
-            const renderDiscoverFooter = (movie: DiscoverResult) =>
-              movie.platforms.length > 0 ? (
-                <View style={styles.platformBadges}>
-                  {movie.platforms
-                    .filter((p) => p.access_type === 'subscription')
-                    .slice(0, 2)
-                    .map((p, i) => (
-                      <View key={i} style={styles.platformBadge}>
-                        <Text style={styles.platformBadgeText}>{p.name}</Text>
-                      </View>
-                    ))}
-                </View>
-              ) : null;
+            const renderDiscoverFooter = (movie: DiscoverResult) => (
+              <View style={styles.discoverPosterMetaFooter} pointerEvents="none">
+                <Text
+                  style={[
+                    styles.discoverPosterMetaCombined,
+                    {
+                      fontSize: DISCOVER_POSTER_META_TITLE_PX,
+                      lineHeight: Math.round(DISCOVER_POSTER_META_TITLE_PX * 1.45),
+                    },
+                    isTV && {
+                      fontSize: tvBodyFontSize(DISCOVER_POSTER_META_TITLE_PX),
+                      lineHeight: Math.round(
+                        tvBodyFontSize(DISCOVER_POSTER_META_TITLE_PX) * 1.45
+                      ),
+                    },
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {formatDiscoverPosterMetaLine(movie)}
+                </Text>
+              </View>
+            );
 
             if (isTV) {
               const movieRowIndex = item.movieRowIndex;
@@ -1251,22 +1400,29 @@ export default function DiscoverScreen() {
                 ? (rowExitTags.current[movieRowIndex] ?? null)
                 : null;
               return (
-                <DiscoverTvHorizontalMovieRow
+                <TvMovieGridRow
                   movies={item.movies}
-                  router={router}
-                  posterWidth={discoverTvGridLayout.itemWidth}
-                  posterHeight={discoverTvGridLayout.itemHeight}
-                  rowGap={discoverTvGridLayout.rowGap}
-                  movieRowIndex={movieRowIndex}
-                  nextRowEntryTag={nextRowEntryTag}
-                  lastRowLastCellWallTag={lastRowLastCellWallTag}
-                  setRowEntryRef={setRowEntryRef}
-                  setRowExitRef={setRowExitRef}
-                  renderMovieFooter={renderDiscoverFooter}
-                  isLastMovieRow={isLastMovieRow}
-                  wrapNavVersion={wrapNavVersion}
-                  discoverSidebarLeftTag={discoverSidebarLeftTag}
-                  mainContentEntryNavTag={mainContentEntryNativeTag}
+                  onPress={(movie) => router.push(`/movie/${movie.id}`)}
+                  listVerticalPad={DISCOVER_TV_MOVIE_GRID_LIST_VERTICAL_PAD_PX}
+                  renderMovieFooter={(movie) =>
+                    renderDiscoverFooter(movie as DiscoverResult)
+                  }
+                  tvFocus={
+                    Platform.OS === 'android'
+                      ? {
+                          movieRowIndex,
+                          nextRowEntryTag,
+                          lastRowLastCellWallTag,
+                          setRowEntryRef,
+                          setRowExitRef,
+                          isLastMovieRow,
+                          wrapNavVersion,
+                          sidebarLeftNavTag: discoverSidebarLeftTag,
+                          mainContentEntryNavTag:
+                            mainContentEntryNativeTag ?? null,
+                        }
+                      : undefined
+                  }
                 />
               );
             }
@@ -1291,10 +1447,7 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.container}>
       {isTV ? (
-        <View
-          style={styles.discoverTvContentWrap}
-          onLayout={(e) => setTvDiscoverShellW(e.nativeEvent.layout.width)}
-        >
+        <View style={styles.discoverTvContentWrap}>
           {discoverMain}
         </View>
       ) : (
@@ -1323,13 +1476,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f0f0f',
-    paddingTop: 8,
+    paddingTop: DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX,
     alignItems: 'stretch',
     justifyContent: 'flex-start',
   },
   /**
-   * TV: fills space beside sidebar (`flex:1`), left/right from constants.
-   * Poster math: inner width = `onLayout.width - CONTENT_BUFFER - RIGHT_MARGIN` (see `tvRowUsableWidth`).
+   * TV: fills space beside sidebar (`flex:1`); static poster sizing — left pad clears focus ring vs rail.
    */
   discoverTvContentWrap: {
     flex: 1,
@@ -1338,23 +1490,8 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
-    paddingLeft: DISCOVER_TV_CONTENT_BUFFER,
+    paddingLeft: DISCOVER_TV_CONTENT_PAD_LEFT,
     paddingRight: DISCOVER_TV_RIGHT_MARGIN,
-  },
-  header: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginTop: 4,
   },
   chipRowContainer: {
     marginBottom: 10,
@@ -1420,7 +1557,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     paddingHorizontal: HORIZONTAL_PADDING,
-    marginBottom: 12,
+    marginBottom: DISCOVER_HEADER_TO_RAIL_GAP_PX,
   },
   monetizationPill: {
     paddingVertical: 8,
@@ -1491,7 +1628,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#ffffff',
-    marginBottom: 16,
+    marginBottom: DISCOVER_HEADER_TO_RAIL_GAP_PX,
   },
   phaseDivider: {
     flexDirection: 'row',
@@ -1523,27 +1660,22 @@ const styles = StyleSheet.create({
   endOfListEmoji: {
     fontSize: 32,
   },
+  discoverPosterMetaFooter: {
+    marginTop: DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX,
+    maxWidth: 140,
+    width: '100%',
+    height: DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX,
+    justifyContent: 'flex-start',
+  },
+  discoverPosterMetaCombined: {
+    fontWeight: '400',
+    color: '#e5e7eb',
+    width: '100%',
+  },
   endOfListText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#6b7280',
-  },
-  platformBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 6,
-  },
-  platformBadge: {
-    backgroundColor: '#1e1b4b',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  platformBadgeText: {
-    fontSize: 9,
-    color: '#a5b4fc',
-    fontWeight: '600',
   },
 });
 
@@ -1586,18 +1718,24 @@ type MonetizationFilterChipProps = {
   label: string;
   isSelected: boolean;
   onPress: () => void;
+  nativeID?: string;
+  collapsable?: boolean;
 };
 
 function MonetizationFilterChip({
   label,
   isSelected,
   onPress,
+  nativeID,
+  collapsable,
 }: MonetizationFilterChipProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <Pressable
       focusable={true}
+      {...(nativeID != null ? { nativeID } : {})}
+      {...(collapsable === false ? { collapsable: false } : {})}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={onPress}

@@ -52,13 +52,27 @@ function validateStreamingOptionsArray(raw: unknown): StreamingOption[] | null {
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
-    if (typeof o.link !== 'string') continue;
-    out.push({
+    const link =
+      typeof o.link === 'string' && o.link.trim() !== '' ? o.link.trim() : '';
+    const vid =
+      typeof o.videoLink === 'string' && o.videoLink.trim() !== ''
+        ? o.videoLink.trim()
+        : '';
+    const primaryLink = link !== '' ? link : vid !== '' ? vid : '';
+    if (primaryLink === '') continue;
+    const row: StreamingOption = {
       serviceId: typeof o.serviceId === 'string' ? o.serviceId : String(o.serviceId ?? ''),
       serviceName: typeof o.serviceName === 'string' ? o.serviceName : '',
-      link: o.link,
+      link: primaryLink,
       type: typeof o.type === 'string' ? o.type : '',
-    });
+    };
+    if (vid !== '' && vid !== primaryLink) {
+      row.videoLink = vid;
+    }
+    if (typeof o.providerContentId === 'string' && o.providerContentId.trim() !== '') {
+      row.providerContentId = o.providerContentId.trim();
+    }
+    out.push(row);
   }
   return out;
 }

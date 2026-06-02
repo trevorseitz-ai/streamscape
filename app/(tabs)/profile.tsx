@@ -10,13 +10,13 @@ import {
   View,
   Text,
   TextInput,
-  FlatList,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Image,
   Pressable,
-  ListRenderItem,
   Alert,
+  Modal,
   Platform,
   useWindowDimensions,
 } from 'react-native';
@@ -28,16 +28,28 @@ import {
   saveProviderIds,
 } from '../../lib/provider-preferences';
 import { resolveStreamFinderProviderLogoUrl } from '../../lib/stream-finder-supabase';
-import { isTvTarget } from '../../lib/isTv';
+import { flushDiscoverFeedCachesAfterProfileSave } from '../../lib/discover-streaming-preferences-reset';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvPreferredFocusProps } from '../../lib/tvFocus';
 
 const CONTENT_HORIZONTAL_PAD = 20;
 const PROFILE_GRID_GAP = 10;
+/** Fixed provider tile — same rail width as search + save (`100%` of padded content, `maxWidth: innerContentWidth`). */
+const PROFILE_PROVIDER_CELL_W_PX = 80;
+const PROFILE_PROVIDER_CELL_ICON_PX = 48;
+const PROFILE_PROVIDER_CELL_MIN_H_PX = 96;
 
 interface ProviderEntry {
   id: number;
   name: string;
   logo_url: string;
 }
+
+type ProfileSaveFeedback = {
+  variant: 'success' | 'error';
+  title: string;
+  message: string;
+};
 
 /** Normalize TMDB / Supabase / storage IDs so Set membership never fails on 8 vs "8". */
 function normalizeProviderId(id: unknown): string {
@@ -65,6 +77,8 @@ export default function SettingsScreen() {
   const innerContentWidth =
     viewportBucket - CONTENT_HORIZONTAL_PAD * 2;
   const isTV = isTvTarget();
+  /** Native Alert dialogs do not receive D-pad focus on Android TV — use an in-tree Modal instead. */
+  const useTvSaveFeedbackModal = shouldUseTvDpadFocus();
   /** Android TV: list / chrome must not become accidental focus targets after grid updates. */
   const tvNf =
     isTV && Platform.OS === 'android'
@@ -77,76 +91,8 @@ export default function SettingsScreen() {
   const [catalogPrunedNotice, setCatalogPrunedNotice] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [watchedRows, setWatchedRows] = useState<
-    {
-      tmdb_id: number;
-      title: string | null;
-      personal_rating: number | null;
-    }[]
-  >([]);
-
-  useEffect(() => {
-    if (!session) {
-      setWatchedRows([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('watched_history')
-        .select('tmdb_id, title, personal_rating')
-        .eq('user_id', session.user.id);
-      if (cancelled) return;
-      if (error) {
-        console.warn('watched_history stats:', error.message);
-        setWatchedRows([]);
-        return;
-      }
-      setWatchedRows(data ?? []);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session]);
-
-  const {
-    totalWatched,
-    averageRating,
-    ratingDistribution,
-    favoriteMovie,
-  } = useMemo(() => {
-    const total = watchedRows.length;
-    const nonNull = watchedRows
-      .map((r) => r.personal_rating)
-      .filter((r): r is number => r != null);
-    const average =
-      nonNull.length === 0
-        ? null
-        : Math.round(
-            (nonNull.reduce((sum, n) => sum + n, 0) / nonNull.length) * 10
-          ) / 10;
-    const counts = Array.from({ length: 10 }, () => 0);
-    for (const row of watchedRows) {
-      const v = row.personal_rating;
-      if (v != null && v >= 1 && v <= 10) counts[v - 1] += 1;
-    }
-
-    let favoriteMovie: (typeof watchedRows)[number] | null = null;
-    const ratedMovies = watchedRows.filter((m) => m.personal_rating != null);
-    if (ratedMovies.length > 0) {
-      ratedMovies.sort(
-        (a, b) => (b.personal_rating ?? 0) - (a.personal_rating ?? 0)
-      );
-      favoriteMovie = ratedMovies[0];
-    }
-
-    return {
-      totalWatched: total,
-      averageRating: average,
-      ratingDistribution: counts,
-      favoriteMovie,
-    };
-  }, [watchedRows]);
+  const [profileSaveFeedback, setProfileSaveFeedback] =
+    useState<ProfileSaveFeedback | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -310,51 +256,92 @@ export default function SettingsScreen() {
 
   /** Two-way: add or remove provider id from selection (new Set each update). */
   const handleSave = useCallback(async () => {
-    const idsArray = providerIdsToNumberArray(selectedIds).filter((id) =>
-      activeProviderIdSet.has(id)
-    );
+    console.log('[ReelDive Debug] Save Preferences: handler entered (button press / onPress).');
+
     try {
+      const idsArray = providerIdsToNumberArray(selectedIds).filter((id) =>
+        activeProviderIdSet.has(id)
+      );
+      console.log('[ReelDive Debug] Save Preferences: normalized provider id array for persist:', {
+        count: idsArray.length,
+        ids: idsArray,
+        sessionPresent: session != null,
+        sessionUserId: session?.user?.id ?? '(none)',
+        catalogSize: activeProviderIdSet.size,
+      });
+
+      console.log('[ReelDive Debug] Save Preferences: writing to AsyncStorage via saveProviderIds...');
       await saveProviderIds(idsArray);
+      console.log('[ReelDive Debug] Save Preferences: AsyncStorage saveProviderIds resolved OK.');
+
       setSelectedIds(providerIdSetFromValues(idsArray as unknown[]));
+      console.log('[ReelDive Debug] Save Preferences: React selectedIds state synced to saved array.');
+
       if (session) {
+        console.log(
+          '[ReelDive Debug] Save Preferences: session exists — initiating Supabase user_profiles upsert...'
+        );
         const { error } = await supabase
           .from('user_profiles')
           .upsert(
             { id: session.user.id, enabled_services: idsArray },
             { onConflict: 'id' }
           );
+        console.log('[ReelDive Debug] Save Preferences: Supabase upsert await finished.', {
+          hasError: error != null,
+          errorMessage: error?.message ?? null,
+          errorDetails: error ?? null,
+        });
+
         if (error) {
-          Alert.alert('Error', error.message);
+          console.error('[ReelDive Debug] Save Preferences: Supabase returned error — aborting flush & success UI.', error);
+          if (useTvSaveFeedbackModal) {
+            setProfileSaveFeedback({ variant: 'error', title: 'Error', message: error.message });
+          } else {
+            Alert.alert('Error', error.message);
+          }
           return;
         }
+      } else {
+        console.log(
+          '[ReelDive Debug] Save Preferences: no session object — skipping Supabase upsert (local storage only path).'
+        );
       }
-      Alert.alert('Success', 'Providers saved successfully!');
-    } catch (e) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Could not save preferences'
+
+      console.log(
+        '[ReelDive Debug] Save Preferences: persistence successful — invoking flushDiscoverFeedCachesAfterProfileSave()...'
       );
+      flushDiscoverFeedCachesAfterProfileSave();
+      console.log(
+        '[ReelDive Debug] Save Preferences: flushDiscoverFeedCachesAfterProfileSave() returned (sync dispatcher done).'
+      );
+
+      if (useTvSaveFeedbackModal) {
+        setProfileSaveFeedback({
+          variant: 'success',
+          title: 'Success',
+          message: 'Providers saved successfully!',
+        });
+      } else {
+        Alert.alert('Success', 'Providers saved successfully!');
+      }
+      console.log(
+        `[ReelDive Debug] Save Preferences: success ${useTvSaveFeedbackModal ? 'TV modal' : 'Alert'} queued; handler exiting normally.`
+      );
+    } catch (catchError) {
+      console.error(
+        '[ReelDive Debug] CRITICAL UNHANDLED EXCEPTION inside Profile handleSave:',
+        catchError
+      );
+      const msg =
+        catchError instanceof Error ? catchError.message : 'Could not save preferences';
+      if (useTvSaveFeedbackModal) {
+        setProfileSaveFeedback({ variant: 'error', title: 'Error', message: msg });
+      } else {
+        Alert.alert('Error', msg);
+      }
     }
-  }, [selectedIds, session, activeProviderIdSet]);
-
-  const selectionRevision = useMemo(
-    () => Array.from(selectedIds).sort().join(','),
-    [selectedIds]
-  );
-
-  /**
-   * Search filter + fixed display order only (no re-sort when selection changes).
-   * Order stays stable so TV FlatList cells are not remounted on add/remove.
-   */
-  const numColumns = useMemo(() => {
-    if (isTV) return Math.min(8, Math.max(4, Math.floor(innerContentWidth / 112)));
-    return innerContentWidth >= 380 ? 5 : 4;
-  }, [innerContentWidth, isTV]);
-
-  const tileWidth = useMemo(() => {
-    const usable = innerContentWidth - PROFILE_GRID_GAP * (numColumns - 1);
-    return Math.max(72, Math.floor(usable / numColumns));
-  }, [innerContentWidth, numColumns]);
+  }, [selectedIds, session, activeProviderIdSet, useTvSaveFeedbackModal]);
 
   const sortedFilteredProviders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -406,155 +393,48 @@ export default function SettingsScreen() {
     [session, activeProviderIdSet]
   );
 
-  const renderProviderItem = useCallback<ListRenderItem<ProviderEntry>>(
-    ({ item }) => {
-      const idKey = normalizeProviderId(item.id);
-      const isSelected = selectedIds.has(idKey);
-      return (
-        <ProviderCard
-          item={item}
-          isSelected={isSelected}
-          tileWidth={tileWidth}
-          onPress={() => handleToggle(item.id)}
-        />
-      );
-    },
-    [selectedIds, handleToggle, tileWidth]
-  );
-
   const listHeader = useMemo(
     () => (
-      <>
-        <View style={styles.cinematicSection} {...tvNf}>
-          <Text style={styles.cinematicSectionTitle}>Your Cinematic Profile</Text>
-          <View style={styles.statsRow} {...tvNf}>
-            <View style={styles.statCard} {...tvNf}>
-              <Text style={styles.statCardLabel}>Movies Watched</Text>
-              <Text style={styles.statCardValue}>{totalWatched}</Text>
-            </View>
-            <View style={styles.statCard} {...tvNf}>
-              <Text style={styles.statCardLabel}>Average Rating</Text>
-              <Text style={styles.statCardValue}>
-                {averageRating != null ? averageRating : '—'}
-              </Text>
-            </View>
-          </View>
-          {favoriteMovie ? (
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/movie/[id]',
-                  params: {
-                    id: String(favoriteMovie.tmdb_id),
-                    fromWatched: 'true',
-                  },
-                })
-              }
-              style={({ pressed }) => [
-                styles.favoriteMoviePressable,
-                { opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Text style={styles.statCardLabel}>Favorite Movie</Text>
-              <Text style={styles.favoriteMovieText} numberOfLines={2}>
-                {favoriteMovie.title?.trim() || 'Untitled'} ⭐️{' '}
-                {favoriteMovie.personal_rating}/10
-              </Text>
-            </Pressable>
-          ) : null}
-          <View style={styles.chartBlock} {...tvNf}>
-            <Text style={styles.chartLabel}>Rating distribution</Text>
-            <View style={styles.chartRow} {...tvNf}>
-              {ratingDistribution.map((count, index) => {
-                const rating = index + 1;
-                const maxCount = Math.max(...ratingDistribution, 0);
-                const barHeight =
-                  maxCount === 0 ? 0 : (count / maxCount) * 60;
-                return (
-                  <View key={rating} style={styles.chartColumn} {...tvNf}>
-                    <View style={styles.chartBarTrack} {...tvNf}>
-                      <View
-                        style={[
-                          styles.chartBarFill,
-                          { height: barHeight },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.chartAxisLabel}>{rating}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        </View>
+      <View style={styles.section} {...tvNf}>
+        <Text style={styles.sectionTitle}>My Services</Text>
+        <Text style={styles.sectionDescription}>
+          Tap to select the services you subscribe to. Discover results will be filtered to
+          show movies available on your services.
+        </Text>
 
-        <View style={styles.header} {...tvNf}>
-          <Text style={styles.title}>Profile</Text>
-          <Text style={styles.subtitle}>Manage your streaming preferences</Text>
-        </View>
-
-        <SavePreferencesButton onPress={handleSave} />
-
-        <View style={styles.section} {...tvNf}>
-          <Text style={styles.sectionTitle}>My Services</Text>
-          <Text style={styles.sectionDescription}>
-            Tap to select the services you subscribe to. Discover results will be
-            filtered to show movies available on your services.
+        {catalogPrunedNotice ? (
+          <Text style={styles.catalogPrunedHint} {...tvNf}>
+            Your saved services were updated to match the current streaming catalog (some entries
+            are no longer in the feed).
           </Text>
+        ) : null}
 
-          {catalogPrunedNotice ? (
-            <Text style={styles.catalogPrunedHint} {...tvNf}>
-              Your saved services were updated to match the current streaming catalog (some
-              entries are no longer in the feed).
-            </Text>
-          ) : null}
-
-          {fetchError ? (
-            <View style={styles.errorBox} {...tvNf}>
-              <Text style={styles.errorText}>{fetchError}</Text>
-            </View>
-          ) : catalogLoading ? (
-            <View style={styles.servicesCatalogLoading} {...tvNf}>
-              <ActivityIndicator size="small" color="#6366f1" />
-              <Text style={styles.servicesCatalogLoadingText}>
-                Loading available services...
-              </Text>
-            </View>
-          ) : catalogEmptyAfterSync ? (
-            <Text style={styles.servicesQuietEmpty}>
-              Loading available services...
-            </Text>
-          ) : (
-            <>
-              <TextInput
-                style={styles.servicesSearchInput}
-                placeholder="Search services..."
-                placeholderTextColor="#6b7280"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                clearButtonMode="while-editing"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </>
-          )}
-        </View>
-      </>
+        {fetchError ? (
+          <View style={styles.errorBox} {...tvNf}>
+            <Text style={styles.errorText}>{fetchError}</Text>
+          </View>
+        ) : catalogLoading ? (
+          <View style={styles.servicesCatalogLoading} {...tvNf}>
+            <ActivityIndicator size="small" color="#6366f1" />
+            <Text style={styles.servicesCatalogLoadingText}>Loading available services...</Text>
+          </View>
+        ) : catalogEmptyAfterSync ? (
+          <Text style={styles.servicesQuietEmpty}>Loading available services...</Text>
+        ) : (
+          <TextInput
+            style={styles.servicesSearchInput}
+            placeholder="Search services..."
+            placeholderTextColor="#6b7280"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        )}
+      </View>
     ),
-    [
-      averageRating,
-      catalogLoading,
-      catalogEmptyAfterSync,
-      catalogPrunedNotice,
-      favoriteMovie,
-      fetchError,
-      handleSave,
-      ratingDistribution,
-      router,
-      searchQuery,
-      totalWatched,
-      tvNf,
-    ]
+    [catalogEmptyAfterSync, catalogLoading, catalogPrunedNotice, fetchError, searchQuery, tvNf]
   );
 
   const listFooter = useMemo(
@@ -599,6 +479,7 @@ export default function SettingsScreen() {
         <Text style={styles.blackoutBrand}>ReelDive</Text>
         <Text style={styles.blackoutHint}>Sign in to manage your settings</Text>
         <Pressable
+          testID="maestro-onboarding-login-btn"
           style={styles.blackoutButton}
           onPress={() => router.push('/login')}
         >
@@ -609,37 +490,77 @@ export default function SettingsScreen() {
   }
 
   return (
-    <FlatList
-      {...tvNf}
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      removeClippedSubviews={false}
-      ListHeaderComponent={listHeader}
-      data={
-        fetchError || catalogLoading || catalogEmptyAfterSync
-          ? []
-          : sortedFilteredProviders
-      }
-      keyExtractor={(item) => normalizeProviderId(item.id)}
-      numColumns={numColumns}
-      extraData={{ selectionRevision, tileWidth, numColumns }}
-      columnWrapperStyle={
-        fetchError || catalogLoading || catalogEmptyAfterSync
-          ? undefined
-          : styles.providerRow
-      }
-      renderItem={renderProviderItem}
-      ListFooterComponent={listFooter}
-      ListEmptyComponent={
-        servicesEmptyQuiet ? (
-          <Text style={[styles.servicesQuietEmpty, { marginBottom: 16 }]}>
+    <View style={styles.screenWithStickySave} collapsable={false} {...tvNf}>
+      <ScrollView
+        {...tvNf}
+        style={styles.containerFlex}
+        contentContainerStyle={styles.contentWithStickySaveInset}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {listHeader}
+        {!fetchError && !catalogLoading && !catalogEmptyAfterSync ? (
+          <View
+            style={[
+              styles.providerGridStrictBox,
+              { maxWidth: innerContentWidth, width: '100%', alignSelf: 'center' },
+            ]}
+            {...tvNf}
+          >
+            <View style={styles.providerWrapRow} {...tvNf}>
+              {sortedFilteredProviders.map((item) => {
+                const idKey = normalizeProviderId(item.id);
+                return (
+                  <ProviderCard
+                    key={idKey}
+                    item={item}
+                    isSelected={selectedIds.has(idKey)}
+                    onPress={() => handleToggle(item.id)}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+        {servicesEmptyQuiet ? (
+          <Text style={[styles.servicesQuietEmpty, { marginBottom: 16 }]} {...tvNf}>
             No services match your search.
           </Text>
-        ) : null
-      }
-    />
+        ) : null}
+        {listFooter}
+      </ScrollView>
+      <View style={styles.profileSaveBar} collapsable={false} {...tvNf}>
+        <SavePreferencesButton onPress={handleSave} stickyBar />
+      </View>
+
+      {useTvSaveFeedbackModal ? (
+        <Modal
+          visible={profileSaveFeedback != null}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setProfileSaveFeedback(null)}
+        >
+          <View style={styles.profileSaveModalOverlay} collapsable={false} {...tvNf}>
+            <View style={styles.profileSaveModalCard} collapsable={false}>
+              {profileSaveFeedback ? (
+                <>
+                  <Text style={styles.profileSaveModalTitle} {...tvNf}>
+                    {profileSaveFeedback.title}
+                  </Text>
+                  <Text style={styles.profileSaveModalBody} {...tvNf}>
+                    {profileSaveFeedback.message}
+                  </Text>
+                  <ProfileSaveModalOkButton
+                    onPress={() => setProfileSaveFeedback(null)}
+                  />
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+    </View>
   );
 }
 
@@ -673,119 +594,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  container: {
+  /** Root for signed-in Profile: scroll region + pinned save strip */
+  screenWithStickySave: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+    alignSelf: 'stretch',
+    minHeight: 0,
+    width: '100%',
   },
-  content: {
+  containerFlex: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: '#0f0f0f',
+  },
+  contentWithStickySaveInset: {
     paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 80,
+    paddingHorizontal: CONTENT_HORIZONTAL_PAD,
+    paddingBottom: 20,
     flexGrow: 1,
   },
-  cinematicSection: {
-    marginBottom: 28,
-  },
-  cinematicSectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-  },
-  statCardLabel: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  statCardValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#6366f1',
-    letterSpacing: -0.5,
-  },
-  favoriteMoviePressable: {
-    width: '100%',
-    alignSelf: 'stretch',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    marginBottom: 20,
-  },
-  favoriteMovieText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#6366f1',
-    letterSpacing: -0.2,
-  },
-  chartBlock: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-  },
-  chartLabel: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginBottom: 12,
-    fontWeight: '500',
-  },
-  chartRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 4,
-    minHeight: 72,
-  },
-  chartColumn: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  chartBarTrack: {
-    width: '100%',
-    height: 60,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  chartBarFill: {
-    width: '100%',
-    maxWidth: 28,
-    backgroundColor: '#6366f1',
-    borderRadius: 4,
-    minHeight: 0,
-  },
-  chartAxisLabel: {
-    marginTop: 6,
-    fontSize: 10,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  center: {
-    flex: 1,
+  profileSaveBar: {
+    flexShrink: 0,
+    flexGrow: 0,
+    paddingHorizontal: CONTENT_HORIZONTAL_PAD,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
     backgroundColor: '#0f0f0f',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  header: {
-    marginBottom: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#2d2d2d',
   },
   savePreferencesButton: {
     alignSelf: 'stretch',
@@ -810,21 +646,13 @@ const styles = StyleSheet.create({
   savePreferencesButtonPressing: {
     opacity: 0.88,
   },
+  savePreferencesButtonStickyStrip: {
+    marginBottom: 0,
+  },
   savePreferencesButtonText: {
     color: '#ffffff',
     fontSize: 17,
     fontWeight: '700',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginTop: 4,
   },
   section: {
     marginBottom: 24,
@@ -874,15 +702,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 14,
   },
-  providerRow: {
+  /** Same padded width rails as **`servicesSearchInput`** / scroll body — tiles wrap inside, never scaled past this box. */
+  providerGridStrictBox: {
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  providerWrapRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'stretch',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
     gap: PROFILE_GRID_GAP,
     marginBottom: PROFILE_GRID_GAP,
-    width: '100%',
   },
   providerCard: {
+    width: PROFILE_PROVIDER_CELL_W_PX,
+    minHeight: PROFILE_PROVIDER_CELL_MIN_H_PX,
+    flexGrow: 0,
+    flexShrink: 0,
     borderRadius: 10,
     borderWidth: 2,
     paddingVertical: 10,
@@ -918,6 +756,8 @@ const styles = StyleSheet.create({
   providerCardContent: {
     alignItems: 'center',
     width: '100%',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   providerCheckmark: {
     position: 'absolute',
@@ -925,14 +765,16 @@ const styles = StyleSheet.create({
     right: 8,
   },
   providerLogo: {
-    width: 48,
-    height: 48,
+    width: PROFILE_PROVIDER_CELL_ICON_PX,
+    height: PROFILE_PROVIDER_CELL_ICON_PX,
     borderRadius: 10,
     backgroundColor: '#2d2d2d',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   providerLogoPlaceholder: {
-    width: 48,
-    height: 48,
+    width: PROFILE_PROVIDER_CELL_ICON_PX,
+    height: PROFILE_PROVIDER_CELL_ICON_PX,
     borderRadius: 10,
     backgroundColor: '#2d2d2d',
     alignItems: 'center',
@@ -1008,13 +850,89 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 10,
   },
+  profileSaveModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  profileSaveModalCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    paddingVertical: 26,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  profileSaveModalTitle: {
+    color: '#f9fafb',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  profileSaveModalBody: {
+    color: '#9ca3af',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+  profileSaveModalOk: {
+    alignSelf: 'stretch',
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  profileSaveModalOkFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+  },
+  profileSaveModalOkPressing: {
+    opacity: 0.88,
+  },
+  profileSaveModalOkText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
+
+/** Single focus target for TV save/error overlay — **`hasTVPreferredFocus`** lands D-pad on OK immediately. */
+function ProfileSaveModalOkButton({ onPress }: { onPress: () => void }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <Pressable
+      {...tvPreferredFocusProps()}
+      focusable
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      style={({ pressed }) => [
+        styles.profileSaveModalOk,
+        isFocused && styles.profileSaveModalOkFocused,
+        pressed && styles.profileSaveModalOkPressing,
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="OK"
+    >
+      <Text style={styles.profileSaveModalOkText}>OK</Text>
+    </Pressable>
+  );
+}
 
 type SavePreferencesButtonProps = {
   onPress: () => void;
+  /** When true, omit bottom margin — used by the pinned Profile save strip. */
+  stickyBar?: boolean;
 };
 
-function SavePreferencesButton({ onPress }: SavePreferencesButtonProps) {
+function SavePreferencesButton({ onPress, stickyBar }: SavePreferencesButtonProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
@@ -1024,6 +942,7 @@ function SavePreferencesButton({ onPress }: SavePreferencesButtonProps) {
       onBlur={() => setIsFocused(false)}
       style={({ pressed }) => [
         styles.savePreferencesButton,
+        stickyBar && styles.savePreferencesButtonStickyStrip,
         isFocused && styles.savePreferencesButtonFocused,
         pressed && styles.savePreferencesButtonPressing,
       ]}
@@ -1037,7 +956,6 @@ function SavePreferencesButton({ onPress }: SavePreferencesButtonProps) {
 type ProviderCardProps = {
   item: ProviderEntry;
   isSelected: boolean;
-  tileWidth: number;
   onPress: () => void;
 };
 
@@ -1048,7 +966,6 @@ function providerCardPropsAreEqual(
   return (
     normalizeProviderId(prev.item.id) === normalizeProviderId(next.item.id) &&
     prev.isSelected === next.isSelected &&
-    prev.tileWidth === next.tileWidth &&
     prev.item.logo_url === next.item.logo_url
   );
 }
@@ -1056,14 +973,9 @@ function providerCardPropsAreEqual(
 const ProviderCard = memo(function ProviderCard({
   item,
   isSelected,
-  tileWidth,
   onPress,
 }: ProviderCardProps) {
   const [isFocused, setIsFocused] = useState(false);
-  const logoSize = Math.min(
-    56,
-    Math.max(36, Math.floor(tileWidth * 0.52))
-  );
 
   return (
     <Pressable
@@ -1072,7 +984,6 @@ const ProviderCard = memo(function ProviderCard({
       onBlur={() => setIsFocused(false)}
       style={({ pressed }) => [
         styles.providerCard,
-        { width: tileWidth },
         isSelected ? styles.providerCardActive : styles.providerCardInactive,
         isFocused && styles.providerCardFocused,
         pressed && styles.providerCardPressing,
@@ -1080,13 +991,7 @@ const ProviderCard = memo(function ProviderCard({
       onPress={onPress}
     >
       <View style={styles.providerCardContent}>
-        <Image
-          source={{ uri: item.logo_url }}
-          style={[
-            styles.providerLogo,
-            { width: logoSize, height: logoSize },
-          ]}
-        />
+        <Image source={{ uri: item.logo_url }} style={styles.providerLogo} />
         <Text style={styles.providerName} numberOfLines={2}>
           {item.name}
         </Text>

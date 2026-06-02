@@ -1,6 +1,8 @@
 # 📺 TV App Office (Lean-back Experience)
 
-> **Shared viewport bucketing** for poster rows: **`bucketViewportWidth`** and **`discoverPosterGridColumns`** live in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) — see [Shared components](shared.md). TV-specific tokens below remain authoritative for rail/bounds.
+> **Phone / Web poster columns:** **`bucketViewportWidth`** and **`discoverPosterGridColumns`** in **`lib/viewport-utils.ts`** (re-exported from **[`MovieRow.tsx`](../../components/MovieRow.tsx)**) may still drive responsive column counts on **handsets and browsers** — see [Shared components](shared.md). Those helpers are **not** the sizing authority for **Android TV** poster rails; TV uses the **fixed integer grid** in [TV poster grid standard (all tabs)](#tv-poster-grid-standard-all-tabs) below.
+
+> **Web ↔ Android TV — high-level parity & crossover:** [Web ↔ TV parity & crossover](web-tv-parity.md).
 
 ---
 
@@ -16,9 +18,39 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 ---
 
-## Discover grid: up to 6 columns (shared with Web / mobile)
+## TV poster grid standard (all tabs)
 
-**Discover** on Android TV does **not** use a fixed five-column constant for the main poster grid. It uses the same **`discoverPosterGridColumns`** helper as **Web** and **phone**: **`≥900` usable row width → 6**, **`≥600 → 4`**, else **`3`**, where **usable width** is the content band after the left rail and horizontal buffers (see **`app/(tabs)/discover.tsx`**). That keeps 65" / 4K layouts from turning into single-row “billboard” tiles. **Home** TV rails may still use fixed **`TV_GRID_COLUMNS`** (5) where documented below—only **Discover** adopts the triple-platform adaptive tiers.
+**Android TV** — **Home**, **Discover**, and any other TV poster rails — must use one uniform layout. Do **not** derive poster width by dividing usable row width (no fluid math, no fractional pixel cell widths on TV).
+
+| Standard | Value |
+|----------|------|
+| **Poster width** | **140px** |
+| **Poster height** | **210px** |
+| **Grid columns** (posters per row) | **5** |
+| **Horizontal row gap** (between posters) | **20px** |
+
+**Implementation alignment:** Mirror these values in screen constants (e.g. **`TV_FIXED_POSTER_WIDTH` / `TV_FIXED_POSTER_HEIGHT` / `TV_GRID_COLUMNS`** in **`app/(tabs)/index.tsx`**, and matching **`DISCOVER_TV_*`** tokens in **`app/(tabs)/discover.tsx`**). Horizontal TV lists should use **`gap: 20`** (or the same token) in **`contentContainerStyle`** alongside **`DISCOVER_TV_GAP`** / **`HomeTvMovieRow`** row spacing so all tabs stay uniform.
+
+**Discover page shell:** **`DISCOVER_YEAR_CHIP_ROW_HEIGHT_PX` (34px)** — single Year chip rail height (`styles.chip` vertical math); applied as **`paddingTop`** on the Discover **`styles.container`** so clearance sits **above** the Year row. **`DISCOVER_HEADER_TO_RAIL_GAP_PX` (12px)** matches **`TvMovieGridRow`** `sectionTitleWrap.marginBottom` for monetization → section title → poster rail rhythm; **`TvMovieGridRow`** is never wrapped or margin-hacked per row.
+
+**Discover poster metadata (below **140×210** poster image):** Authoritative footer band **`DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX` = `56px`** (**+ `DISCOVER_POSTER_META_FOOTER_MARGIN_TOP_PX` 6px** above it, **`maxWidth` 140**) — sized so a **single unified** un-bolded (**`fontWeight` 400**) **`Text`** (**`Title - Year`** via **`formatDiscoverPosterMetaLine`**; year omitted when unknown) can wrap to **two lines** without guillotine clipping. Do **not** use split inline row layouts for title vs year; do **not** cap this footer at **40px** or **`overflow: hidden`** on the footer wrapper in a way that slices the second line. Typography ≈ **75% × 90%** of **14px** → **`DISCOVER_POSTER_META_TITLE_PX`** (**~10px**, reads **~10–11px** with TV scaling via **`tvBodyFontSize`**), **`numberOfLines={2}`**, **`ellipsizeMode="tail"`**. Discover TV rails use **`listVerticalPad`** on **`TvMovieGridRow`**; poster **image** stays **140×210**, **5** cols, **20px** gap.
+
+**Discover TV vertical list stride (scroll bounds — authoritative):** **`DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX` = `286px`** exactly — **`210`** (poster image) **`+ 56`** (combined **`Title - Year`** footer block) **`+ 20`** (vertical list gap token **`DISCOVER_TV_LIST_INTER_ROW_VERTICAL_GAP_PX`**). The Discover TV results **`FlatList`** uses this integer for **`getItemLayout`** (**`length: 286`**, **`offset: 286 × index`**) and **`snapToInterval={286}`** when the list contains **only** movie rows (no phase divider). Older ad-hoc row-height guesses for TV scroll math are **obsolete**. If a phase divider row is present, cumulative **`getItemLayout`** offsets apply, but each **movie row slot remains 286px**.
+
+**Non-TV:** Web and phone Discover grids may still use **`discoverPosterGridColumns`** for responsive columns; that behavior does **not** override the TV fixed grid above.
+
+### Discover primary feeds — pagination & posters (hardware protection)
+
+Lean-back CPUs and decode bandwidth are scarce. **Mandatory for default Stream Finder grids and mirrored TV grids:**
+
+| Rule | Requirement |
+|------|--------------|
+| **Supabase pagination** | Initial read and **`onEndReached`** pages load **`STREAM_FINDER_DISCOVER_PAGE_SIZE` = **`20`** rows (**`lib/stream-finder-supabase.ts`** + **`app/(tabs)/discover.tsx`**). Do **not** hydrate the entire mirror in one request for Discover. |
+| **Infinite scroll tuning** | TV results **`FlatList`** uses **`onEndReached`** with **`onEndReachedThreshold`** ≈ **`0.5`** so the next **`20`** titles load halfway through the current block (**`FlatList`** is vertical; **`TvMovieGridRow`** rails remain horizontal). |
+| **TMDB poster tiers** | Grid poster URLs target **`image.tmdb.org/t/p/w342`** (**`w342`**) matching **140×210** decode cost — **never** **`/original`** for these lists. Paths may use **`w185`** where sharper assets are unnecessary; **`lib/stream-finder-supabase`** uses **`STREAM_FINDER_TV_POSTER_TMDB_WIDTH`**. |
+| **Decode + cache (`TvMovieGridRow`)** | Posters render with **`expo-image`** (**`priority="high"`**, **`cachePolicy="disk"`**) so repeats and back-scroll reuse disk-backed bitmaps alongside native resizing. |
+
+**Implementation:** **`components/TvMovieGridRow.tsx`**, **`app/(tabs)/discover.tsx`** (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`** + **`discoverFeedSourceRef`** paging), **`lib/stream-finder-supabase.ts`**, **`lib/film-show-rapid-discover.ts`** (Discover enrichment uses the same **`w342`** tier).
 
 ---
 
@@ -46,13 +78,15 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 **D-pad** behavior is exercised with the **arrow keys** on your physical keyboard while the **emulator window has focus**.
 
+- **Soft keyboard / handset builds:** **`app.json`** sets **`expo.android.softwareKeyboardLayoutMode`** to **`"pan"`**, which maps to Android **`adjustPan`** so Search and other fields pan the viewport when the IME opens instead of using invalid **`windowSoftInputMode`** values (e.g. **`onScroll`** breaks native Gradle builds).
+
 - **Focus debugging:** The `MovieCard` and TV poster cells (`HomeTvPosterCell`, `DiscoverTvPosterCell`) are equipped with a **Focus Trail**. Watch the Metro terminal for `[D-PAD FOCUS]` / `[D-PAD BLUR]` logs (development builds) to see which item the focus engine is highlighting during emulator navigation.
 
 ---
 
 ## Locked layout constants (540p logical height — above-the-fold)
 
-Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`, `app/(tabs)/index.tsx`, `MovieCard.tsx`.
+Single source for Home rail + poster grid. Implementation: **`TvSidebarTabBar.tsx`**, **`app/(tabs)/index.tsx`**, **`MovieCard.tsx`**, **`app/(tabs)/discover.tsx`** (TV).
 
 | Token | Value |
 |-------|--------|
@@ -60,9 +94,11 @@ Single source for Home rail + poster grid. Implementation: `TvSidebarTabBar.tsx`
 | `TV_HERO_HEIGHT` | **220px** |
 | `TV_POSTER_WIDTH` | **140px** |
 | `TV_POSTER_HEIGHT` | **210px** |
-| `TV_GAP` | **12px** |
+| `TV_GRID_COLUMNS` | **5** |
+| `TV_POSTER_ROW_GAP` | **20px** (horizontal gap between posters in TV rails) |
+| `DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX` | **286px** (Discover TV vertical **`FlatList`** row stride: **210 + 56 + 20** — see [Discover TV vertical list stride](#tv-poster-grid-standard-all-tabs)) |
 
-Supporting tokens (unchanged unless noted elsewhere): `TV_HOME_CONTENT_PADDING` **10px**, **`TV_GRID_COLUMNS` 5** (Home rail/grid; **Discover** uses adaptive **3 / 4 / 6** via **`discoverPosterGridColumns`**), poster tile title **13px**, year **11px**, section header **22px**.
+Supporting tokens (unchanged unless noted elsewhere): **`TV_HOME_CONTENT_PADDING` 10px**, poster tile title **13px**, year **11px**, section header **22px**. **Discover** rail meta under the poster is **excepted**: one unified **`Title - Year`** string (up to **2** lines) per [Discover poster metadata](#tv-poster-grid-standard-all-tabs) (**~10–11px**, **56px** footer band). Inner chrome / chip strips may use smaller gaps where documented in the component; **poster image** rows on TV stay **140×210**, **5 columns**, **20px** horizontal gap per [TV poster grid standard](#tv-poster-grid-standard-all-tabs).
 
 ### Left rail slots (`TV_SIDEBAR_SLOTS`)
 
@@ -73,13 +109,33 @@ const TV_SIDEBAR_SLOTS = [
   'index',      // Home
   'search',
   'watchlist',
-  'library',
+  'watched',
   'discover',
   'profile',    // bottom slot — settings, “My services,” auth-adjacent UI
 ] as const;
 ```
 
 **Authentication:** There is **no** dedicated **Account** rail slot. **Sign in** uses **`/login`**; **sign out** and session-adjacent controls are handled from the **Profile** tab (same as Web / handset). Earlier builds used a sidebar **Login / Logout** slot wired to an **`account`** route; that pattern was removed with **`app/(tabs)/account.tsx`**.
+
+### Profile tab vertical layout (`app/(tabs)/profile.tsx`)
+
+Shared implementation for **Web**, handset, and **Android TV**. Authoritative stacking for D-pad and pointer paths:
+
+| Order | Block |
+|:-----:|-------|
+| **1** | **My Services** — section title + description + catalog pruning / loading / error UI + **Search services** (`TextInput`); **`ListHeaderComponent`**. |
+| **2** | **Streaming provider tiles** — **`ScrollView`** wrapping a strict-width box (**`providerGridStrictBox`**: **`width: '100%'`**, **`maxWidth: innerContentWidth`**) matching the **`TextInput`** + save strip rails; **`flexWrap`** row of fixed **`PROFILE_PROVIDER_CELL_W_PX`** (**80**) × **`PROFILE_PROVIDER_CELL_MIN_H_PX`** (**96**) **`ProviderCard`** cells (**`flexGrow: 0`**), **`PROFILE_PROVIDER_CELL_ICON_PX`** (**48**) logos — no column math / no **`FlatList` `numColumns` stretch.** |
+| **3** | **Selection summary** (Discover filter hint panel); **`ListFooterComponent`**. Developer-only tools follow when **`__DEV__`**. *(Personal viewing stats live on the **Watched** tab.)* |
+| **4** | **Save Preferences** — **`Pressable`** inside **`profileSaveBar`**, a strip **pinned below** the **`FlatList`** (viewport bottom sibling, not scrolled away) so Save stays reachable above long grids. Per-tile toggles still persist inline via Supabase/async storage. |
+
+### Watched tab layout (`app/(tabs)/watched.tsx`)
+
+Renamed from legacy **Library**; reflects **`user_library`** (saved shelf) plus **`watched_history`** analytics.
+
+| Order | Block |
+|:-----:|-------|
+| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — stats + rating chart sourced from **`watched_history`**; mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
+| **2** | **Saved titles list** — **`user_library`** rows joined to **`media`** (existing row UI: poster, added date, provider logos, TMDB vote line). |
 
 Type tokens for the Hero text column:
 
@@ -133,6 +189,21 @@ This section is the **hybrid API contract** for curated rails (Discover default 
 ### Persisted experience
 
 Upserts into **`media`** and watchlists (**Supabase**) follow existing product flows once a title is opened or saved.
+
+---
+
+## Android universal streaming intents (HTTPS / `ACTION_VIEW`)
+
+Lean-back and handset builds **must not** fork routing per OEM (**Sony**, **TCL**, **Hisense**, …). Streaming launches rely on **standard Android resolution**:
+
+1. **`expo-intent-launcher`** **`ACTION_VIEW`** where we need explicit packages (**`lib/streaming-android-tv-intent.ts`**, **`WatchOnButton`**).
+2. **`Linking.openURL`** over **canonical HTTPS storefront URLs** (**`lib/streaming-universal-links.ts`**):
+   - **`launchStreamingService(providerId, externalMovieId?)`** tries title-aware URLs when a provider-native id is known (e.g. Netflix **`https://www.netflix.com/title/{id}`**, Prime **`watch.amazon.com/detail?gti=`** / **`asin=`**, Disney+ **`/video/`**, …), then falls back to the provider **home/browse** HTTPS URL for that TMDB **`provider_id`**.
+   - **`buildUniversalStreamingHttpsCandidates`** exposes the ordered HTTPS list for diagnostics or extensions.
+
+Full **`nflx://`**, **`collectStreamingLaunchCandidates`**, and RapidAPI **`videoLink`** chains remain in **`lib/linking-utils.ts`** (**`launchStreamingApp`**).
+
+**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones); **`app/movie/[id].tsx`** TMDB provider tiles when **`direct_url`** is absent (`launchStreamingService(provider_id)` → storefront home). **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
 
 ---
 
@@ -190,7 +261,78 @@ Before booting the emulator, ensure the **RapidAPI** naming convention (**`EXPO_
 
 ---
 
-## Core logic
+## Intent handoff protocol (Bravia / native)
+
+ReelDive uses a **two-step** strategy so Sony Bravia and handset Android users get a **native app** when possible, without losing **title-accurate** URLs from RapidAPI.
+
+### Order of operations
+
+1. **Resolve TMDB `provider_id`** from the RapidAPI row via **[`resolveTmdbProviderIdForStreamingOption`](../../lib/linking-utils.ts)** (numeric **`service.id`** first, otherwise fuzzy match on **`serviceName`** against the sixteen-service catalog).
+
+2. **Android TV (Bravia / `isTvTarget`):** **[`WatchOnButton`](../../components/WatchOnButton.tsx)** calls **[`launchStreamingViaAndroidTvIntent`](../../lib/streaming-android-tv-intent.ts)**. That walks each URI from **[`collectStreamingLaunchCandidates`](../../lib/linking-utils.ts)** and, for each URI, tries **[`expo-intent-launcher`](../../lib/streaming-android-tv-intent.ts)** **`ACTION_VIEW`** intents in order for **every package** from **[`getAndroidTvPackageCandidatesForTmdbProviderId`](../../lib/linking-utils.ts)** (living-room / TV primary first, then optional **mobile** **`androidPackageFallbacks`** from **`STREAMING_PROVIDER_ANDROID_MATRIX`**).
+
+3. **Android phone (non-TV):** **`WatchOnButton`** uses **`Linking.openURL`** via **[`launchStreamingApp`](../../lib/linking-utils.ts)** over the same storefront URL candidates until one succeeds.
+
+4. **Fallback:** If no candidate opens the app, **`WatchOnButton`** uses **`onOpenStreamingUrl`** (**RapidAPI** **`videoLink` / `link`**) so playback can still resolve through the system browser or default handler.
+
+### Non-Android surfaces
+
+On **Web** / **iOS**, TV intent code is skipped; taps go through **`onOpenStreamingUrl`** with RapidAPI links.
+
+---
+
+## Android 11+ package visibility (`<queries>`)
+
+Starting with **Android 11**, **`PackageManager`** hides most installed packages unless the app declares [**package visibility**](https://developer.android.com/training/package-visibility) in **`AndroidManifest.xml`**. Without a **`<queries>`** block, **`Intent`** resolution and explicit **`setPackage`** launches can fail on **Android 12+** (often reported as “intent kill” or `ActivityNotFoundException` in logs).
+
+ReelDive injects a **`<queries>`** list at prebuild time via **[`plugins/withAndroidStreamingPackageQueries.js`](../../plugins/withAndroidStreamingPackageQueries.js)** (registered from **[`app.config.ts`](../../app.config.ts)**). After **`npx expo prebuild`** or **`expo run:android`**, the merged file is **`android/app/src/main/AndroidManifest.xml`**.
+
+**`/android` is gitignored** in this repo; you will not see that path in git. For a copy-paste **`<queries>`** block (Sony’s minimum eight packages + notes on fallbacks), see **[`docs/native/android-streaming-queries-snippet.xml`](../native/android-streaming-queries-snippet.xml)**.
+
+**Declared packages (Sony Bravia hardware–verified primaries + matrix fallbacks; keep in sync with **[`STREAMING_PROVIDER_ANDROID_MATRIX`](../../lib/linking-utils.ts)** and **`withAndroidStreamingPackageQueries.js`):**
+
+- Netflix: `com.netflix.ninja`, `com.netflix.mediaclient`
+- Amazon Prime: `com.amazon.amazonvideo.livingroom`
+- Disney+: `com.disney.disneyplus`
+- Hulu: `com.hulu.livingroomplus`, `com.hulu.livingroom`
+- Apple TV (Sony): `com.apple.atve.sony.appletv`, `com.apple.atve.sony.trusted`
+- Max: `com.wbd.stream`
+- Paramount+: `com.cbs.ott`
+- Peacock: `com.peacocktv.peacockandroid`
+- Plus remaining matrix storefronts (Crunchyroll, AMC+, Shudder, Criterion, MUBI, MGM+, Discovery+, Fubo) — see plugin list
+
+---
+
+## App Linking Matrix — verified Android TV package names (16 supported providers)
+
+ReelDive mirrors **16** Stream Finder streaming services in **`stream_finder_providers`** (**`provider_id`** aligns with TMDB watch-provider identifiers where upstream uses TMDB semantics). Rows below match **[`STREAMING_PROVIDER_ANDROID_MATRIX`](../../lib/linking-utils.ts)**. **Primary** values target **living-room / TV / Sony-trusted** **`applicationId`** strings where applicable; **fallback** values are used only when the primary package is not installed (same watch URI, alternate **`packageName`** in **[`launchStreamingViaAndroidTvIntent`](../../lib/streaming-android-tv-intent.ts)**).
+
+| TMDB **`provider_id`** | Service label | Primary **`applicationId`** (Bravia / LR) | Fallback **`applicationId`** |
+| ----------------------: | ------------- | ----------------------------------- | -------------------------------------- |
+| **8** | Netflix | `com.netflix.ninja` | `com.netflix.mediaclient` |
+| **9** | Amazon Prime Video | `com.amazon.amazonvideo.livingroom` | — |
+| **15** | Hulu | `com.hulu.livingroomplus` | `com.hulu.livingroom` |
+| **337** | Disney Plus | `com.disney.disneyplus` | — |
+| **1899** | Max | `com.wbd.stream` | — |
+| **531** | Paramount Plus | `com.cbs.ott` | — |
+| **386** | Peacock Premium | `com.peacocktv.peacockandroid` | — |
+| **350** | Apple TV Plus | `com.apple.atve.sony.appletv` | `com.apple.atve.sony.trusted` |
+| **283** | Crunchyroll | `com.crunchyroll.crunchyroid` | — |
+| **526** | AMC Plus | `com.amcup.android` | — |
+| **99** | Shudder | `com.shudder.android` | — |
+| **358** | Criterion Channel | `com.criterionchannel` | — |
+| **11** | MUBI | `com.mubi` | — |
+| **613** | MGM Plus | `com.epix.epix.now` | — |
+| **520** | Discovery Plus | `com.discovery.discoveryplus.mobile` | — |
+| **1794** | FuboTV | `com.fubo.android` | — |
+
+**Contract**
+
+- **Source of truth:** After each **`npm run sync:stream-finder`**, compare Supabase **`stream_finder_providers`** to this table; adjust **`STREAMING_PROVIDER_ANDROID_MATRIX`** when the API adds/removes services and extend **`withAndroidStreamingPackageQueries.js`** when you add new primary or fallback packages used in intents.
+- **Primary deep link path on Web / iOS:** RapidAPI **`StreamingOption.link` / `videoLink`** (`lib/streaming.ts`). **Android TV:** package-targeted intents + URL candidate list; **Android phone:** **`launchStreamingApp`** + same URLs.
+- **Bravia / Android TV:** Declared **`<queries>`** packages are required for reliable resolution on **Android 12+**; App Link verification remains owned by each publisher.
+
+---
 
 TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search, horizontal rows) so focus can move predictably across the screen.
 
@@ -260,3 +402,51 @@ TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus 
 
 **State decoupling:** Keep discrete list states (like Watchlist vs. Library) completely decoupled in the UI unless the product explicitly requires them to be mutually exclusive.
 
+---
+
+## TV environment remote debugging (ADB Logcat — streaming / Prime)
+
+Use **ADB over TCP** (or USB) to stream **Logcat** from a physical **Android TV** (e.g. Sony Bravia) while exercising **ReelDive** and third-party launcher intents in **`utils/linking.ts`** (`openPrimeVideoApp` emits **`[ReelDive Debug]`** prefixes in Metro for **`expo-intent-launcher`** correlation).
+
+Replace **`<SERIAL>`** with **`adb devices`** output, or **`IP:5555`** after **`adb connect IP:5555`**.
+
+### One-shot diagnostic pipe (clean buffer + live stream)
+
+```bash
+# Clear ring buffer — start from a quiet baseline
+adb -s <SERIAL> logcat -c
+
+# Prime / RN / lifecycle — verbosity tuned for launcher tracing
+adb -s <SERIAL> logcat *:S ReactNative:V ReactNativeJS:V ActivityManager:I AmazonVideo:V Ignition:V
+```
+
+**Example** (WLAN debugging; adjust IP to your TV):
+
+```bash
+adb connect 192.168.50.5:5555
+adb -s 192.168.50.5:5555 logcat -c
+adb -s 192.168.50.5:5555 logcat *:S ReactNative:V ReactNativeJS:V ActivityManager:I AmazonVideo:V Ignition:V
+```
+
+### Logcat filter blueprint (canonical tags)
+
+| Filter token | Typical signal |
+|----------------|----------------|
+| **`*:S`** | Silence all tags unless explicitly raised below (**required baseline**). |
+| **`ReactNative:V`** | Native bridge / React Native JVM logs around intent dispatch from JS. |
+| **`ReactNativeJS:V`** | Metro **`console.log` / warn / error** from the JS thread (including **`[ReelDive Debug]`** when wired through RN logging). |
+| **`ActivityManager:I`** | **`Starting activity: Intent { ... }`**, **`result=canceled`**, task / flag lines when the system accepts or rejects a launch. |
+| **`AmazonVideo:V`** | Amazon package-scoped lines (OEM builds vary; may be sparse). |
+| **`Ignition:V`** | **`IgnitionActivity`** / Amazon TV bootstrap (tag presence depends on firmware; add **`*:W`** temporarily if the stream is too quiet). |
+
+### How to read the stream
+
+1. **`ActivityManager:I`** — When you press **Prime** in ReelDive, watch for **`Starting activity`** and whether the result is **`canceled`** or flags look wrong vs. a **home-grid** launch of the same app.
+2. **Fatals / crashes** — Note **`FATAL EXCEPTION`**, **`AndroidRuntime`**, or process death for **`com.amazon.amazonvideo.livingroom`** at the moment the splash / loader disappears.
+3. **Cross-check Metro** — Match **`[ReelDive Debug]`** timestamps (**`Using native expo-intent-launcher`** → **`opened container successfully`** vs **`failed`**) with **`ActivityManager`** / **`AndroidRuntime`** lines when the splash aborts.
+
+**JS tracers:** **`openPrimeVideoApp`** uses **`IntentLauncher.startActivityAsync`** (**`ACTION_MAIN`**, **`packageName`**, **`className`**, **`LEANBACK_LAUNCHER`**) — not **`Linking.sendIntent`**.
+
+**Apple TV (Sony Bravia Android TV)** — fullscreen container (**no **`tv.apple.com`** handoff from ReelDive on TV): package **`com.apple.atve.sony.appletv`**, verified main launch activity **`com.apple.atve.androidtv.appletv.MainActivity`** (**`dumpsys`** on production hardware) via **`utils/linking.ts`** **`openAppleTvApp`**. Profile / handset paths may still use HTTPS storefront URLs; TV **`WatchOnButton`** and movie provider tiles invoke **`openAppleTvApp`** when **`isTvTarget()`**.
+
+**Paramount+ (Sony Bravia Android TV)** — **`expo-intent-launcher`** fullscreen lean-back (**no generic **`ACTION_VIEW`** HTTPS → **BrowserStub** chain on TV): package **`com.cbs.ott`**, activity **`com.cbs.app.tv.ui.activity.HomeActivity`** via **`utils/linking.ts`** **`openParamountPlusApp`**. TV **`WatchOnButton`** and movie provider tiles use the same path when **`isTvTarget()`**; **`collectStreamingLaunchCandidates`** omits Paramount+ storefront URLs for provider **`531`** so **`launchStreamingViaAndroidTvIntent`** routes to **`openParamountPlusApp`** first.

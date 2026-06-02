@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import {
@@ -311,23 +311,25 @@ export default function WatchlistScreen() {
     return movies.filter((m) => m.title.toLowerCase().includes(q));
   }, [movies, isSearching, query]);
 
-  /** Android TV: sidebar `nextFocusRight` targets the first list row’s native tag. */
-  useEffect(() => {
-    if (!isTV || Platform.OS !== 'android') {
-      return;
-    }
-    if (filteredMovies.length === 0 || firstRowNavTag == null) {
-      setMainContentEntryNativeTag(null);
-      return;
-    }
-    setMainContentEntryNativeTag(firstRowNavTag);
-    return () => setMainContentEntryNativeTag(null);
-  }, [
-    isTV,
-    filteredMovies.length,
-    firstRowNavTag,
-    setMainContentEntryNativeTag,
-  ]);
+  /** Android TV: sidebar `nextFocusRight` — only while Watchlist is focused (tabs stay mounted). */
+  useFocusEffect(
+    useCallback(() => {
+      if (!isTV || Platform.OS !== 'android') {
+        return;
+      }
+      if (filteredMovies.length === 0 || firstRowNavTag == null) {
+        setMainContentEntryNativeTag(null);
+        return () => setMainContentEntryNativeTag(null);
+      }
+      setMainContentEntryNativeTag(firstRowNavTag);
+      return () => setMainContentEntryNativeTag(null);
+    }, [
+      isTV,
+      filteredMovies.length,
+      firstRowNavTag,
+      setMainContentEntryNativeTag,
+    ])
+  );
 
   const handleMoviePress = useCallback(
     (_movie?: { id: string; tmdb_id: number | null }) => {

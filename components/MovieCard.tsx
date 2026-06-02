@@ -51,6 +51,8 @@ interface MovieCardProps {
   /** When set (e.g. Discover grid), fixes poster size to an exact pixel layout (2:3 via height). */
   posterWidth?: number;
   posterHeight?: number;
+  /** Automation (Maestro): stable id on poster `Pressable` / wrapper. */
+  testID?: string;
 }
 
 /** ReelDive TV: Electric Cyan (art.md) */
@@ -76,6 +78,7 @@ export function MovieCard({
   tvNextFocusDown,
   posterWidth: fixedPosterWidth,
   posterHeight: fixedPosterHeight,
+  testID,
 }: MovieCardProps) {
   const router = useRouter();
   const status = useWatchlistStatus();
@@ -262,6 +265,7 @@ export function MovieCard({
     return (
       <Pressable
         ref={setPosterNavRef as never}
+        testID={testID}
         focusable
         {...tvFocusable()}
         {...(hasTvAndroidNavProps
@@ -296,12 +300,15 @@ export function MovieCard({
           cardWidthStyle,
           tvCardFlexLock,
           { position: 'relative', overflow: 'visible' },
-          styles.posterPressable,
-          isFocused && styles.posterFocusedTv,
         ]}
       >
         <View
-          style={posterContainerStyle}
+          style={[
+            posterContainerStyle,
+            tvPosterFocus && styles.posterTvRingBase,
+            tvPosterFocus &&
+              (isFocused ? styles.posterTvRingFocused : styles.posterTvRingIdle),
+          ]}
           focusable={isTV && Platform.OS === 'android' ? false : undefined}
         >
           {posterInner}
@@ -323,6 +330,7 @@ export function MovieCard({
 
   return (
     <Pressable
+      testID={testID}
       {...tvFocusable()}
       style={({ pressed }) => [styles.card, cardWidthStyle, pressed && styles.cardPressed]}
       onPress={handleCardPress}
@@ -351,25 +359,20 @@ const styles = StyleSheet.create({
   titleBlockTv: {
     marginTop: 8,
   },
-  /** Idle: same border width as focused so scale/focus do not reflow the grid. */
-  posterPressable: {
-    backgroundColor: 'transparent',
+  /**
+   * TV: ring on the **poster shell** only (same width/height as the image), not the outer
+   * `Pressable` that also wraps the title — avoids a squeezed highlight vs. the raster.
+   */
+  posterTvRingBase: {
+    borderWidth: TV_FOCUS_BORDER_WIDTH,
     borderRadius: 8,
     overflow: 'visible',
-    borderWidth: TV_FOCUS_BORDER_WIDTH,
+  },
+  posterTvRingIdle: {
     borderColor: 'transparent',
   },
-  posterFocusedTv: {
+  posterTvRingFocused: {
     borderColor: ELECTRIC_CYAN,
-    borderWidth: TV_FOCUS_BORDER_WIDTH,
-    transform: [{ scale: 1.05 }],
-    overflow: 'visible',
-    zIndex: 2,
-    elevation: 10,
-    shadowColor: '#000000',
-    shadowOpacity: 0.45,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
   },
   cardPressed: {
     opacity: 0.85,

@@ -97,6 +97,8 @@ export type MoviePosterRowProps = {
    * Parent list cannot use FlatList numColumns due to heterogeneous row/divider cells.
    */
   distributePosterRow?: boolean;
+  /** Automation: applied to index 0 in this horizontal row only. */
+  leadPosterTestID?: string;
 };
 
 /**
@@ -112,6 +114,7 @@ export function MoviePosterRow({
   tvRowDownLoopNavTag = null,
   phoneColumnCount,
   distributePosterRow = false,
+  leadPosterTestID,
 }: MoviePosterRowProps) {
   const { width: rawWidth } = useWindowDimensions();
   const width = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
@@ -170,6 +173,7 @@ export function MoviePosterRow({
             >
               <MovieCard
                 movie={movie}
+                testID={index === 0 ? leadPosterTestID : undefined}
                 onPress={() => onMoviePress?.(movie)}
                 tvClampFocusRight={isRightEdge}
                 tvNextFocusLeft={
@@ -212,6 +216,7 @@ export type MovieRowProps = {
   /** Discover horizontal: tiles per band + poster sizing / row distribution. */
   phonePosterColumns?: number;
   distributePosterRow?: boolean;
+  leadPosterTestID?: string;
 };
 
 /**
@@ -229,6 +234,7 @@ export function MovieRow({
   tvRowDownLoopNavTag = null,
   phonePosterColumns,
   distributePosterRow = false,
+  leadPosterTestID,
 }: MovieRowProps) {
   const { width: rawWidth } = useWindowDimensions();
   const width = useMemo(() => bucketViewportWidth(rawWidth), [rawWidth]);
@@ -266,6 +272,7 @@ export function MovieRow({
             tvSidebarLeftNavTag={tvSidebarLeftNavTag}
             tvIsLastSubRow={i === chunks.length - 1}
             tvRowDownLoopNavTag={tvRowDownLoopNavTag}
+            leadPosterTestID={i === 0 ? leadPosterTestID : undefined}
           />
         ))}
       </View>
@@ -295,6 +302,7 @@ export function MovieRow({
             distributePosterRow={
               !!distributePosterRow && phonePosterColumns != null && !isTV
             }
+            leadPosterTestID={i === 0 ? leadPosterTestID : undefined}
           />
         ))}
       </View>

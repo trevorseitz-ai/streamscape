@@ -1,0 +1,42 @@
+# ReelDive v1 smoke — Maestro (https://maestro.mobile.dev)
+#
+# Prerequisites:
+# - Android Emulator / device; `appId` matches build (`com.reeldive.app`).
+# - Credentials: MAESTRO_TEST_USER_EMAIL / MAESTRO_TEST_USER_PASSWORD (see docs/depts/qa.md).
+# - Stream Finder / Supabase env in bundle for curated Discover.
+#
+# Example:
+#   maestro test -e MAESTRO_TEST_USER_EMAIL="..." -e MAESTRO_TEST_USER_PASSWORD="..." testing/maestro/smoke-test.yaml
+#
+appId: com.reeldive.app
+---
+- runFlow:
+    file: auth-flow.yaml
+
+# Tabs visible after auth; open Discover by stable automation id (phone bottom bar + TV rail).
+- tapOn:
+    id: "maestro-tab-discover"
+
+# Row may sit below Discover header chips on TV — scroll first, then assert with a 10s wait window.
+- scrollUntilVisible:
+    element:
+      id: "discover-smoke-poster"
+    direction: DOWN
+    timeout: 120000
+    speed: 60
+    visibilityPercentage: 85
+
+# `extendedWaitUntil` carries the configurable 10s window (assertVisible has no reliable timeout knob).
+- extendedWaitUntil:
+    visible:
+      id: "discover-smoke-poster"
+    timeout: 10000
+
+- assertVisible:
+    id: "discover-smoke-poster"
+
+- tapOn: "Profile"
+
+- extendedWaitUntil:
+    visible: "My Services"
+    timeout: 30000

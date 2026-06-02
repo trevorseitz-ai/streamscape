@@ -20,6 +20,7 @@ import {
   type WatchProviderCountry,
 } from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
+import { WatchedHistoryStatsHeader } from '../../components/WatchedHistoryStats';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -49,7 +50,7 @@ function formatAddedAt(iso: string): string {
   });
 }
 
-export default function LibraryScreen() {
+export default function WatchedScreen() {
   const router = useRouter();
   const { selectedCountry } = useCountry();
   const [libraryMovies, setLibraryMovies] = useState<LibraryMovie[]>([]);
@@ -97,7 +98,7 @@ export default function LibraryScreen() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Library fetch error:', error);
+      console.error('Watched tab fetch error:', error);
       setLibraryMovies([]);
       return;
     }
@@ -302,14 +303,21 @@ export default function LibraryScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>Your history awaits</Text>
           <Text style={styles.emptySubtext}>
-            Tap "Sign In" in the top-right to get started
+            Tap &quot;Sign In&quot; below to get started (or use Sign In in the header on web).
           </Text>
+          <Pressable
+            testID="maestro-onboarding-login-btn"
+            style={styles.emptyLoginButton}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.emptyLoginButtonText}>Sign In</Text>
+          </Pressable>
         </View>
       ) : !loading && libraryMovies.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>No titles in your library</Text>
+          <Text style={styles.emptyText}>Nothing saved to Watched yet</Text>
           <Text style={styles.emptySubtext}>
-            Add movies from a title’s details page
+            {"Add titles from a movie's detail page (saved shelf uses your Watched list)."}
           </Text>
         </View>
       ) : null,
@@ -332,6 +340,9 @@ export default function LibraryScreen() {
         data={libraryMovies}
         keyExtractor={(item) => item.libraryRowId}
         renderItem={renderItem}
+        ListHeaderComponent={
+          session ? <WatchedHistoryStatsHeader userId={session.user.id} /> : null
+        }
         contentContainerStyle={[
           styles.content,
           libraryMovies.length === 0 && styles.contentEmpty,
@@ -381,6 +392,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginTop: 8,
+    textAlign: 'center',
+  },
+  emptyLoginButton: {
+    marginTop: 20,
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  emptyLoginButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',

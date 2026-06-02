@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import { PlatformPressable } from '@react-navigation/elements';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -23,6 +30,9 @@ import {
   getTvSidebarSegmentLineMarginV,
 } from '../lib/tvUiScale';
 
+/** Brand hero mark (`assets/`). Replace bundled placeholder with final Sonar reel artwork when shipped. */
+const TV_SIDEBAR_LOGO = require('../assets/reeldive-sonar-reel-hero-mark.png');
+
 /** Fixed left rail width (~10% on 1080p landscape); do not stretch with parent flex. */
 export const TV_SIDEBAR_WIDTH = 100;
 
@@ -38,7 +48,7 @@ const TV_SIDEBAR_SLOTS = [
   'index',
   'search',
   'watchlist',
-  'library',
+  'watched',
   'discover',
   'profile',
 ] as const;
@@ -57,7 +67,7 @@ function labelForSlot(routeName: SlotName, optionsTitle: string | undefined): st
     index: 'Home',
     search: 'Search',
     watchlist: 'Watchlist',
-    library: 'Library',
+    watched: 'Watched',
     discover: 'Discover',
     profile: 'Profile',
   };
@@ -75,7 +85,7 @@ function iconForSlot(
     index: { active: 'home', inactive: 'home-outline' },
     search: { active: 'search', inactive: 'search-outline' },
     watchlist: { active: 'list', inactive: 'list-outline' },
-    library: { active: 'library', inactive: 'library-outline' },
+    watched: { active: 'eye', inactive: 'eye-outline' },
     discover: { active: 'compass', inactive: 'compass-outline' },
     profile: { active: 'person', inactive: 'person-outline' },
   };
@@ -130,6 +140,8 @@ type TabItemProps = {
   nextFocusRight?: number | null;
   onRegisterSlotNavTag?: (slot: (typeof TV_SIDEBAR_SLOTS)[number], tag: number | null) => void;
   onSidebarItemFocusIn?: () => void;
+  /** Maestro / UI tests — rail slots exposed for tab navigation (see `maestroTestID` below). */
+  maestroTestID?: string;
 };
 
 function TvSidebarTabItem({
@@ -150,6 +162,7 @@ function TvSidebarTabItem({
   nextFocusRight,
   onRegisterSlotNavTag,
   onSidebarItemFocusIn,
+  maestroTestID,
 }: TabItemProps) {
   const [dpadFocused, setDpadFocused] = useState(false);
   const showRing = shouldUseTvDpadFocus() || isTvTarget();
@@ -168,6 +181,7 @@ function TvSidebarTabItem({
   return (
     <PlatformPressable
       ref={setRef as never}
+      testID={maestroTestID}
       accessibilityRole={Platform.OS === 'web' ? 'tab' : 'button'}
       accessibilityState={{ selected }}
       focusable={true}
@@ -220,7 +234,7 @@ function TvSidebarTabItem({
  * Full-height left rail: fixed slots, space-evenly between block buffers.
  */
 export function TvSidebarTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const {
     searchFieldNativeTag,
     registerSidebarSlotNavTag,
@@ -239,19 +253,35 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
   const labelMaxW = Math.max(48, TV_SIDEBAR_WIDTH - padH * 2);
   const missingMinH = Math.max(40, Math.round(56 * tvScale));
 
+  const logoBandH = Math.max(28, Math.round(36 * tvScale));
+
   return (
     <View
-      focusable={false}
-      collapsable={Platform.OS === 'android' ? false : undefined}
-      style={[
-        styles.sidebar,
-        {
-          paddingHorizontal: padH,
-          paddingTop: padV + insets.top,
-          paddingBottom: padV + insets.bottom,
-        },
-      ]}
+      pointerEvents="box-none"
+      style={[styles.sidebarHitPass, { minHeight: windowHeight }]}
     >
+      <View
+        focusable={false}
+        collapsable={Platform.OS === 'android' ? false : undefined}
+        pointerEvents="auto"
+        style={[
+          styles.sidebar,
+          {
+            paddingHorizontal: padH,
+            paddingTop: padV + insets.top,
+            paddingBottom: padV + insets.bottom,
+          },
+        ]}
+      >
+      <View style={styles.sidebarBrandBand} accessibilityRole="image" accessibilityLabel="ReelDive">
+        <Image
+          source={TV_SIDEBAR_LOGO}
+          style={[styles.sidebarBrandMark, { height: logoBandH }]}
+          resizeMode="contain"
+        />
+      </View>
+
+      <View style={styles.sidebarTabStack}>
       {TV_SIDEBAR_SLOTS.map((slotName) => {
         const route = state.routes.find((r) => r.name === slotName);
         if (!route) {
@@ -295,22 +325,27 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         };
 
         /**
-         * Every tab should jump to main content; Search uses the search field tag.
-         * Other slots (Discover, Profile as last rail item, …) bridge via `mainContentEntryNativeTag`
-         * so D-pad right never dead-ends on the rail edge.
+         * Search → field tag. Else → `mainContentEntryNativeTag` (Discover = monetization **All**
+         * chip `discoverAllFilterButton`; Home / Watchlist publish their own anchors). If missing,
+         * omit `nextFocusRight` so Android searches east.
          */
         const mainRightBridge: number | undefined =
           slotName === 'search' && searchFieldNativeTag != null
             ? searchFieldNativeTag
-            : mainContentEntryNativeTag != null
-              ? mainContentEntryNativeTag
-              : undefined;
+            : mainContentEntryNativeTag ?? undefined;
         const nextFocusRightTarget = mainRightBridge;
 
         return (
           <TvSidebarTabItem
             key={route.key}
             slotName={slotName}
+            maestroTestID={
+              slotName === 'discover'
+                ? 'maestro-tab-discover'
+                : slotName === 'profile'
+                  ? 'maestro-tab-profile'
+                  : undefined
+            }
             label={label}
             iconName={iconName}
             iconSize={iconSize}
@@ -330,24 +365,63 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
           />
         );
       })}
+      </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Outer pass-through: fixed rail width, full viewport height (custom tab bar bypasses RN’s
+   * default tab bar height wrapper — without minHeight the column collapses to a tiny strip).
+   */
+  sidebarHitPass: {
+    alignSelf: 'stretch',
+    width: TV_SIDEBAR_WIDTH,
+    minWidth: TV_SIDEBAR_WIDTH,
+    maxWidth: TV_SIDEBAR_WIDTH,
+    flexGrow: 0,
+    flexShrink: 0,
+    height: '100%',
+  },
   sidebar: {
+    flex: 1,
     width: TV_SIDEBAR_WIDTH,
     minWidth: TV_SIDEBAR_WIDTH,
     maxWidth: TV_SIDEBAR_WIDTH,
     alignSelf: 'stretch',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
     backgroundColor: '#0a0a0a',
     borderRightWidth: 1,
     borderRightColor: '#222222',
+    /** Keep scaled TV focus styles inside the rail so they don’t intrude on the scene/grid. */
+    overflow: 'hidden',
     /** Flush against scene — kill any navigator default bumper */
     marginRight: 0,
     marginLeft: 0,
+  },
+  sidebarBrandBand: {
+    width: '100%',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginBottom: 4,
+    paddingTop: 2,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  sidebarBrandMark: {
+    width: '100%',
+    maxWidth: TV_SIDEBAR_WIDTH - 8,
+    alignSelf: 'flex-start',
+  },
+  sidebarTabStack: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   itemPressable: {
     flexDirection: 'column',

@@ -2,6 +2,8 @@
 
 > **Shared layout primitives:** **`bucketViewportWidth`** and **`discoverPosterGridColumns`** live in **`lib/viewport-utils.ts`** (re-exported from **`MovieRow.tsx`**) — see [Shared components](shared.md).
 
+> **Web ↔ Android TV (parity, shared state, playback boundaries — product + marketing):** [Web ↔ TV parity & crossover](web-tv-parity.md).
+
 ## Universal Web Strategy
 
 - **Route logic:** Uses the shared **`app/(tabs)`** routes ([`_layout.tsx`](../../app/%28tabs%29/_layout.tsx)). Platform-specific UI is gated via **`Platform.OS === 'web'`**.
@@ -15,12 +17,20 @@
 
 **Standard horizontal order** (mobile web and native handset **bottom tab bar**; TV mirrors this **top-to-bottom** on the sidebar):
 
-**Home → Search → Watchlist → Library → Discover → Profile**.
+**Home → Search → Watchlist → Watched → Discover → Profile**.
 
 **Profile** is intentionally **last** (anchored)—see [`product.md`](product.md).
 
 - **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes.
 - **Auth flow:** Standard `signInWithPassword` in [`app/login.tsx`](../../app/login.tsx), shared with the TV redirect logic in [`app/index.tsx`](../../app/index.tsx).
+
+## Pre-general-availability web (coming soon → countdown)
+
+**GTM doctrine** (coordinate with **`docs/depts/marketing.md`**):
+
+- **Pre–announced GA date:** The **hosted web app URL stays valid** ahead of GA; UX should prioritize a **Coming soon** treatment (marketing voice in **`marketing.md`**, FAQs in **`docs/marketing/FAQ.md`**) rather than implying full storefront parity or undisclosed deadlines.
+- **After an announced ship date:** Once Marketing documents a date in **`docs/depts/marketing.md`** (**movie-style cadence**: no phantom dates beforehand), shipping **may** add a **release countdown** to the hosted web bundle **and mirror** countdown affordances on **`getreeldive.com`** + outbound campaigns—as approved.
+- Implementation lives in-repo (shell route, gate, env flag, CMS date—whatever Product adopts); treat this section as the **contract** designers and agents rely on until code ships.
 
 ## Mobile Web Stability Standards
 
@@ -99,7 +109,7 @@ Operational detail:
 User selections (`user_profiles.enabled_services` + local AsyncStorage) are **not** an open-ended TMDB ID list — they are **intersected with `stream_finder_providers`**, which mirrors **`GET /api/providers`** on each Stream Finder sync (**API as source of truth** for which services exist in the product).
 
 - **On Profile load:** After the catalog fetch, any saved ID **not** in the current provider table is **silently dropped**; storage and Supabase are updated to match. A one-time UI hint may appear when pruning occurs.
-- **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Library**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
+- **Globally:** [`resolvePrunedProviderSelections`](../../lib/stream-finder-supabase.ts) (and related helpers) ensure **Discover filters**, **Watched**, **Watchlist**, and **Movie** “my services” highlights only use IDs that still exist in the synced catalog — so **dead or expired providers from an old feed never affect behavior** after a sync reshapes the catalog.
 
 ### Session stability in effects
 
@@ -108,6 +118,7 @@ User selections (`user_profiles.enabled_services` + local AsyncStorage) are **no
 
 ## Final state (parity checklist)
 
+- **Parity overview:** **[`web-tv-parity.md`](web-tv-parity.md)** (Web × TV capabilities, crossover, limits).
 - **Parity:** Web, native mobile, and Android TV Discover all surface the **Stream Finder curated** list as the default experience before filters.
 - **Stability:** **`app/+html.tsx`** viewport + bucketed width + mount guards + stable session deps prevent **layout mis-scale** and **render-loop** classes of bugs on mobile web and iOS.
 - **Responsiveness & scale:** **3 / 4 / 6** column tiers ( **`discoverPosterGridColumns`** — **≥900 → 6**, **≥600 → 4**, else **3** ) plus horizontal-row distribution; at **>1k** mirrored titles (`stream_finder_movies`), **bucketing + mount guards** stay the backbone for predictable scroll performance (**~60fps**) on phone Discover.

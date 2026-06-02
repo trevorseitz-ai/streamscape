@@ -23,10 +23,11 @@ When the user’s active context clearly involves one of the departmental office
 
 - **The "TV Office" Law:** Never guess dimensions or use `windowWidth` for scaling. Use the standards in `docs/depts/tv.md`:
   - **Sidebar:** 128px | **Content Padding:** 10px | **Hero Height:** 400px.
-  - **Posters:** 170px wide x 255px high.
-  - **Grid:** 5 Columns / 12px Gap.
+  - **Posters:** **140px** wide × **210px** high (fixed on TV; no fluid row-width division — see `docs/depts/tv.md`).
+  - **Grid:** **5** columns | **Horizontal row gap:** **20px** between posters.
+  - **Discover TV vertical results `FlatList`:** Locked scroll stride **`DISCOVER_TV_VERTICAL_ROW_SCROLL_UNIT_PX` = `286px`** (**210** poster + **56** unified **`Title - Year`** footer band + **20** vertical list gap). Use **`getItemLayout`** / **`snapToInterval`** with this exact integer for uniform row lists — see **`docs/depts/tv.md`** / **`docs/tv_layout_rules.md`**. Do **not** substitute legacy fractional row heights for TV Discover scroll math.
 - **No Flexbox Stretching:** Always apply `flexGrow: 0` and `flexShrink: 0` to TV movie cards to prevent "Zoom/Stretch" bugs.
-- **Typography:** Use the compact sizing: Header 22px, Title 13px, Year 11px.
+- **Typography:** Use the compact sizing: Header 22px, Title 13px, Year 11px (Home / generic tiles). **Discover** poster rails: **single unified** meta string **`Title - Year`**, **`fontWeight` 400** (not bold), **`DISCOVER_POSTER_META_TITLE_PX`** ≈ **10px** (**~10–11px** with **`tvBodyFontSize`** on TV), **`DISCOVER_POSTER_META_FOOTER_CONTENT_HEIGHT_PX` = **56px** so **two** wrapped lines fit — see **`docs/depts/tv.md`**. Never cap Discover meta footers at **40px** or enforce single-line-only there.
 - **No Chrome:** Never enable `HomeHeader`, `HeaderRight`, or native stack headers on Android TV.
 - **Focus Scaling:** Always account for component scaling (`transform: [{ scale: 1.05 }]`) by ensuring parent containers have adequate `paddingVertical` to prevent the focus border from clipping.
 
