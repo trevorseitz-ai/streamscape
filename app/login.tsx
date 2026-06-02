@@ -129,6 +129,8 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoComplete="email"
             testID="maestro-login-email"
+            autoFocus={useTvOutline}
+            {...(useTvOutline ? ({ hasTVPreferredFocus: true } as const) : {})}
           />
           <TextInput
             style={styles.input}
@@ -166,15 +168,6 @@ export default function LoginScreen() {
             <Text style={styles.linkText}>
               Want to join the beta? <Text style={styles.linkBold}>Join the Waitlist</Text>
             </Text>
-          </TvFocusPressable>
-
-          <TvFocusPressable
-            useTvOutline={useTvOutline}
-            style={styles.back}
-            focusedStyle={styles.backTvFocused}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backText}>← Back</Text>
           </TvFocusPressable>
 
           {__DEV__ ? (
@@ -297,23 +290,6 @@ const styles = StyleSheet.create({
   linkBold: {
     color: '#6366f1',
     fontWeight: '600',
-  },
-  back: {
-    marginTop: 32,
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: 'transparent',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  backTvFocused: {
-    borderColor: TV_FOCUS_PRIMARY,
-    transform: [{ scale: 1.05 }],
-  },
-  backText: {
-    color: '#6b7280',
-    fontSize: 14,
   },
   devDiagLink: {
     marginTop: 20,
