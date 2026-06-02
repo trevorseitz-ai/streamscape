@@ -15,11 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
-import {
-  mergeWatchProviderCountryBuckets,
-  filterWatchProvidersByEnabled,
-  type WatchProviderCountry,
-} from '../../lib/tmdb-watch-providers';
+import { getWatchProvidersCached } from '../../lib/watch-provider-cache';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
@@ -30,7 +26,6 @@ import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
 interface WatchlistMovie {
@@ -151,25 +146,21 @@ export default function WatchlistScreen() {
       tmdbIds.map(async (tmdbId) => {
         if (cancelled) return;
         try {
-          const res = await fetch(
-            `${TMDB_BASE}/movie/${tmdbId}/watch/providers`,
-            { headers: { Authorization: `Bearer ${apiKey}` } }
+          // Reads the Supabase cache first; only refreshes from TMDB when the
+          // cached row is missing or older than the 14-day TTL. Shows every
+          // service the title streams on — "My services" only drives the
+          // highlight styling at render time.
+          const providers = await getWatchProvidersCached(
+            tmdbId,
+            selectedCountry,
+            apiKey
           );
-          if (!res.ok) return;
-          const data = await res.json();
-          const countryData = data.results?.[selectedCountry] as
-            | WatchProviderCountry
-            | undefined;
-          const merged = mergeWatchProviderCountryBuckets(countryData);
-          const filtered = filterWatchProvidersByEnabled(
-            merged,
-            enabledServiceIds
-          );
-          const list: ProviderLogo[] = filtered.map((p) => ({
-            provider_id: p.provider_id,
-            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
-          }));
-          logos[tmdbId] = list.filter((p) => p.logo_url);
+          logos[tmdbId] = providers
+            .map((p) => ({
+              provider_id: p.provider_id,
+              logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
+            }))
+            .filter((p) => p.logo_url);
         } catch {
           logos[tmdbId] = [];
         }
@@ -181,7 +172,7 @@ export default function WatchlistScreen() {
     return () => {
       cancelled = true;
     };
-  }, [movies, selectedCountry, enabledServiceIds]);
+  }, [movies, selectedCountry]);
 
   async function fetchWatchlist(userId: string) {
     setLoading(true);
@@ -310,6 +301,9 @@ export default function WatchlistScreen() {
     const q = query.trim().toLowerCase();
     return movies.filter((m) => m.title.toLowerCase().includes(q));
   }, [movies, isSearching, query]);
+
+  /** Only distinguish enabled vs other providers once the user has picked services. */
+  const hasEnabledServices = enabledServiceIds.size > 0;
 
   /** Android TV: sidebar `nextFocusRight` — only while Watchlist is focused (tabs stay mounted). */
   useFocusEffect(
@@ -498,15 +492,24 @@ export default function WatchlistScreen() {
 
               <View style={styles.providerIcons} {...tvNf}>
                 {movie.tmdb_id != null && (providerLogos[movie.tmdb_id] ?? []).length > 0
-                  ? (providerLogos[movie.tmdb_id] ?? []).map((p) => (
-                      <Image
-                        key={p.provider_id}
-                        source={{ uri: p.logo_url }}
-                        style={styles.providerIcon}
-                        resizeMode="cover"
-                        {...tvChildNf}
-                      />
-                    ))
+                  ? (providerLogos[movie.tmdb_id] ?? []).map((p) => {
+                      const isEnabled = enabledServiceIds.has(p.provider_id);
+                      return (
+                        <Image
+                          key={p.provider_id}
+                          source={{ uri: p.logo_url }}
+                          style={[
+                            styles.providerIcon,
+                            hasEnabledServices &&
+                              (isEnabled
+                                ? styles.providerIconEnabled
+                                : styles.providerIconDimmed),
+                          ]}
+                          resizeMode="cover"
+                          {...tvChildNf}
+                        />
+                      );
+                    })
                   : null}
               </View>
 
@@ -672,7 +675,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 80,
+    minHeight: 80,
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 12,
@@ -714,9 +717,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   providerIcons: {
-    flex: 1,
+    flex: 1.6,
     flexDirection: 'row',
-    overflow: 'hidden',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
     marginHorizontal: 8,
@@ -727,6 +730,16 @@ const styles = StyleSheet.create({
     height: 25,
     borderRadius: 6,
     backgroundColor: '#2d2d2d',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  /** On "My services": ring the matches. */
+  providerIconEnabled: {
+    borderColor: '#00F5FF',
+  },
+  /** On "My services": de-emphasize providers the user isn't subscribed to. */
+  providerIconDimmed: {
+    opacity: 0.4,
   },
   actionButtons: {
     flexDirection: 'row',
