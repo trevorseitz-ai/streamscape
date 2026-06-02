@@ -6,7 +6,7 @@
  * this root layout intentionally does **not** call `router.replace` during render.
  */
 import { useEffect } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { LogBox, Platform, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { lockAsync as lockScreenOrientation, OrientationLock } from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
@@ -21,6 +21,19 @@ import { TvSearchFocusProvider } from '../lib/tv-search-focus-context';
 
 const ROOT_BG_PHONE = '#0f0f0f';
 const ROOT_BG_TV = '#121212';
+
+if (__DEV__) {
+  // expo-keep-awake is pulled in by the Expo dev client (keeps the screen on
+  // during development). On Android TV the keep-screen-on flag is not always
+  // grantable, so `ExpoKeepAwake.activate` rejects. It is harmless and absent
+  // from production builds — silence the intrusive LogBox overlay that is hard
+  // to dismiss with a remote on the 10-foot UI.
+  LogBox.ignoreLogs([
+    /ExpoKeepAwake\.activate/,
+    /Activating keep awake failed/,
+    /keep awake/i,
+  ]);
+}
 
 export default function RootLayout() {
   const isTV = isTvTarget();
