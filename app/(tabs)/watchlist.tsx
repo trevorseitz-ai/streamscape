@@ -16,6 +16,11 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import { getWatchProvidersCached } from '../../lib/watch-provider-cache';
+import {
+  groupProvidersByBrand,
+  isBrandEnabled,
+  type BrandedProvider,
+} from '../../lib/provider-branding';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
@@ -38,10 +43,6 @@ interface WatchlistMovie {
   release_year: number | null;
 }
 
-interface ProviderLogo {
-  provider_id: number;
-  logo_url: string;
-}
 
 export default function WatchlistScreen() {
   const router = useRouter();
@@ -60,7 +61,7 @@ export default function WatchlistScreen() {
   const [loading, setLoading] = useState(true);
   const [orderSaving, setOrderSaving] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
-  const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [providerBrands, setProviderBrands] = useState<Record<number, BrandedProvider[]>>({});
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [isRatingModalVisible, setRatingModalVisible] = useState(false);
   const [pendingWatched, setPendingWatched] = useState<{
@@ -129,44 +130,41 @@ export default function WatchlistScreen() {
       .filter((id): id is number => id != null);
 
     if (tmdbIds.length === 0) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
     if (!apiKey) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     let cancelled = false;
-    const logos: Record<number, ProviderLogo[]> = {};
+    const brands: Record<number, BrandedProvider[]> = {};
 
     Promise.all(
       tmdbIds.map(async (tmdbId) => {
         if (cancelled) return;
         try {
           // Reads the Supabase cache first; only refreshes from TMDB when the
-          // cached row is missing or older than the 14-day TTL. Shows every
-          // service the title streams on — "My services" only drives the
-          // highlight styling at render time.
+          // cached row is missing or older than the 14-day TTL. Collapse the
+          // per-tier TMDB entries to one icon per brand; "My services" only
+          // drives the highlight styling at render time.
           const providers = await getWatchProvidersCached(
             tmdbId,
             selectedCountry,
             apiKey
           );
-          logos[tmdbId] = providers
-            .map((p) => ({
-              provider_id: p.provider_id,
-              logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
-            }))
-            .filter((p) => p.logo_url);
+          brands[tmdbId] = groupProvidersByBrand(providers).filter(
+            (b) => b.logo_path
+          );
         } catch {
-          logos[tmdbId] = [];
+          brands[tmdbId] = [];
         }
       })
     ).then(() => {
-      if (!cancelled) setProviderLogos(logos);
+      if (!cancelled) setProviderBrands(brands);
     });
 
     return () => {
@@ -491,13 +489,13 @@ export default function WatchlistScreen() {
               </View>
 
               <View style={styles.providerIcons} {...tvNf}>
-                {movie.tmdb_id != null && (providerLogos[movie.tmdb_id] ?? []).length > 0
-                  ? (providerLogos[movie.tmdb_id] ?? []).map((p) => {
-                      const isEnabled = enabledServiceIds.has(p.provider_id);
+                {movie.tmdb_id != null && (providerBrands[movie.tmdb_id] ?? []).length > 0
+                  ? (providerBrands[movie.tmdb_id] ?? []).map((brand) => {
+                      const isEnabled = isBrandEnabled(brand, enabledServiceIds);
                       return (
                         <Image
-                          key={p.provider_id}
-                          source={{ uri: p.logo_url }}
+                          key={brand.brandKey}
+                          source={{ uri: `${TMDB_IMAGE_BASE}${brand.logo_path}` }}
                           style={[
                             styles.providerIcon,
                             hasEnabledServices &&

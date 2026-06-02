@@ -14,6 +14,7 @@ const CACHE_TABLE = 'tmdb_watch_provider_cache';
 /** Minimal provider shape persisted in `tmdb_watch_provider_cache.providers`. */
 export interface CachedProvider {
   provider_id: number;
+  provider_name: string;
   logo_path: string | null;
 }
 
@@ -42,6 +43,7 @@ function parseCachedProviders(raw: unknown): CachedProvider[] | null {
     if (!Number.isFinite(id) || id <= 0) continue;
     out.push({
       provider_id: id,
+      provider_name: typeof o.provider_name === 'string' ? o.provider_name : '',
       logo_path: typeof o.logo_path === 'string' ? o.logo_path : null,
     });
   }
@@ -66,6 +68,7 @@ async function fetchProvidersFromTmdb(
   // Merge every tier (flatrate/free/ads/rent/buy) and dedupe by provider id.
   return mergeWatchProviderCountryBuckets(countryData).map((p) => ({
     provider_id: p.provider_id,
+    provider_name: p.provider_name,
     logo_path: p.logo_path,
   }));
 }
