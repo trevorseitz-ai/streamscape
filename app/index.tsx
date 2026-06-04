@@ -35,7 +35,7 @@ export default function LandingScreen() {
     const t = setTimeout(() => {
       if (cancelled) return;
       if (Platform.isTV) {
-        router.replace('/tv-landing');
+        router.replace('/login');
       } else {
         setChecking(false);
         if (__DEV__) {
@@ -54,7 +54,7 @@ export default function LandingScreen() {
         if (session) {
           router.replace('/(tabs)');
         } else if (Platform.isTV) {
-          router.replace('/tv-landing');
+          router.replace('/login');
         } else {
           setChecking(false);
         }
@@ -64,7 +64,7 @@ export default function LandingScreen() {
         clearTimeout(t);
         if (__DEV__) console.warn('[Landing] getSession failed', e);
         if (Platform.isTV) {
-          router.replace('/tv-landing');
+          router.replace('/login');
         } else {
           setChecking(false);
         }

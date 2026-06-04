@@ -69,6 +69,8 @@ export type TvMovieGridRowTvFocusProps = {
 export type TvMovieGridRowProps = {
   movies: TvMovieGridRowItem[];
   title?: string;
+  /** Optional override for the section-title font size (defaults to `tvTitleFontSize(22)` → 36px floor). */
+  titleFontSize?: number;
   onPress: (movie: TvMovieGridRowItem) => void;
   showTitleMeta?: boolean;
   renderMovieFooter?: (movie: TvMovieGridRowItem) => ReactNode;
@@ -87,13 +89,11 @@ const TV_FOCUS_BORDER_WIDTH = 3;
 
 /**
  * Android TV focus-scroll diagnostics: red = cell wrapper, green = poster shell, blue = meta/footer.
- * Release/device audits: set **`EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS=1`** (Metro dev builds also enable via **`__DEV__`**).
+ * Opt-in only — set **`EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS=1`** to enable (kept off in
+ * normal dev builds so the Discover grid doesn't show debug borders).
  */
 function tvMovieGridFocusDiagnosticsEnabled(): boolean {
-  return (
-    (typeof __DEV__ !== 'undefined' && __DEV__) ||
-    process.env.EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS === '1'
-  );
+  return process.env.EXPO_PUBLIC_TV_FOCUS_DIAGNOSTICS === '1';
 }
 
 function TvPosterCell({
@@ -315,6 +315,7 @@ function TvPosterCell({
 export function TvMovieGridRow({
   movies,
   title,
+  titleFontSize,
   onPress,
   showTitleMeta = false,
   renderMovieFooter,
@@ -350,7 +351,7 @@ export function TvMovieGridRow({
         <View
           style={[styles.sectionTitleWrap, reduceTopSpacing && styles.sectionTitleWrapTight]}
         >
-          <Text style={[styles.sectionTitle, { fontSize: tvTitleFontSize(22) }]}>{title}</Text>
+          <Text style={[styles.sectionTitle, { fontSize: titleFontSize ?? tvTitleFontSize(22) }]}>{title}</Text>
         </View>
       ) : null}
       <FlatList

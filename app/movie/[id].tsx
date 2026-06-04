@@ -20,7 +20,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
 import {
   getDirectStreamingLinks,
   normalizeTmdbIdForStreaming,
@@ -46,12 +45,6 @@ import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
-import { launchStreamingService } from '../../lib/streaming-universal-links';
-import {
-  openAppleTvApp,
-  openParamountPlusApp,
-  openPrimeVideoApp,
-} from '../../utils/linking';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -68,6 +61,16 @@ interface Person {
   role_type: string;
   character: string | null;
   job: string | null;
+}
+
+/**
+ * The `/person/[id]` screen is TMDB-only and requires a numeric TMDB person id.
+ * TMDB-sourced cast carry that id; Supabase `people.id` is a UUID with no TMDB
+ * mapping, so those cards must NOT navigate (otherwise they dead-end on the
+ * person screen's "Invalid person ID" error). Returns the id when navigable.
+ */
+function tmdbPersonNavId(person: Person): string | null {
+  return /^\d+$/.test(person.id) ? person.id : null;
 }
 
 interface PlatformAvailability {
@@ -401,8 +404,6 @@ export default function MovieDetailsScreen() {
   const fromWatched = routeParams.fromWatched;
   const router = useRouter();
   const { selectedCountry } = useCountry();
-  const [isUpdatingProviders, setIsUpdatingProviders] = useState(false);
-  const prevCountryRef = useRef(selectedCountry);
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -411,7 +412,6 @@ export default function MovieDetailsScreen() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
-  const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
   const [errorBackFocused, setErrorBackFocused] = useState(false);
@@ -609,17 +609,6 @@ export default function MovieDetailsScreen() {
     );
     return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    async function loadEnabledServices() {
-      const ids = await resolvePrunedProviderSelections(supabase, {
-        userId: session?.user?.id ?? null,
-      });
-      setEnabledServiceIds(new Set(ids));
-    }
-
-    void loadEnabledServices();
-  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -976,6 +965,33 @@ export default function MovieDetailsScreen() {
     };
   }
 
+  /**
+   * Trailer key straight from TMDB by tmdb_id. Works on web AND native release
+   * builds (uses the bundled TMDB key), so Supabase-backed movies still get a
+   * trailer where the `/api/movie` enrich route is unreachable (sideloaded / Play
+   * Store TV builds have no Metro/dev origin). Mirrors the YouTube-Trailer pick
+   * used by `fetchMovieFromTMDB`.
+   */
+  async function fetchTrailerKeyFromTmdb(tmdbId: number): Promise<string | null> {
+    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    if (!apiKey) return null;
+    try {
+      const res = await fetch(`${TMDB_BASE}/movie/${tmdbId}/videos?language=en-US`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        results?: { key?: string; site?: string; type?: string }[];
+      };
+      const trailer = (data.results ?? []).find(
+        (v) => v.site === 'YouTube' && v.type === 'Trailer'
+      );
+      return trailer?.key ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function enrichFromTMDB(mediaId: string): Promise<string | null> {
     const baseUrl =
       Platform.OS === 'web'
@@ -1032,7 +1048,16 @@ export default function MovieDetailsScreen() {
           setTitle(initial.title);
           if (initial.tmdb_id != null) setTmdbMovieId(initial.tmdb_id);
 
-          const key = await enrichFromTMDB(id);
+          // Prefer a direct TMDB trailer lookup (works on web + native release
+          // builds). The `/api/movie` enrich route still runs for its server-side
+          // cast/availability hydration and as a trailer fallback for Supabase
+          // rows that have no tmdb_id.
+          let key: string | null =
+            initial.tmdb_id != null
+              ? await fetchTrailerKeyFromTmdb(initial.tmdb_id)
+              : null;
+          const serverKey = await enrichFromTMDB(id);
+          if (!key) key = serverKey;
           if (key) setTrailerKey(key);
 
           if (initial.cast.length === 0) {
@@ -1098,15 +1123,6 @@ export default function MovieDetailsScreen() {
     void loadDirectStreamingLinks(ac.signal);
     return () => ac.abort();
   }, [id, loadDirectStreamingLinks]);
-
-  useEffect(() => {
-    if (!watchProvidersResults) return;
-    if (prevCountryRef.current === selectedCountry) return;
-    prevCountryRef.current = selectedCountry;
-    setIsUpdatingProviders(true);
-    const t = setTimeout(() => setIsUpdatingProviders(false), 400);
-    return () => clearTimeout(t);
-  }, [selectedCountry, watchProvidersResults]);
 
   useEffect(() => {
     if (!movie) return;
@@ -1265,10 +1281,6 @@ export default function MovieDetailsScreen() {
     ? buildAvailabilityFromProviders(watchProvidersResults[selectedCountry])
     : (movie?.availability ?? []);
 
-  const displayWatchLink = watchProvidersResults
-    ? watchProvidersResults[selectedCountry]?.link ?? null
-    : movie?.watch_link ?? null;
-
   const fromWatchedParam = Array.isArray(fromWatched)
     ? fromWatched[0]
     : fromWatched;
@@ -1313,104 +1325,6 @@ export default function MovieDetailsScreen() {
     if (movie.cast.filter((p) => p.role_type !== 'actor').length > 0) return 'crew0';
     return 'none';
   })();
-
-  function sortByEnabled(providers: PlatformAvailability[]): PlatformAvailability[] {
-    return [...providers].sort((a, b) => {
-      const scoreA = enabledServiceIds.has(a.provider_id) ? 0 : 1;
-      const scoreB = enabledServiceIds.has(b.provider_id) ? 0 : 1;
-      return scoreA - scoreB;
-    });
-  }
-
-  function renderProviderGroup(providers: PlatformAvailability[], label: string) {
-    if (providers.length === 0) return null;
-    const sorted = sortByEnabled(providers);
-    return (
-      <View style={styles.providerGroup}>
-        <Text style={styles.providerGroupLabel}>{label}</Text>
-        <View style={styles.providerIconRow}>
-          {sorted.map((avail) => {
-            const isMember = enabledServiceIds.has(avail.provider_id);
-            return (
-              <Pressable
-                key={avail.id}
-                style={({ pressed }) => [
-                  styles.providerIcon,
-                  pressed && styles.providerIconPressed,
-                ]}
-                onPress={async () => {
-                  try {
-                    if (
-                      avail.provider_id === 9 &&
-                      Platform.OS === 'android' &&
-                      isTvTarget()
-                    ) {
-                      await openPrimeVideoApp();
-                      return;
-                    }
-                    if (
-                      avail.provider_id === 350 &&
-                      Platform.OS === 'android' &&
-                      isTvTarget()
-                    ) {
-                      await openAppleTvApp();
-                      return;
-                    }
-                    if (
-                      avail.provider_id === 531 &&
-                      Platform.OS === 'android' &&
-                      isTvTarget()
-                    ) {
-                      await openParamountPlusApp();
-                      return;
-                    }
-                    const url = avail.direct_url?.trim();
-                    if (url) {
-                      await handleStreamingPress(url);
-                      return;
-                    }
-                    if (avail.provider_id > 0) {
-                      await launchStreamingService(avail.provider_id, undefined, {
-                        mediaTitle: movie.title,
-                      });
-                    }
-                  } catch (e) {
-                    if (__DEV__) {
-                      console.warn('[MovieDetails] Provider tile launch failed:', e);
-                    }
-                  }
-                }}
-              >
-                <View style={isMember ? styles.providerLogoMember : undefined}>
-                  {avail.logo_url ? (
-                    <Image
-                      source={{ uri: avail.logo_url }}
-                      style={styles.providerLogo}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.providerLogoPlaceholder}>
-                      <Text style={styles.providerLogoInitial}>
-                        {avail.platform_name.charAt(0)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                {isMember ? (
-                  <View style={styles.memberBadge}>
-                    <Text style={styles.memberBadgeText}>Member</Text>
-                  </View>
-                ) : null}
-                <Text style={styles.providerName} numberOfLines={1}>
-                  {avail.platform_name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-    );
-  }
 
   const showSearchOverlay =
     isSearching && (searchResult || searchError || searchLoading);
@@ -1519,7 +1433,9 @@ export default function MovieDetailsScreen() {
           </Text>
           {(omdbRatingsLoading ||
             (omdbRatingsDisplay &&
-              (omdbRatingsDisplay.rt_score || omdbRatingsDisplay.metascore))) ? (
+              (omdbRatingsDisplay.rt_score ||
+                omdbRatingsDisplay.metascore ||
+                omdbRatingsDisplay.imdb_rating))) ? (
             <View
               style={[
                 styles.titleRatingsRow,
@@ -1565,6 +1481,22 @@ export default function MovieDetailsScreen() {
                   />
                   <Text style={styles.titleRatingText} {...tvNf}>
                     {omdbRatingsDisplay.metascore}
+                  </Text>
+                </View>
+              ) : null}
+              {omdbRatingsDisplay?.imdb_rating &&
+              omdbRatingsDisplay.imdb_rating.trim() !== '' ? (
+                <View
+                  style={styles.titleRatingChip}
+                  accessibilityLabel={`IMDb ${omdbRatingsDisplay.imdb_rating} out of 10`}
+                >
+                  <View style={styles.imdbBadge}>
+                    <Text style={styles.imdbBadgeText} {...tvNf}>
+                      IMDb
+                    </Text>
+                  </View>
+                  <Text style={styles.titleRatingText} {...tvNf}>
+                    {omdbRatingsDisplay.imdb_rating}
                   </Text>
                 </View>
               ) : null}
@@ -1910,26 +1842,32 @@ export default function MovieDetailsScreen() {
             >
               {(() => {
                 const castActors = movie.cast.filter((p) => p.role_type === 'actor');
-                return castActors.map((person, idx) => (
-                  <DetailsCastCard
-                    key={`${person.id}-${idx}`}
-                    person={person}
-                    isLandscape={isLandscape}
-                    tvNf={tvNf}
-                    dpad={tvDpadFocus}
-                    isPreferredEntry={detailsTvPrimary === 'cast0' && idx === 0}
-                    setEntryRef={idx === 0 ? setCastRowEntryRef : undefined}
-                    ladderNav={castLadderNav}
-                    tvClampRightEdge={idx === castActors.length - 1}
-                    tvLadder={tvLadderAndroid}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/person/[id]',
-                        params: { id: person.id },
-                      })
-                    }
-                  />
-                ));
+                return castActors.map((person, idx) => {
+                  const navId = tmdbPersonNavId(person);
+                  return (
+                    <DetailsCastCard
+                      key={`${person.id}-${idx}`}
+                      person={person}
+                      isLandscape={isLandscape}
+                      tvNf={tvNf}
+                      dpad={tvDpadFocus}
+                      isPreferredEntry={detailsTvPrimary === 'cast0' && idx === 0}
+                      setEntryRef={idx === 0 ? setCastRowEntryRef : undefined}
+                      ladderNav={castLadderNav}
+                      tvClampRightEdge={idx === castActors.length - 1}
+                      tvLadder={tvLadderAndroid}
+                      onPress={
+                        navId
+                          ? () =>
+                              router.push({
+                                pathname: '/person/[id]',
+                                params: { id: navId },
+                              })
+                          : undefined
+                      }
+                    />
+                  );
+                });
               })()}
             </ScrollView>
           </View>
@@ -1966,26 +1904,32 @@ export default function MovieDetailsScreen() {
             <View style={styles.crewGrid} {...tvNf}>
               {(() => {
                 const crewPeople = movie.cast.filter((p) => p.role_type !== 'actor');
-                return crewPeople.map((person, idx) => (
-                  <DetailsCrewItem
-                    key={`${person.id}-crew-${idx}`}
-                    person={person}
-                    isLandscape={isLandscape}
-                    tvNf={tvNf}
-                    dpad={tvDpadFocus}
-                    isPreferredEntry={detailsTvPrimary === 'crew0' && idx === 0}
-                    setEntryRef={idx === 0 ? setCrewRowEntryRef : undefined}
-                    ladderNav={crewLadderNav}
-                    tvClampRightEdge={idx === crewPeople.length - 1}
-                    tvLadder={tvLadderAndroid}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/person/[id]',
-                        params: { id: person.id },
-                      })
-                    }
-                  />
-                ));
+                return crewPeople.map((person, idx) => {
+                  const navId = tmdbPersonNavId(person);
+                  return (
+                    <DetailsCrewItem
+                      key={`${person.id}-crew-${idx}`}
+                      person={person}
+                      isLandscape={isLandscape}
+                      tvNf={tvNf}
+                      dpad={tvDpadFocus}
+                      isPreferredEntry={detailsTvPrimary === 'crew0' && idx === 0}
+                      setEntryRef={idx === 0 ? setCrewRowEntryRef : undefined}
+                      ladderNav={crewLadderNav}
+                      tvClampRightEdge={idx === crewPeople.length - 1}
+                      tvLadder={tvLadderAndroid}
+                      onPress={
+                        navId
+                          ? () =>
+                              router.push({
+                                pathname: '/person/[id]',
+                                params: { id: navId },
+                              })
+                          : undefined
+                      }
+                    />
+                  );
+                });
               })()}
             </View>
           </View>
@@ -2681,6 +2625,18 @@ const styles = StyleSheet.create({
     height: 14,
     borderRadius: 2,
   },
+  imdbBadge: {
+    backgroundColor: '#f5c518',
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  imdbBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+    letterSpacing: 0.2,
+  },
   metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2929,80 +2885,6 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontWeight: '500',
   },
-  providerGroup: {
-    marginBottom: 20,
-  },
-  providerGroupLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 12,
-  },
-  providerIconRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    overflow: 'visible',
-  },
-  providerIcon: {
-    alignItems: 'center',
-    width: 68,
-  },
-  providerIconPressed: {
-    transform: [{ scale: 0.92 }],
-    opacity: 0.8,
-  },
-  providerLogo: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: '#1f1f1f',
-  },
-  providerLogoMember: {
-    borderWidth: 2,
-    borderColor: '#6366f1',
-    borderRadius: 14,
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  memberBadge: {
-    backgroundColor: '#6366f1',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 4,
-  },
-  memberBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#ffffff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  providerLogoPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: '#2d2d2d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerLogoInitial: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  providerName: {
-    fontSize: 11,
-    color: '#d1d5db',
-    marginTop: 6,
-    textAlign: 'center',
-  },
   moreInfoButton: {
     alignItems: 'center',
     paddingVertical: 12,
@@ -3061,7 +2943,7 @@ function DetailsCastCard({
   ladderNav?: Record<string, unknown>;
   tvClampRightEdge?: boolean;
   tvLadder?: boolean;
-  onPress: () => void;
+  onPress?: () => void;
 }) {
   const [isFocused, setIsFocused] = useState(false);
   const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
@@ -3069,6 +2951,9 @@ function DetailsCastCard({
     setLocalRef(node);
     setEntryRef?.(node);
   };
+  // No-op cards (Supabase cast without a TMDB id) stay out of the focus graph
+  // so the D-pad skips them and the browser shows no tappable affordance.
+  const interactive = !!onPress;
   const rightWall =
     tvLadder && tvClampRightEdge && localTag != null
       ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
@@ -3076,10 +2961,15 @@ function DetailsCastCard({
   return (
     <Pressable
       ref={setMerged as never}
-      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
-      focusable={dpad ? true : undefined}
-      {...(ladderNav ?? {})}
-      {...(rightWall ?? {})}
+      {...(interactive
+        ? isPreferredEntry
+          ? tvPreferredFocusProps()
+          : tvFocusable()
+        : {})}
+      focusable={dpad && interactive ? true : undefined}
+      disabled={!interactive}
+      {...(interactive ? (ladderNav ?? {}) : {})}
+      {...(interactive ? (rightWall ?? {}) : {})}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={onPress}
@@ -3149,7 +3039,7 @@ function DetailsCrewItem({
   ladderNav?: Record<string, unknown>;
   tvClampRightEdge?: boolean;
   tvLadder?: boolean;
-  onPress: () => void;
+  onPress?: () => void;
 }) {
   const [isFocused, setIsFocused] = useState(false);
   const { setRef: setLocalRef, nativeTag: localTag } = useTvNativeTag();
@@ -3157,6 +3047,8 @@ function DetailsCrewItem({
     setLocalRef(node);
     setEntryRef?.(node);
   };
+  // No-op items (Supabase crew without a TMDB id) stay out of the focus graph.
+  const interactive = !!onPress;
   const rightWall =
     tvLadder && tvClampRightEdge && localTag != null
       ? tvAndroidNavProps({ nextFocusRightSelf: localTag })
@@ -3164,10 +3056,15 @@ function DetailsCrewItem({
   return (
     <Pressable
       ref={setMerged as never}
-      {...(isPreferredEntry ? tvPreferredFocusProps() : tvFocusable())}
-      focusable={dpad ? true : undefined}
-      {...(ladderNav ?? {})}
-      {...(rightWall ?? {})}
+      {...(interactive
+        ? isPreferredEntry
+          ? tvPreferredFocusProps()
+          : tvFocusable()
+        : {})}
+      focusable={dpad && interactive ? true : undefined}
+      disabled={!interactive}
+      {...(interactive ? (ladderNav ?? {}) : {})}
+      {...(interactive ? (rightWall ?? {}) : {})}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={onPress}

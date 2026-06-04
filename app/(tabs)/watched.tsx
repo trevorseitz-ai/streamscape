@@ -14,13 +14,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
+import { getWatchProvidersCached } from '../../lib/watch-provider-cache';
 import {
-  mergeWatchProviderCountryBuckets,
-  filterWatchProvidersByEnabled,
-  type WatchProviderCountry,
-} from '../../lib/tmdb-watch-providers';
+  groupProvidersByBrand,
+  isBrandEnabled,
+  type BrandedProvider,
+} from '../../lib/provider-branding';
 import { useCountry } from '../../lib/country-context';
 import { WatchedHistoryStatsHeader } from '../../components/WatchedHistoryStats';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvFocusable } from '../../lib/tvFocus';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -34,11 +37,6 @@ interface LibraryMovie {
   poster_url: string | null;
   added_at: string;
   vote_average: number | null;
-}
-
-interface ProviderLogo {
-  provider_id: number;
-  logo_url: string;
 }
 
 function formatAddedAt(iso: string): string {
@@ -57,9 +55,14 @@ export default function WatchedScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
-  const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [providerBrands, setProviderBrands] = useState<Record<number, BrandedProvider[]>>({});
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
+  const hasEnabledServices = enabledServiceIds.size > 0;
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const hasFetchedOnce = useRef(false);
+
+  const isTV = isTvTarget();
+  const tvListRowDpad = shouldUseTvDpadFocus() || isTV;
 
   const enrichWithTmdbVotes = useCallback(async (rows: LibraryMovie[]): Promise<LibraryMovie[]> => {
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
@@ -140,54 +143,47 @@ export default function WatchedScreen() {
       .filter((id): id is number => id != null);
 
     if (tmdbIds.length === 0) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
     if (!apiKey) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     let cancelled = false;
-    const logos: Record<number, ProviderLogo[]> = {};
+    const brands: Record<number, BrandedProvider[]> = {};
 
     Promise.all(
       tmdbIds.map(async (tmdbId) => {
         if (cancelled) return;
         try {
-          const res = await fetch(
-            `${TMDB_BASE}/movie/${tmdbId}/watch/providers`,
-            { headers: { Authorization: `Bearer ${apiKey}` } }
+          // Reads the Supabase cache first; only refreshes from TMDB when the
+          // cached row is missing or older than the 14-day TTL. Collapse the
+          // per-tier TMDB entries to one icon per brand; "My services" only
+          // drives the highlight styling at render time.
+          const providers = await getWatchProvidersCached(
+            tmdbId,
+            selectedCountry,
+            apiKey
           );
-          if (!res.ok) return;
-          const data = await res.json();
-          const countryData = data.results?.[selectedCountry] as
-            | WatchProviderCountry
-            | undefined;
-          const merged = mergeWatchProviderCountryBuckets(countryData);
-          const filtered = filterWatchProvidersByEnabled(
-            merged,
-            enabledServiceIds
+          brands[tmdbId] = groupProvidersByBrand(providers).filter(
+            (b) => b.logo_path
           );
-          const list: ProviderLogo[] = filtered.map((p) => ({
-            provider_id: p.provider_id,
-            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
-          }));
-          logos[tmdbId] = list.filter((p) => p.logo_url);
         } catch {
-          logos[tmdbId] = [];
+          brands[tmdbId] = [];
         }
       })
     ).then(() => {
-      if (!cancelled) setProviderLogos(logos);
+      if (!cancelled) setProviderBrands(brands);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [libraryMovies, selectedCountry, enabledServiceIds]);
+  }, [libraryMovies, selectedCountry]);
 
   useFocusEffect(
     useCallback(() => {
@@ -240,13 +236,20 @@ export default function WatchedScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: LibraryMovie }) => {
+    ({ item, index }: { item: LibraryMovie; index: number }) => {
       const tmdb = item.tmdb_id;
       const { vote_average } = item;
 
       return (
         <Pressable
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          {...(tvListRowDpad ? tvFocusable() : {})}
+          onFocus={() => setFocusedRowIndex(index)}
+          onBlur={() => setFocusedRowIndex((f) => (f === index ? null : f))}
+          style={({ pressed }) => [
+            styles.row,
+            pressed && styles.rowPressed,
+            tvListRowDpad && focusedRowIndex === index && styles.rowTvFocused,
+          ]}
           onPress={() => handleMoviePress(item)}
         >
           {/* Poster Column */}
@@ -273,15 +276,24 @@ export default function WatchedScreen() {
           </View>
 
           <View style={styles.providerIcons}>
-            {tmdb != null && (providerLogos[tmdb] ?? []).length > 0
-              ? (providerLogos[tmdb] ?? []).map((p) => (
-                  <Image
-                    key={p.provider_id}
-                    source={{ uri: p.logo_url }}
-                    style={styles.providerIcon}
-                    resizeMode="cover"
-                  />
-                ))
+            {tmdb != null && (providerBrands[tmdb] ?? []).length > 0
+              ? (providerBrands[tmdb] ?? []).map((brand) => {
+                  const isEnabled = isBrandEnabled(brand, enabledServiceIds);
+                  return (
+                    <Image
+                      key={brand.brandKey}
+                      source={{ uri: `${TMDB_IMAGE_BASE}${brand.logo_path}` }}
+                      style={[
+                        styles.providerIcon,
+                        hasEnabledServices &&
+                          (isEnabled
+                            ? styles.providerIconEnabled
+                            : styles.providerIconDimmed),
+                      ]}
+                      resizeMode="cover"
+                    />
+                  );
+                })
               : null}
           </View>
 
@@ -294,7 +306,14 @@ export default function WatchedScreen() {
         </Pressable>
       );
     },
-    [handleMoviePress, providerLogos]
+    [
+      handleMoviePress,
+      providerBrands,
+      enabledServiceIds,
+      hasEnabledServices,
+      tvListRowDpad,
+      focusedRowIndex,
+    ]
   );
 
   const ListEmptyComponent = useCallback(
@@ -340,6 +359,7 @@ export default function WatchedScreen() {
         data={libraryMovies}
         keyExtractor={(item) => item.libraryRowId}
         renderItem={renderItem}
+        extraData={focusedRowIndex}
         ListHeaderComponent={
           session ? <WatchedHistoryStatsHeader userId={session.user.id} /> : null
         }
@@ -420,6 +440,11 @@ const styles = StyleSheet.create({
   rowPressed: {
     opacity: 0.8,
   },
+  /** Android TV: visible D-pad focus ring (matches Watchlist + home poster ring intent). */
+  rowTvFocused: {
+    borderColor: '#00F5FF',
+    borderWidth: 2,
+  },
   thumbnail: {
     width: 44,
     height: 56,
@@ -446,19 +471,28 @@ const styles = StyleSheet.create({
   },
   providerIcons: {
     flexDirection: 'row',
-    overflow: 'hidden',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 6,
-    marginHorizontal: 4,
-    maxWidth: 96,
-    minHeight: 25,
     justifyContent: 'flex-end',
+    gap: 6,
+    marginHorizontal: 8,
+    maxWidth: 96,
   },
   providerIcon: {
     width: 25,
     height: 25,
     borderRadius: 6,
     backgroundColor: '#2d2d2d',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  /** On "My services": ring the matches. */
+  providerIconEnabled: {
+    borderColor: '#00F5FF',
+  },
+  /** On "My services": de-emphasize providers the user isn't subscribed to. */
+  providerIconDimmed: {
+    opacity: 0.4,
   },
   movieTitle: {
     fontSize: 15,

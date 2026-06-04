@@ -15,11 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { resolvePrunedProviderSelections } from '../../lib/stream-finder-supabase';
+import { getWatchProvidersCached } from '../../lib/watch-provider-cache';
 import {
-  mergeWatchProviderCountryBuckets,
-  filterWatchProvidersByEnabled,
-  type WatchProviderCountry,
-} from '../../lib/tmdb-watch-providers';
+  groupProvidersByBrand,
+  isBrandEnabled,
+  type BrandedProvider,
+} from '../../lib/provider-branding';
 import { useCountry } from '../../lib/country-context';
 import { useSearch } from '../../lib/search-context';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
@@ -30,7 +31,6 @@ import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
 interface WatchlistMovie {
@@ -43,10 +43,6 @@ interface WatchlistMovie {
   release_year: number | null;
 }
 
-interface ProviderLogo {
-  provider_id: number;
-  logo_url: string;
-}
 
 export default function WatchlistScreen() {
   const router = useRouter();
@@ -65,7 +61,7 @@ export default function WatchlistScreen() {
   const [loading, setLoading] = useState(true);
   const [orderSaving, setOrderSaving] = useState(false);
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
-  const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
+  const [providerBrands, setProviderBrands] = useState<Record<number, BrandedProvider[]>>({});
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const [isRatingModalVisible, setRatingModalVisible] = useState(false);
   const [pendingWatched, setPendingWatched] = useState<{
@@ -134,54 +130,47 @@ export default function WatchlistScreen() {
       .filter((id): id is number => id != null);
 
     if (tmdbIds.length === 0) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
     if (!apiKey) {
-      setProviderLogos({});
+      setProviderBrands({});
       return;
     }
 
     let cancelled = false;
-    const logos: Record<number, ProviderLogo[]> = {};
+    const brands: Record<number, BrandedProvider[]> = {};
 
     Promise.all(
       tmdbIds.map(async (tmdbId) => {
         if (cancelled) return;
         try {
-          const res = await fetch(
-            `${TMDB_BASE}/movie/${tmdbId}/watch/providers`,
-            { headers: { Authorization: `Bearer ${apiKey}` } }
+          // Reads the Supabase cache first; only refreshes from TMDB when the
+          // cached row is missing or older than the 14-day TTL. Collapse the
+          // per-tier TMDB entries to one icon per brand; "My services" only
+          // drives the highlight styling at render time.
+          const providers = await getWatchProvidersCached(
+            tmdbId,
+            selectedCountry,
+            apiKey
           );
-          if (!res.ok) return;
-          const data = await res.json();
-          const countryData = data.results?.[selectedCountry] as
-            | WatchProviderCountry
-            | undefined;
-          const merged = mergeWatchProviderCountryBuckets(countryData);
-          const filtered = filterWatchProvidersByEnabled(
-            merged,
-            enabledServiceIds
+          brands[tmdbId] = groupProvidersByBrand(providers).filter(
+            (b) => b.logo_path
           );
-          const list: ProviderLogo[] = filtered.map((p) => ({
-            provider_id: p.provider_id,
-            logo_url: p.logo_path ? `${TMDB_IMAGE_BASE}${p.logo_path}` : '',
-          }));
-          logos[tmdbId] = list.filter((p) => p.logo_url);
         } catch {
-          logos[tmdbId] = [];
+          brands[tmdbId] = [];
         }
       })
     ).then(() => {
-      if (!cancelled) setProviderLogos(logos);
+      if (!cancelled) setProviderBrands(brands);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [movies, selectedCountry, enabledServiceIds]);
+  }, [movies, selectedCountry]);
 
   async function fetchWatchlist(userId: string) {
     setLoading(true);
@@ -310,6 +299,9 @@ export default function WatchlistScreen() {
     const q = query.trim().toLowerCase();
     return movies.filter((m) => m.title.toLowerCase().includes(q));
   }, [movies, isSearching, query]);
+
+  /** Only distinguish enabled vs other providers once the user has picked services. */
+  const hasEnabledServices = enabledServiceIds.size > 0;
 
   /** Android TV: sidebar `nextFocusRight` — only while Watchlist is focused (tabs stay mounted). */
   useFocusEffect(
@@ -497,16 +489,25 @@ export default function WatchlistScreen() {
               </View>
 
               <View style={styles.providerIcons} {...tvNf}>
-                {movie.tmdb_id != null && (providerLogos[movie.tmdb_id] ?? []).length > 0
-                  ? (providerLogos[movie.tmdb_id] ?? []).map((p) => (
-                      <Image
-                        key={p.provider_id}
-                        source={{ uri: p.logo_url }}
-                        style={styles.providerIcon}
-                        resizeMode="cover"
-                        {...tvChildNf}
-                      />
-                    ))
+                {movie.tmdb_id != null && (providerBrands[movie.tmdb_id] ?? []).length > 0
+                  ? (providerBrands[movie.tmdb_id] ?? []).map((brand) => {
+                      const isEnabled = isBrandEnabled(brand, enabledServiceIds);
+                      return (
+                        <Image
+                          key={brand.brandKey}
+                          source={{ uri: `${TMDB_IMAGE_BASE}${brand.logo_path}` }}
+                          style={[
+                            styles.providerIcon,
+                            hasEnabledServices &&
+                              (isEnabled
+                                ? styles.providerIconEnabled
+                                : styles.providerIconDimmed),
+                          ]}
+                          resizeMode="cover"
+                          {...tvChildNf}
+                        />
+                      );
+                    })
                   : null}
               </View>
 
@@ -672,7 +673,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 80,
+    minHeight: 80,
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 12,
@@ -714,9 +715,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   providerIcons: {
-    flex: 1,
+    flex: 1.6,
     flexDirection: 'row',
-    overflow: 'hidden',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
     marginHorizontal: 8,
@@ -727,6 +728,16 @@ const styles = StyleSheet.create({
     height: 25,
     borderRadius: 6,
     backgroundColor: '#2d2d2d',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  /** On "My services": ring the matches. */
+  providerIconEnabled: {
+    borderColor: '#00F5FF',
+  },
+  /** On "My services": de-emphasize providers the user isn't subscribed to. */
+  providerIconDimmed: {
+    opacity: 0.4,
   },
   actionButtons: {
     flexDirection: 'row',
