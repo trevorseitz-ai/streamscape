@@ -33,6 +33,9 @@ import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import {
   TvMovieGridRow,
   TV_MOVIE_GRID_COLUMNS,
+  TV_MOVIE_GRID_FOCUS_CELL_WIDTH,
+  TV_MOVIE_GRID_GAP,
+  TV_MOVIE_GRID_FOCUS_HALO_PADDING_H,
 } from '../../components/TvMovieGridRow';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -45,6 +48,17 @@ const TV_HERO_HEIGHT_PX = 220;
 /** Hero banner copy + image fit — see `docs/depts/tv.md`. */
 const TV_HERO_TITLE_FONT = 18;
 const TV_HERO_META_FONT = 12;
+/** Compact TV hero band height so the first trending row + year labels stay on-screen without scrolling the hero away. */
+const TV_HERO_SHELL_HEIGHT = 185;
+/**
+ * Hero band width is capped to the visible trending row width so the backdrop's right edge
+ * lines up with the right edge of the last poster (Scary Movie), not the raw content column.
+ * 5 focus cells + 4 gaps, minus the trailing transparent halo so the edge meets the poster art.
+ */
+const TV_HERO_SHELL_WIDTH =
+  TV_MOVIE_GRID_COLUMNS * TV_MOVIE_GRID_FOCUS_CELL_WIDTH +
+  (TV_MOVIE_GRID_COLUMNS - 1) * TV_MOVIE_GRID_GAP -
+  TV_MOVIE_GRID_FOCUS_HALO_PADDING_H;
 const TV_GAP = 12;
 
 interface TrendingMovie extends Movie {
@@ -405,8 +419,8 @@ export default function HomeScreen() {
               {...tvNf}
               collapsable={false}
             >
-              <View style={{ flex: 1 }} {...tvNf} />
               <View style={styles.heroContentTv} pointerEvents="box-none" {...tvNf}>
+                <View style={styles.heroInfoTopTv} {...tvNf}>
                 <View style={styles.heroBadge} {...tvNf}>
                   <Text
                     style={[
@@ -457,6 +471,7 @@ export default function HomeScreen() {
                     </View>
                   ) : null}
                 </View>
+                </View>
                 <Pressable
                   ref={setHeroMainEntryRef as never}
                   focusable
@@ -489,7 +504,7 @@ export default function HomeScreen() {
                   <Text
                     style={[
                       styles.heroButtonText,
-                      isTV && { fontSize: tvBodyFontSize(14) },
+                      isTV && { fontSize: tvBodyFontSize(11) },
                     ]}
                   >
                     View Details
@@ -513,7 +528,6 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
               </View>
-              <View style={{ flex: 1 }} {...tvNf} />
             </View>
           ) : (
             <Pressable
@@ -621,6 +635,7 @@ export default function HomeScreen() {
                   <TvMovieGridRow
                     key={`home-tv-trend-${rowIdx}`}
                     title={rowIdx === 0 ? 'Trending Now' : undefined}
+                    titleFontSize={rowIdx === 0 ? tvFontSize(15) : undefined}
                     movies={rowMovies}
                     showTitleMeta
                     notifyTvContentFocus
@@ -832,14 +847,16 @@ const styles = StyleSheet.create({
   /** TV: 4 equal columns (spacer | text | image | spacer); pad is vertical only. */
   heroShellTv: {
     width: '100%',
-    alignSelf: 'stretch',
+    maxWidth: TV_HERO_SHELL_WIDTH,
+    alignSelf: 'flex-start',
+    height: TV_HERO_SHELL_HEIGHT,
     backgroundColor: '#000000',
     borderRadius: 12,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'stretch',
-    paddingVertical: 20,
-    marginBottom: 7,
+    paddingVertical: 12,
+    marginBottom: 4,
     position: 'relative',
   },
   /** Clips backdrop only; keeps rounded corners without clipping the focus ring. */
@@ -851,17 +868,21 @@ const styles = StyleSheet.create({
   },
   /** TV: col 2 of 4 — typography. */
   heroContentTv: {
-    flex: 1,
+    flex: 1.05,
     minWidth: 0,
     paddingHorizontal: 10,
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
   },
-  /** TV: col 3 of 4 — 16:9 backdrop in its quarter. */
+  /** Top cluster (badge + title + meta) so info pins to the top and the button pins to the bottom — no dead space above the badge. */
+  heroInfoTopTv: {
+    alignItems: 'flex-start',
+  },
+  /** TV: backdrop column — fills the compact hero band height; ~50% of the row width (no empty spacer columns). */
   heroTvImageColumn: {
-    flex: 1,
+    flex: 1.1,
     minWidth: 0,
     width: '100%',
-    aspectRatio: 16 / 9,
+    height: '100%',
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -928,7 +949,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 14,
+    marginBottom: 6,
   },
   heroYear: {
     fontSize: 14,
@@ -964,9 +985,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderWidth: 3,
     borderColor: 'transparent',
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
   },
   heroViewDetailsButtonFocused: {
     borderColor: ELECTRIC_CYAN,

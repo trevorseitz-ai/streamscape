@@ -69,6 +69,8 @@ export type TvMovieGridRowTvFocusProps = {
 export type TvMovieGridRowProps = {
   movies: TvMovieGridRowItem[];
   title?: string;
+  /** Optional override for the section-title font size (defaults to `tvTitleFontSize(22)` → 36px floor). */
+  titleFontSize?: number;
   onPress: (movie: TvMovieGridRowItem) => void;
   showTitleMeta?: boolean;
   renderMovieFooter?: (movie: TvMovieGridRowItem) => ReactNode;
@@ -313,6 +315,7 @@ function TvPosterCell({
 export function TvMovieGridRow({
   movies,
   title,
+  titleFontSize,
   onPress,
   showTitleMeta = false,
   renderMovieFooter,
@@ -348,7 +351,7 @@ export function TvMovieGridRow({
         <View
           style={[styles.sectionTitleWrap, reduceTopSpacing && styles.sectionTitleWrapTight]}
         >
-          <Text style={[styles.sectionTitle, { fontSize: tvTitleFontSize(22) }]}>{title}</Text>
+          <Text style={[styles.sectionTitle, { fontSize: titleFontSize ?? tvTitleFontSize(22) }]}>{title}</Text>
         </View>
       ) : null}
       <FlatList

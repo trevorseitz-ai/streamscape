@@ -141,29 +141,32 @@ Type tokens for the Hero text column:
 
 | Token | Value |
 |-------|--------|
+| `TV_HERO_SHELL_HEIGHT` | **185px** (fixed hero band height) |
+| `TV_HERO_SHELL_WIDTH` | **`5×148 + 4×20 − 4` = 816px** — caps the band so its right edge lines up with the last poster's right edge (not the raw content column) |
 | `TV_HERO_TITLE_FONT` | **18px** |
 | `TV_HERO_META_FONT` | **12px** (year + rating line) |
-| `TV_HERO_RESIZE_MODE` | **`'cover'`** (backdrop in col 3) |
+| `TV_HERO_RESIZE_MODE` | **`'cover'`** (backdrop in the image column) |
 
 ---
 
 ## Hero Layout Standards
 
-The TV **Hero** above the scroll region uses a **4-column flex row** with equal width distribution (**1 : 1 : 1 : 1**) — typically four sibling views in a **`flexDirection: 'row'`** layout, each with **`flex: 1`** so columns share space proportionally across **1080p** and **4K**.
+The TV **Hero** above the scroll region uses a **2-column flex row** (`flexDirection: 'row'`) inside a **compact, fixed-height band** so the headline and the first trending row both stay on-screen without scrolling the hero away. The band height is locked to **`TV_HERO_SHELL_HEIGHT`** (**185px**) with **`paddingVertical: 12`**, and its width is capped to **`TV_HERO_SHELL_WIDTH`** (**816px**, `alignSelf: 'flex-start'`) so the right edge aligns with the last poster's right edge. Inside the text column, **`justifyContent: 'space-between'`** pins the info cluster (badge/title/meta — **`heroInfoTopTv`**) to the top and the primary action to the bottom.
+
+> **History:** The hero previously used a **4-column `1 : 1 : 1 : 1`** layout with **empty spacer columns** sandwiching the content + a small **16:9** image. That produced an off-center, "floating thumbnail" look and an uncapped height that scrolled the hero off the top on 4K panels. Superseded **2026-06-02** by the 2-column band below.
 
 | Column | Role |
 |:------:|------|
-| **1 & 4** | **Empty spacer** columns (**`flex: 1`**, no substantive content). They symmetrically sandwich the Hero so headline and artwork stay visually centered instead of glued to screen edges. |
-| **2** | **Content / text** container (title, meta, primary actions — e.g. **`heroContentTv`**). Horizontal padding stays **inside** this column (see **`TV_HOME_CONTENT_PADDING`** / **10px**); the outer shell does not add contradictory horizontal gutters on TV. |
-| **3** | **Image / backdrop** container — **`aspectRatio: 16 / 9`** and **`resizeMode`**: **`cover`**. Image views use **`width: '100%'`** within the column; the column participates in **`flex: 1`**. Shell-level TV overlay patterns (`heroOverlay`) remain **phone-only**. |
+| **1** | **Content / text** container (**`heroContentTv`**, **`flex: 1.05`**, **`justifyContent: 'space-between'`**): info cluster (**`heroInfoTopTv`**) pinned top, primary action pinned bottom (near the row below). Horizontal padding stays **inside** this column (see **`TV_HOME_CONTENT_PADDING`** / **10px**); the outer shell adds no contradictory horizontal gutters. |
+| **2** | **Image / backdrop** container (**`heroTvImageColumn`**, **`flex: 1.1`**, ≈ **51%** of the row). Fills the band via **`height: '100%'`** + **`width: '100%'`** with **`resizeMode: 'cover'`**. Shell-level TV overlay patterns (`heroOverlay`) remain **phone-only**. |
 
-**Image sizing mandate:** Do **not** prescribe fixed pixel widths for Hero images (historic one-off widths such as **391px** are obsolete). Prefer **`flex: 1`**, **`width: '100%'`**, and **aspect-ratio** constraints so scaling tracks the column, not arbitrary absolute dimensions.
+**Image sizing mandate:** Do **not** prescribe fixed pixel widths for Hero images (historic one-off widths such as **391px** are obsolete). Prefer **`flex`** ratios, **`width: '100%'`** / **`height: '100%'`** within the fixed-height band, and **`cover`** so scaling tracks the column, not arbitrary absolute dimensions.
 
 ---
 
 ## Hero component constraints
 
-**Never use absolute positioning** for Hero elements (text block, backdrop frame, badges). Rely on the **4-column flex architecture** so symmetry and proportional scaling hold across **1080p** and **4K** displays and under Focus scaling without manual coordinate math.
+**Never use absolute positioning** for Hero elements (text block, backdrop frame, badges). Rely on the **2-column flex band** so proportional scaling holds across **1080p** and **4K** displays and under Focus scaling without manual coordinate math.
 
 ---
 
