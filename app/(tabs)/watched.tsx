@@ -21,6 +21,8 @@ import {
 } from '../../lib/tmdb-watch-providers';
 import { useCountry } from '../../lib/country-context';
 import { WatchedHistoryStatsHeader } from '../../components/WatchedHistoryStats';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
+import { tvFocusable } from '../../lib/tvFocus';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
@@ -59,7 +61,11 @@ export default function WatchedScreen() {
   const [session, setSession] = useState<{ user: { id: string } } | null>(null);
   const [providerLogos, setProviderLogos] = useState<Record<number, ProviderLogo[]>>({});
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const hasFetchedOnce = useRef(false);
+
+  const isTV = isTvTarget();
+  const tvListRowDpad = shouldUseTvDpadFocus() || isTV;
 
   const enrichWithTmdbVotes = useCallback(async (rows: LibraryMovie[]): Promise<LibraryMovie[]> => {
     const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
@@ -240,13 +246,20 @@ export default function WatchedScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: LibraryMovie }) => {
+    ({ item, index }: { item: LibraryMovie; index: number }) => {
       const tmdb = item.tmdb_id;
       const { vote_average } = item;
 
       return (
         <Pressable
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          {...(tvListRowDpad ? tvFocusable() : {})}
+          onFocus={() => setFocusedRowIndex(index)}
+          onBlur={() => setFocusedRowIndex((f) => (f === index ? null : f))}
+          style={({ pressed }) => [
+            styles.row,
+            pressed && styles.rowPressed,
+            tvListRowDpad && focusedRowIndex === index && styles.rowTvFocused,
+          ]}
           onPress={() => handleMoviePress(item)}
         >
           {/* Poster Column */}
@@ -294,7 +307,7 @@ export default function WatchedScreen() {
         </Pressable>
       );
     },
-    [handleMoviePress, providerLogos]
+    [handleMoviePress, providerLogos, tvListRowDpad, focusedRowIndex]
   );
 
   const ListEmptyComponent = useCallback(
@@ -340,6 +353,7 @@ export default function WatchedScreen() {
         data={libraryMovies}
         keyExtractor={(item) => item.libraryRowId}
         renderItem={renderItem}
+        extraData={focusedRowIndex}
         ListHeaderComponent={
           session ? <WatchedHistoryStatsHeader userId={session.user.id} /> : null
         }
@@ -419,6 +433,11 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     opacity: 0.8,
+  },
+  /** Android TV: visible D-pad focus ring (matches Watchlist + home poster ring intent). */
+  rowTvFocused: {
+    borderColor: '#00F5FF',
+    borderWidth: 2,
   },
   thumbnail: {
     width: 44,
