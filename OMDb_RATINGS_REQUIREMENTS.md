@@ -10,7 +10,7 @@
 
 ### Proposed DDL
 
-Apply when approved (see `database/migrations/009_media_omdb_ratings.sql`):
+Apply when approved (see `supabase/migrations/20250101001000_media_omdb_ratings.sql`):
 
 | Column | Type | Purpose |
 |--------|------|--------|
