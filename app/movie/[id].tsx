@@ -37,6 +37,7 @@ import { tvFocusable, tvPreferredFocusProps } from '../../lib/tvFocus';
 import { useMovie } from '../../lib/movie-context';
 import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
+import { RatingPickerModal } from '../../components/StarRating';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { WatchOnButton } from '../../components/WatchOnButton';
@@ -422,6 +423,11 @@ export default function MovieDetailsScreen() {
   /** Watched shelf (`user_library`); toggled in UI, persisted in DB when storage exists. */
   const [isInLibrary, setIsInLibrary] = useState(false);
   const [libraryBtnFocused, setLibraryBtnFocused] = useState(false);
+  /** 1-5 star rating for this title in the user's Watched shelf (`user_library.personal_rating`). */
+  const [personalRating, setPersonalRating] = useState<number | null>(null);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  /** `media.id` used to write the rating once a Watched-shelf row exists. */
+  const [ratingMediaRowId, setRatingMediaRowId] = useState<string | null>(null);
   /** Instant `findNodeHandle` for trailer row self-trap before `useTvNativeTag` commits. */
   const [trailerPressableLocalTag, setTrailerPressableLocalTag] = useState<number | null>(null);
   const [trailerCloseFocused, setTrailerCloseFocused] = useState(false);
@@ -628,6 +634,8 @@ export default function MovieDetailsScreen() {
       if (!mediaId) {
         setInWatchlist(false);
         setIsInLibrary(false);
+        setPersonalRating(null);
+        setRatingMediaRowId(null);
         return;
       }
 
@@ -641,7 +649,7 @@ export default function MovieDetailsScreen() {
           .maybeSingle(),
         supabase
           .from('user_library')
-          .select('id')
+          .select('id, personal_rating')
           .eq('user_id', userId)
           .eq('media_id', mediaId)
           .maybeSingle(),
@@ -649,6 +657,10 @@ export default function MovieDetailsScreen() {
 
       setInWatchlist(!!watchlistResult.data);
       setIsInLibrary(!!libraryResult.data);
+      setRatingMediaRowId(mediaId);
+      setPersonalRating(
+        (libraryResult.data?.personal_rating as number | null) ?? null
+      );
     }
 
     void checkWatchlistAndLibrary();
@@ -853,12 +865,12 @@ export default function MovieDetailsScreen() {
             user_id: userId,
             media_id: mediaRowId,
           });
-          if (error) {
-            if (error.code === '23505') {
-              return;
-            }
+          // 23505 = already on the shelf; treat as success and still let them rate.
+          if (error && error.code !== '23505') {
             throw error;
           }
+          setRatingMediaRowId(mediaRowId);
+          setRatingModalVisible(true);
         } else {
           const { error } = await supabase
             .from('user_library')
@@ -866,6 +878,8 @@ export default function MovieDetailsScreen() {
             .eq('user_id', userId)
             .eq('media_id', mediaRowId);
           if (error) throw error;
+          setPersonalRating(null);
+          setRatingModalVisible(false);
         }
       } catch (e) {
         if (__DEV__) {
@@ -881,6 +895,25 @@ export default function MovieDetailsScreen() {
 
     void syncLibrary();
   }, [session, isInLibrary]);
+
+  const applyDetailRating = useCallback(
+    async (next: number | null) => {
+      setRatingModalVisible(false);
+      if (!session || !ratingMediaRowId) return;
+      const previous = personalRating;
+      setPersonalRating(next);
+      const { error } = await supabase
+        .from('user_library')
+        .update({ personal_rating: next })
+        .eq('user_id', session.user.id)
+        .eq('media_id', ratingMediaRowId);
+      if (error) {
+        console.error('[MovieDetails] rating update error:', error);
+        setPersonalRating(previous);
+      }
+    },
+    [session, ratingMediaRowId, personalRating]
+  );
 
   async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
@@ -2158,6 +2191,15 @@ export default function MovieDetailsScreen() {
           }}
         />
       )}
+
+      <RatingPickerModal
+        visible={ratingModalVisible}
+        value={personalRating}
+        title={movie?.title ?? ''}
+        onSelect={(n) => applyDetailRating(n)}
+        onClear={() => applyDetailRating(null)}
+        onClose={() => setRatingModalVisible(false)}
+      />
     </>
   );
 }

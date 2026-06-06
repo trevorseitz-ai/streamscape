@@ -22,6 +22,7 @@ import {
 } from '../../lib/provider-branding';
 import { useCountry } from '../../lib/country-context';
 import { WatchedHistoryStatsHeader } from '../../components/WatchedHistoryStats';
+import { StarDisplay, RatingPickerModal } from '../../components/StarRating';
 import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
 import { tvFocusable } from '../../lib/tvFocus';
 
@@ -37,6 +38,7 @@ interface LibraryMovie {
   poster_url: string | null;
   added_at: string;
   vote_average: number | null;
+  personal_rating: number | null;
 }
 
 function formatAddedAt(iso: string): string {
@@ -59,6 +61,7 @@ export default function WatchedScreen() {
   const [enabledServiceIds, setEnabledServiceIds] = useState<Set<number>>(new Set());
   const hasEnabledServices = enabledServiceIds.size > 0;
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+  const [ratingTarget, setRatingTarget] = useState<LibraryMovie | null>(null);
   const hasFetchedOnce = useRef(false);
 
   const isTV = isTvTarget();
@@ -96,7 +99,7 @@ export default function WatchedScreen() {
   const fetchLibrary = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('user_library')
-      .select('id, created_at, media_id, media (id, tmdb_id, title, poster_url, release_year)')
+      .select('id, created_at, personal_rating, media_id, media (id, tmdb_id, title, poster_url, release_year)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -118,6 +121,7 @@ export default function WatchedScreen() {
           poster_url: (m.poster_url as string | null) ?? null,
           added_at: row.created_at as string,
           vote_average: null,
+          personal_rating: (row.personal_rating as number | null) ?? null,
         };
       })
       .filter((m): m is LibraryMovie => m !== null);
@@ -235,75 +239,131 @@ export default function WatchedScreen() {
     [router]
   );
 
+  const applyRating = useCallback(
+    async (rowId: string, next: number | null) => {
+      // Optimistic update; revert the single row on failure.
+      let previous: number | null = null;
+      setLibraryMovies((prev) =>
+        prev.map((m) => {
+          if (m.libraryRowId !== rowId) return m;
+          previous = m.personal_rating;
+          return { ...m, personal_rating: next };
+        })
+      );
+      setRatingTarget(null);
+
+      const { error } = await supabase
+        .from('user_library')
+        .update({ personal_rating: next })
+        .eq('id', rowId);
+
+      if (error) {
+        console.error('Rating update error:', error);
+        setLibraryMovies((prev) =>
+          prev.map((m) =>
+            m.libraryRowId === rowId ? { ...m, personal_rating: previous } : m
+          )
+        );
+      }
+    },
+    []
+  );
+
   const renderItem = useCallback(
     ({ item, index }: { item: LibraryMovie; index: number }) => {
       const tmdb = item.tmdb_id;
       const { vote_average } = item;
 
       return (
-        <Pressable
-          {...(tvListRowDpad ? tvFocusable() : {})}
-          onFocus={() => setFocusedRowIndex(index)}
-          onBlur={() => setFocusedRowIndex((f) => (f === index ? null : f))}
-          style={({ pressed }) => [
+        <View
+          style={[
             styles.row,
-            pressed && styles.rowPressed,
             tvListRowDpad && focusedRowIndex === index && styles.rowTvFocused,
           ]}
-          onPress={() => handleMoviePress(item)}
         >
-          {/* Poster Column */}
-          {item.poster_url ? (
-            <Image
-              source={{ uri: item.poster_url }}
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.thumbnailPlaceholder}>
-              <Text style={styles.thumbnailPlaceholderText}>?</Text>
+          {/* Main area navigates to the movie detail. */}
+          <Pressable
+            {...(tvListRowDpad ? tvFocusable() : {})}
+            onFocus={() => setFocusedRowIndex(index)}
+            onBlur={() => setFocusedRowIndex((f) => (f === index ? null : f))}
+            style={({ pressed }) => [
+              styles.rowMain,
+              pressed && styles.rowPressed,
+            ]}
+            onPress={() => handleMoviePress(item)}
+          >
+            {/* Poster Column */}
+            {item.poster_url ? (
+              <Image
+                source={{ uri: item.poster_url }}
+                style={styles.thumbnail}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.thumbnailPlaceholder}>
+                <Text style={styles.thumbnailPlaceholderText}>?</Text>
+              </View>
+            )}
+
+            {/* Details Column (Left-Aligned) */}
+            <View style={[styles.movieInfo, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.movieTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text style={styles.addedDate}>
+                Added {formatAddedAt(item.added_at)}
+              </Text>
             </View>
-          )}
 
-          {/* Details Column (Left-Aligned) */}
-          <View style={[styles.movieInfo, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.movieTitle} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <Text style={styles.addedDate}>
-              Added {formatAddedAt(item.added_at)}
-            </Text>
-          </View>
+            <View style={styles.providerIcons}>
+              {tmdb != null && (providerBrands[tmdb] ?? []).length > 0
+                ? (providerBrands[tmdb] ?? []).map((brand) => {
+                    const isEnabled = isBrandEnabled(brand, enabledServiceIds);
+                    return (
+                      <Image
+                        key={brand.brandKey}
+                        source={{ uri: `${TMDB_IMAGE_BASE}${brand.logo_path}` }}
+                        style={[
+                          styles.providerIcon,
+                          hasEnabledServices &&
+                            (isEnabled
+                              ? styles.providerIconEnabled
+                              : styles.providerIconDimmed),
+                        ]}
+                        resizeMode="cover"
+                      />
+                    );
+                  })
+                : null}
+            </View>
+          </Pressable>
 
-          <View style={styles.providerIcons}>
-            {tmdb != null && (providerBrands[tmdb] ?? []).length > 0
-              ? (providerBrands[tmdb] ?? []).map((brand) => {
-                  const isEnabled = isBrandEnabled(brand, enabledServiceIds);
-                  return (
-                    <Image
-                      key={brand.brandKey}
-                      source={{ uri: `${TMDB_IMAGE_BASE}${brand.logo_path}` }}
-                      style={[
-                        styles.providerIcon,
-                        hasEnabledServices &&
-                          (isEnabled
-                            ? styles.providerIconEnabled
-                            : styles.providerIconDimmed),
-                      ]}
-                      resizeMode="cover"
-                    />
-                  );
-                })
-              : null}
-          </View>
-
-          <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 13, color: '#9ca3af' }}>
-              TMDB:{' '}
-              {vote_average != null ? `${vote_average.toFixed(1)}/10` : '—'}
+          {/* Rating cell opens the star picker. */}
+          <Pressable
+            {...(tvListRowDpad ? tvFocusable() : {})}
+            onFocus={() => setFocusedRowIndex(index)}
+            onBlur={() => setFocusedRowIndex((f) => (f === index ? null : f))}
+            style={({ pressed }) => [
+              styles.rateCell,
+              pressed && styles.rowPressed,
+            ]}
+            onPress={() => setRatingTarget(item)}
+            accessibilityLabel={
+              item.personal_rating
+                ? `Your rating ${item.personal_rating} of 5. Edit rating.`
+                : 'Rate this title'
+            }
+          >
+            {item.personal_rating ? (
+              <StarDisplay value={item.personal_rating} size={13} />
+            ) : (
+              <Text style={styles.rateHint}>Rate</Text>
+            )}
+            <Text style={styles.tmdbText}>
+              TMDB {vote_average != null ? vote_average.toFixed(1) : '—'}
             </Text>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
       );
     },
     [
@@ -378,6 +438,19 @@ export default function WatchedScreen() {
           ) : undefined
         }
       />
+
+      <RatingPickerModal
+        visible={ratingTarget != null}
+        value={ratingTarget?.personal_rating ?? null}
+        title={ratingTarget?.title ?? ''}
+        onSelect={(n) => {
+          if (ratingTarget) applyRating(ratingTarget.libraryRowId, n);
+        }}
+        onClear={() => {
+          if (ratingTarget) applyRating(ratingTarget.libraryRowId, null);
+        }}
+        onClose={() => setRatingTarget(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -436,6 +509,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d2d2d',
     marginBottom: 8,
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  rateCell: {
+    width: 72,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: 8,
+  },
+  rateHint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#00F5FF',
+  },
+  tmdbText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 4,
   },
   rowPressed: {
     opacity: 0.8,
