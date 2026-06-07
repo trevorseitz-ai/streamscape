@@ -1,6 +1,6 @@
 # 🗃️ Database Schema (Auto-generated)
 
-*Last Updated: 4/23/2026*
+*Last Updated: 6/6/2026*
 
 ---
 
@@ -26,6 +26,8 @@
 | `metascore` | text |
 
 ## 📋 Table: watched_history
+
+Legacy / parallel watched tracking. Rows are still inserted by the global **watched toggle** in **`lib/watchlist-status-context.tsx`**. **Not** the source of truth for the **Watched tab**, personal ratings, or viewing stats — those use **`user_library`** (see below).
 
 | Column | Type |
 | :--- | :--- |

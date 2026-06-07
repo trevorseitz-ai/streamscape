@@ -47,9 +47,9 @@ If a grid is shoved too far to the right, or the layout math is ignoring your pa
 
 ## 5. Watched tab (`app/(tabs)/watched.tsx`)
 
-The **Watched** tab (UI rename from legacy **Library**; persistence remains **`user_library`**) stacks vertically:
+The **Watched** tab (UI rename from legacy **Library**; persistence is **`user_library`**) stacks vertically:
 
-1. **`WatchedHistoryStatsHeader`** — **`watched_history`** analytics (**`FlatList` header**).
-2. **Scroll list** — **`user_library`** rows joined to **`media`**.
+1. **`WatchedHistoryStatsHeader`** — stats from **`user_library`** + nested **`media`** (**1–5** rating scale; **`FlatList` header**).
+2. **Scroll list** — **`user_library`** rows joined to **`media`**, each with a **split focus row** (main cell → movie detail; **rate cell** → **`RatingPickerModal`**).
 
 Canonical detail: **`docs/depts/tv.md`** (**Watched tab layout**).

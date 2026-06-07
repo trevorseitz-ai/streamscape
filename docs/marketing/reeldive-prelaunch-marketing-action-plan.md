@@ -450,7 +450,7 @@ To prevent over-eager activation:
 
 - A `Coming soon` flag on `getreeldive.com` is **not** a date.
 - An internal team estimate of "we think Q[X]" is **not** a date.
-- Product readiness signals from `HQ.md` ("Phase 2: NEXT") are **not** a date.
+- Product readiness signals from `HQ.md` ("Phase 2: IN PROGRESS") are **not** a date.
 - Anything below the literal line `Announced ReelDive web / GA date (Marketing-owned):` in `docs/depts/marketing.md` is **not** a date until that placeholder is replaced with an ISO date or explicit "Coming [season/year]" language **by Marketing**.
 
 §D stays asleep until then.
