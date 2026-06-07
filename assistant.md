@@ -18,13 +18,41 @@
 Persistent queue — **do not remove** when adding a new session; check off or move items when done.
 
 - [ ] **Paywall & subscription tiers** — Spec in [`docs/depts/product.md`](docs/depts/product.md#monetization--paywall--planned-not-built). **1-month trial** with full paywalled features, then real free tier; **2-week data retention** if user does not upgrade. **TBD:** which features are gated, billing provider, purge policy after grace period, TV/web parity on gates.
-- [x] **Trailer modal 16:9 fix** — Shipped: `lib/trailerLayout.ts`, TMDB trailer pick, Maestro [`trailer-tv.yaml`](testing/maestro/trailer-tv.yaml). Verify per [`docs/depts/qa.md`](docs/depts/qa.md#trailer-modal--aspect-ratio-known-issue--fix-verification).
+- [x] **Trailer modal 16:9 fix** — Shipped (`a21fb63`): `lib/trailerLayout.ts`, TMDB trailer pick, Maestro [`trailer-tv.yaml`](testing/maestro/trailer-tv.yaml), dev auth bypass. Verify per [`docs/depts/qa.md`](docs/depts/qa.md#trailer-modal--aspect-ratio-verification).
 - [ ] **Open PR** — `web-tv-parity-6-4` → `main` (if not merged).
-- [ ] **Manual TV QA** — Watched ratings, add-flow, cast, release-TV trailers.
+- [ ] **Manual TV QA** — Watched ratings, add-flow, cast, **16:9 trailers** on physical TV (automated Maestro pass done on emulator).
 - [ ] **Google TV store submission** — signing, permissions, AAB, listing assets.
 - [ ] **Watched data model cleanup** — align `watchlist-status-context` with `user_library`.
 - [ ] **TV Focus Bridge (Home rows)**.
 - [ ] **Handset vs TV build split** — separate Expo/EAS profiles.
+
+---
+
+---
+
+## Session 2026-06-07
+
+**Branch:** `web-tv-parity-6-4` @ `a21fb63` (pushed)  
+**Focus:** Trailer 16:9 modal, TMDB trailer selection, Maestro E2E, dev auth bypass
+
+### Done
+
+- **Trailer layout:** `lib/trailerLayout.ts` — largest fitting **16:9** box; centered modal on Web + TV.
+- **TMDB selection:** `lib/tmdb-trailer.ts` — official + highest **`size`** + newest upload.
+- **Players:** `TrailerPlayer.tsx` / `.web.tsx` — explicit width/height; Maestro testIDs.
+- **Maestro:** `trailer-tv.yaml`, `auth-bypass.yaml`, `npm run test:trailer-maestro`, `simulate:trailer-tv.ts`.
+- **Dev bypass:** `lib/maestroBypass.ts` + `EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1` for login-free E2E.
+- **Verified:** Layout simulation all PASS; Maestro E2E PASS on **ReelDive_TV** emulator.
+
+### Commits
+
+| Commit | Summary |
+|--------|---------|
+| `a21fb63` | Fix trailer modal 16:9 layout and add Maestro E2E coverage |
+
+### Next
+
+See **Cross-session backlog** (open PR, physical TV QA, paywall spec, Focus Bridge).
 
 ---
 

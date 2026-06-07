@@ -30,11 +30,11 @@ Engineering ships **one Expo codebase** spanning **Web**, **TV**, **iOS/Android 
 | Surface | Status | Notes |
 |---------|--------|-------|
 | **Web** | **Launch-ready engineering** | Full tab shell, Stream Finder Discover, auth, watchlist, watched shelf + ratings, movie detail. Pre-GA hosting posture per **`web.md`** / **`marketing.md`**. |
-| **Android TV** | **Launch-ready engineering, active polish** | Lean-back shell, fixed poster grid, D-pad focus across major tabs. Recent parity pass: cast nav safety, IMDb chip, release-TV trailer reliability, Watched ratings. **Focus Bridge** on Home rows still WIP in **`HQ.md`**. |
+| **Android TV** | **Launch-ready engineering, active polish** | Lean-back shell, fixed poster grid, D-pad focus across major tabs. Recent parity pass: cast nav safety, IMDb chip, release-TV trailer reliability, **16:9 trailer modal**, Watched ratings. **Focus Bridge** on Home rows still WIP in **`HQ.md`**. |
 | **iOS / Android handset** | **Same codebase, storefront TBD** | Builds from shared tree; **`android.isTV: true`** conflates handset vs TV shell — split profiles needed before public handset launch. |
 | **Google TV / Play (TV)** | **Pre-submission** | Release signing, permissions cleanup, signed AAB, store listing assets — not yet closed. |
 
-**Shipped recently (Phase 2 kickoff):** Watched **1–5 star ratings**; web/TV movie-detail parity (cast, IMDb, trailers); Watchlist/Watched provider-logo parity; migration consolidation under **`supabase/migrations`**.
+**Shipped recently (Phase 2 kickoff):** Watched **1–5 star ratings**; web/TV movie-detail parity (cast, IMDb, trailers); **16:9 trailer modal** + Maestro E2E; Watchlist/Watched provider-logo parity; migration consolidation under **`supabase/migrations`**.
 
 **Known gaps:** **`watched_history`** vs **`user_library`** split (ratings/stats use **`user_library`**; global watched toggle still writes **`watched_history`**); re-rate from movie detail deferred to Watched tab; handset/TV build flavors not split; CI Maestro not committed; Google TV store blockers open.
 
@@ -52,7 +52,7 @@ Engineering ships **one Expo codebase** spanning **Web**, **TV**, **iOS/Android 
 
 Umbrella milestone after triple-platform stability: **UX polish**, **reliability fixes**, and utilities that make daily use smoother—while keeping **Phase 1** contracts (Stream Finder order, `viewport-utils`, TV network policy) intact.
 
-**Delivered so far:** Watched **1–5 star ratings**, web/TV movie-detail parity (cast, IMDb, trailers), Watchlist/Watched provider-logo parity, migration consolidation.
+**Delivered so far:** Watched **1–5 star ratings**, web/TV movie-detail parity (cast, IMDb, trailers, **16:9 trailer player**), Watchlist/Watched provider-logo parity, migration consolidation.
 
 ### Phase 2 workstreams (active + queued)
 
@@ -128,7 +128,7 @@ Use this as the working queue until **`HQ.md`** priorities are updated.
 | Priority | Item | Owner hint |
 |:--------:|------|------------|
 | **1** | **Google TV store submission** — signed AAB, permissions, listing assets, on-device smoke | Product + TV |
-| **2** | **Manual TV QA pass** — Watched ratings, movie detail add-flow, cast nav, trailers on release build | QA / TV |
+| **2** | **Manual TV QA pass** — Watched ratings, movie detail add-flow, cast nav, **16:9 trailers** on release build | QA / TV |
 | **3** | **Watched data model cleanup** — align global watched toggle with **`user_library`** | Product + backend |
 | **4** | **TV Focus Bridge (Home)** — finish cross-row D-pad on Home rails | TV |
 | **5** | **Handset build split** — separate TV vs phone Expo profiles | Engineering |

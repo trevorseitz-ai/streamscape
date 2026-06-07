@@ -21,7 +21,7 @@
 
 **Profile** is intentionally **last** (anchored)—see [`product.md`](product.md).
 
-- **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes.
+- **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes (shared **16:9** sizing via [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts) on movie detail).
 - **Auth flow:** Standard `signInWithPassword` in [`app/login.tsx`](../../app/login.tsx), shared with the TV redirect logic in [`app/index.tsx`](../../app/index.tsx).
 
 ## Pre-general-availability web (coming soon → countdown)

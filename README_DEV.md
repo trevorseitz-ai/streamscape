@@ -41,6 +41,8 @@ Layout and row math for TV home rows are documented in [`docs/tv_layout_rules.md
 
 - **[`scripts/sync-schema.js`](scripts/sync-schema.js)** — Calls the Supabase RPC **`get_schema_details`** (service role in `.env`) and refreshes **`docs/database_schema.md`** so the doc matches the live public schema.
 - **[`scripts/migrate-waitlist.js`](scripts/migrate-waitlist.js)** — Uses **`SUPABASE_SERVICE_ROLE_KEY`** to read pending **`waitlist`** rows, **`inviteUserByEmail`**, and update status. Operational steps: [`docs/user_migration.md`](docs/user_migration.md).
+- **Maestro E2E:** **`npm run test:smoke-maestro`** (auth + Discover smoke); **`npm run test:trailer-maestro`** (16:9 trailer flow, dev auth bypass — see [`docs/depts/qa.md`](docs/depts/qa.md)).
+- **Trailer layout simulation:** **`npm run simulate:trailer-tv`** — offline viewport math + TMDB trailer-pick checks ([`scripts/simulate-trailer-tv.ts`](scripts/simulate-trailer-tv.ts)).
 
 ---
 

@@ -61,6 +61,7 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 | Axis | Goal | Repo / tooling | Pass criteria (v1.0.0) |
 |:-----|:-----|:---------------|:--------------------------|
 | **Functional** | End-to-end tab shell + Discover + Profile on a native build. | [Maestro](https://maestro.mobile.dev/) — [`testing/maestro/smoke-test.yaml`](../../testing/maestro/smoke-test.yaml) (includes [`auth-flow.yaml`](../../testing/maestro/auth-flow.yaml)); run **`npm run test:smoke-maestro`** with **`MAESTRO_TEST_USER_*`** set. | Flow completes without timeout; **`discover-smoke-poster`** appears; **`My Services`** visible after **Profile**. Device **`applicationId`** matches **`smoke-test.yaml`** (**`com.reeldive.app`**). |
+| **Trailer (TV/Web)** | Movie detail **Watch trailer** modal — **16:9** geometry + open/close on device. | **`npm run simulate:trailer-tv`** (offline); **`npm run test:trailer-maestro`** + [`trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml) (device; **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`**). | Simulation: all viewports **16:9**; Maestro: modal + player frame + Play + Close; no login required in dev bypass mode. |
 | **Security** | No secret literals merged into **`app/`** / libs / scripts. | [`scripts/check-env-security.ts`](../../scripts/check-env-security.ts); run **`npm run check:env-security`**. | Exit code **0**; findings must be **`process.env` / CI-secret** sourced only. Client keys remain **`EXPO_PUBLIC_*`** from env at build time (see **`.env.example`**). |
 | **Layout** | Adaptive Discover density + stable viewport math across surfaces. | **`discoverPosterGridColumns`** + **`bucketViewportWidth`** (**10px**) in **`lib/viewport-utils.ts`** (re-exported from **`MovieRow`**); parity rules in **`web.md`** / **`tv.md`**. | **3 / 4 / 6** tiers at canonical breakpoints (**&lt;600 → 3**, **600–899 → 4**, **≥900 → 6**); layouts do not thrash from fractional **`useWindowDimensions()`** jitter. |
 | **Data integrity** | Stream Finder mirror in Supabase matches production scale expectations. | Sync: **`npm run sync:stream-finder`**; read path **`lib/stream-finder-supabase.ts`**. Validate row counts (`stream_finder_movies`) vs checkpoint (HQ **STREAM_FINDER_SYNC** block targets **~1,200+** titles; **16** providers roster). | Discover default landing hydrates without persistent empty grids when network + RLS permit; QA records **movie count + provider count** vs last successful sync banner in **`HQ.md`**. |
@@ -74,13 +75,11 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 - **TV:** Focus graph rules (`tvNextFocus*`, sidebar escape) — [**`tv.md`**](tv.md#spatial-engine-routing--focus-graphs).
 - **Regression scale:** Discover at **~1k+** mirrored rows stays scroll-smooth (**`product.md`** / **`web.md`**).
 
-### Trailer modal — aspect ratio (known issue / fix verification)
+### Trailer modal — aspect ratio verification
 
-**Reported:** YouTube trailers play at the **wrong aspect ratio** on lean-back (stretch or incorrect letterboxing).
+**Status:** **Fix shipped** (June 2026). Legacy bug: player height was **`~60%` of window height`** while width filled the modal (**~2.96:1** on Android TV). Current: **16:9** via [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts). Detail: [**`tv.md` — Trailer modal**](tv.md#trailer-modal--aspect-ratio).
 
-**Cause:** Player height is **`~60%` of window height** while width fills the modal — not a locked **16:9** frame. See [**`tv.md` — Trailer modal**](tv.md#trailer-modal--aspect-ratio-planned-fix).
-
-**Metadata:** **TMDB does not send aspect ratio** (YouTube `key` only). **YouTube does not push AR into the iframe** at runtime; **oEmbed** can return embed width/height (usually 16:9) if we fetch it — optional v2.
+**Metadata:** **TMDB** sends YouTube **`key`** + **`size`** / **`official`** (not display AR). **YouTube** adaptive quality follows iframe viewport size; no embed API to force 1080p.
 
 | Check | Pass criteria |
 | :--- | :--- |
@@ -90,16 +89,16 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 | **Web parity** | Same title on browser — visually matches TV framing (allow minor browser chrome). |
 | **Close control** | Close (×) remains focusable; no focus trap outside the player after fix. |
 
-**Test titles:** Pick at least one TMDB-backed movie and one TMDB-id-only path; open **Watch trailer** from movie detail on **physical Android TV** (emulator + device if possible).
+**Test titles:** Pick at least one TMDB-backed movie and one TMDB-id-only path; open **Watch trailer** from movie detail on **physical Android TV** (emulator + device if possible). Maestro fixture: **`reeldive://movie/550`** (Fight Club).
 
-**Planned code touchpoints:** `components/TrailerPlayer.tsx`, `app/movie/[id].tsx`, `lib/trailerLayout.ts`, `lib/tmdb-trailer.ts`.
+**Code touchpoints:** `lib/trailerLayout.ts`, `lib/tmdb-trailer.ts`, `components/TrailerPlayer.tsx`, `app/movie/[id].tsx`, `lib/maestroBypass.ts`.
 
 **Automated checks**
 
 | Layer | Command | Pass criteria |
 | :--- | :--- | :--- |
 | **Layout simulation** | `npm run simulate:trailer-tv` | All viewport profiles **16:9**; Android TV legacy stretch **~2.96:1** vs fixed **~1.78:1**; Fight Club picks official **1080p** key. |
-| **Maestro E2E (device)** | `npm run test:trailer-maestro` (**`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** in `.env`, dev build) | Auth bypass → **`reeldive://movie/550`** → **`maestro-movie-watch-trailer`** → modal **`maestro-trailer-player-frame`** → **`maestro-trailer-play`** → **`maestro-trailer-close`**. Flow: [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml). |
+| **Maestro E2E (device)** | `npm run test:trailer-maestro` (**`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** in `.env`, dev build) | Auth bypass → **`reeldive://movie/550`** → **`maestro-movie-watch-trailer`** → modal **`maestro-trailer-player-frame`** → **`maestro-trailer-play`** → **`maestro-trailer-close`**. Flow: [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml). **Verified passing** on **ReelDive_TV** emulator (June 2026). |
 
 **Maestro testIDs:** `maestro-movie-watch-trailer`, `maestro-trailer-modal`, `maestro-trailer-player-frame`, `maestro-trailer-play`, `maestro-trailer-close`.
 

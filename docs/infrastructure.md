@@ -125,7 +125,8 @@ Use this when planning a feature: “If the user does X, what breaks if I only c
 
 | User action | Client | Backend / APIs | Update checklist |
 | :--- | :--- | :--- | :--- |
-| View metadata, cast, trailer | `app/movie/[id].tsx` | TMDB; Supabase `media`; **`/api/movie`** fallback on web | Release TV: prefer **direct TMDB** for trailers when Vercel unreachable |
+| View metadata, cast, trailer | `app/movie/[id].tsx` | TMDB; Supabase `media`; **`/api/movie`** fallback on web; [`lib/tmdb-trailer.ts`](../../lib/tmdb-trailer.ts) | Release TV: prefer **direct TMDB** for trailers when Vercel unreachable; pick **official** + max **`size`** |
+| **Watch trailer (16:9 modal)** | `TrailerPlayer`, [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts) | YouTube iframe (adaptive quality) | Modal centered pillarbox; **`computeTrailerPlayerLayout`**; Maestro: **`test:trailer-maestro`** |
 | View IMDb / RT / Metacritic | Same | OMDb → `media` cache | `EXPO_PUBLIC_OMDB_API_KEY`; migration on `media` if new columns |
 | Tap cast (navigate) | Cast cards | TMDB person id required | Supabase UUID cast → inert (no nav) |
 | Recommendations rail | Same | TMDB recommendations | Client TMDB |

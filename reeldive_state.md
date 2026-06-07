@@ -1,7 +1,7 @@
 # ReelDive — Technical State Teardown
 
-**Generated:** 2026-06-06  
-**Branch checkpoint:** `web-tv-parity-6-4` @ `5d22aac`  
+**Generated:** 2026-06-07  
+**Branch checkpoint:** `web-tv-parity-6-4` @ `a21fb63`  
 **Sources:** [`HQ.md`](HQ.md), [`docs/depts/product.md`](docs/depts/product.md), [`docs/depts/tv.md`](docs/depts/tv.md), [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md), [`docs/database_schema.md`](docs/database_schema.md), and direct inspection of `app/`, `lib/`, `components/`, `supabase/migrations/`, and config files.  
 **Purpose:** Objective inventory for product, marketing, and engineering planning. Contradicts stale or aspirational copy where the code does not support it.
 
@@ -12,7 +12,7 @@
 | Area | Status (June 2026) |
 | :--- | :--- |
 | **Phase 1 — Discovery & Stability** | **Complete** on Web, mobile, and Android TV (Stream Finder mirror, hybrid TMDB enrichment, six-tab shell). |
-| **Phase 2 — User utility** | **In progress.** First shipped utilities: **Watched 1–5 star ratings**, web/TV movie-detail parity (cast, IMDb, trailers), Watchlist/Watched provider-logo parity, migration consolidation. |
+| **Phase 2 — User utility** | **In progress.** Shipped: **Watched 1–5 star ratings**, web/TV movie-detail parity (cast, IMDb, trailers), **16:9 trailer modal** + Maestro E2E, Watchlist/Watched provider-logo parity, migration consolidation. |
 | **Web + Android TV (engineering)** | **Launch-ready** — lean-back shell, fixed poster grid, D-pad focus on major tabs, ratings, streaming intents. **GTM:** no public ship date in [`docs/depts/marketing.md`](docs/depts/marketing.md); web may be pre-GA per [`docs/depts/web.md`](docs/depts/web.md). |
 | **Google TV / Play (TV store)** | **Pre-submission** — release signing, permissions audit, signed AAB, listing assets, on-device QA not closed. |
 | **iOS / Android handset stores** | **TBD.** Same Expo tree; **`android.isTV: true`** conflates handset vs TV shell until build flavors split. |
@@ -33,7 +33,7 @@
 | **Streaming availability (per title)** | **RapidAPI Streaming Availability** ([`lib/streaming-rapid.ts`](lib/streaming-rapid.ts)); web may proxy via Vercel [`api/streaming.ts`](api/streaming.ts). |
 | **Ratings (external)** | **OMDb** via [`lib/ratings.ts`](lib/ratings.ts) + cached columns on **`media`**; **IMDb chip** on movie detail when data exists. |
 | **Ratings (personal)** | **`user_library.personal_rating`** (1–5 stars); UI in [`components/StarRating.tsx`](components/StarRating.tsx). |
-| **First-party HTTP routes** | **`app/api/*+api.ts`** — primarily **web/Vercel**; release-TV movie detail uses **direct TMDB** for trailers when server origin unreachable. |
+| **First-party HTTP routes** | **`app/api/*+api.ts`** — primarily **web/Vercel**; release-TV movie detail uses **direct TMDB** for trailers when server origin unreachable. Trailer key selection: [`lib/tmdb-trailer.ts`](lib/tmdb-trailer.ts) (official + max **`size`**). |
 | **Migrations** | Single directory: **`supabase/migrations/`** (legacy `database/migrations` consolidated June 2026). |
 | **Hosting** | **Web:** Vercel. **Waitlist:** [getreeldive.com](https://getreeldive.com) (separate repo). |
 
@@ -62,7 +62,7 @@
 | **`app/(tabs)/watchlist.tsx`** | Yes | CRUD, up/down reorder, brand-grouped cached provider logos. Legacy **`RatingModal`** on mark-watched (watchlist flow). |
 | **`app/(tabs)/watched.tsx`** | Yes | **`user_library`** list + **`WatchedHistoryStatsHeader`** (stats from **`user_library`**, 1–5 scale). **`RatingPickerModal`** on rows. Split TV focus: main cell + rate cell. |
 | **`app/(tabs)/profile.tsx`** | Yes | My services, provider tiles, save to **`profiles`**. Stats live on **Watched**, not Profile. |
-| **`app/movie/[id].tsx`** | Yes | Detail, trailer (direct TMDB on release-TV), cast (inert without TMDB id), RT/Metacritic/**IMDb** chips, **Watch on** via **`WatchOnButton`**, **Add to Watched** → rating modal. |
+| **`app/movie/[id].tsx`** | Yes | Detail, **16:9 trailer modal** ([`lib/trailerLayout.ts`](lib/trailerLayout.ts)), direct TMDB on release-TV, cast (inert without TMDB id), RT/Metacritic/**IMDb** chips, **Watch on** via **`WatchOnButton`**, **Add to Watched** → rating modal. |
 | **`app/person/[id].tsx`** | Yes | TMDB person filmography (numeric id only). |
 | **`app/tv-landing.tsx`** | Yes (TV) | Unauthenticated TV entry; login-first flow. |
 
@@ -77,7 +77,7 @@
 - Profile → My services (16-provider catalog, auto-prune on sync).
 - Watchlist add/remove/reorder; brand-grouped provider logos (14-day TTL cache).
 - **Watched shelf** (`user_library`): list, **1–5 star ratings**, stats header, rate on **Add to Watched** from movie detail.
-- Movie detail: metadata, trailer, recommendations, streaming availability, **IMDb/RT/Metacritic** when cached.
+- Movie detail: metadata, **16:9 YouTube trailer**, recommendations, streaming availability, **IMDb/RT/Metacritic** when cached.
 - Cast/crew: navigates when TMDB id exists; **inert** otherwise (no error dead-end).
 - Android TV native streamer launch ([`WatchOnButton`](components/WatchOnButton.tsx), intent matrix) — success varies by OEM/installed apps.
 - Web streaming handoff (HTTPS / universal links) — discovery only, no in-app catalog playback.
@@ -143,6 +143,8 @@ Migration: **`supabase/migrations/20260605161700_user_library_personal_rating.sq
 | :--- | :--- |
 | **`npm run check:env-security`** | Works |
 | **`npm run test:smoke-maestro`** | Requires device + credentials |
+| **`npm run test:trailer-maestro`** | Layout sim + Maestro E2E; **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** (dev); verified on TV emulator June 2026 |
+| **`npm run simulate:trailer-tv`** | Offline 16:9 layout + TMDB trailer-pick assertions |
 | **`npm run report:qa`** | Local/operator; optional Resend email |
 | **GitHub Actions** | **None committed** (`.github/` absent) |
 
@@ -182,7 +184,7 @@ Migration: **`supabase/migrations/20260605161700_user_library_personal_rating.sq
 Aligned with [`docs/depts/product.md`](docs/depts/product.md) **What's next**:
 
 1. **Google TV store submission**
-2. **Manual TV QA** (ratings, add-flow, cast, release-TV trailers)
+2. **Manual TV QA** (ratings, add-flow, cast, **16:9 trailers** on physical TV)
 3. **Watched data model cleanup** — align global toggle with **`user_library`**
 4. **TV Focus Bridge (Home)**
 5. **Handset build split**

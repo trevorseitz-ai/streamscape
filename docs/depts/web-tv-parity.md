@@ -30,6 +30,7 @@ These capabilities are **intended to be available** on both **Web** and **Androi
 | **Discover** | Same **Stream Finder** default feed + filters; **grid math differs** (see §4). |
 | **Profile** | **My services**, provider tiles, save flows—**shared** stack; **TV** layout & focus rules—see **[TV office — Profile](tv.md)**. |
 | **Title / availability discovery** | See where titles stream (badges/logos from mirror + fallbacks)—**not** in-player streaming of third-party catalogs. |
+| **Movie trailers** | **YouTube** embed on movie detail — **16:9** locked player (Web + TV); TMDB official-trailer pick. See [TV — Trailer modal](tv.md#trailer-modal--aspect-ratio). |
 
 **Product framing (copy-safe):** ReelDive is a **discovery and availability** surface. It **does not** replace paid **subscriber/streamer apps** for playback entitlement, and it is **not** a universal **in-app playback** product for catalog titles.
 
@@ -91,6 +92,7 @@ Use this block in **FAQ / external** copy when tightening expectations:
 | Shared viewport helpers | [Shared components](shared.md) |
 | Roadmap & milestones | [Product office](product.md) · [State audit](../../reeldive_state.md) · [Infrastructure map](../infrastructure.md) |
 | QA / smoke matrix | [QA office](qa.md) |
+| Trailer 16:9 + Maestro | [QA — Trailer verification](qa.md#trailer-modal--aspect-ratio-verification) · [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml) |
 | Public FAQ drafts (dual with site) | [`docs/marketing/FAQ.md`](../marketing/FAQ.md) |
 
 ---
