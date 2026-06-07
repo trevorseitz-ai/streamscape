@@ -89,7 +89,7 @@ Use this block in **FAQ / external** copy when tightening expectations:
 | TV grid, sidebar order, Discover stride, emulation | [TV office](tv.md) |
 | TV spacing & scroll law | [`docs/tv_layout_rules.md`](../tv_layout_rules.md) |
 | Shared viewport helpers | [Shared components](shared.md) |
-| Roadmap & milestones | [Product office](product.md) · [State audit](../../reeldive_state.md) |
+| Roadmap & milestones | [Product office](product.md) · [State audit](../../reeldive_state.md) · [Infrastructure map](../infrastructure.md) |
 | QA / smoke matrix | [QA office](qa.md) |
 | Public FAQ drafts (dual with site) | [`docs/marketing/FAQ.md`](../marketing/FAQ.md) |
 

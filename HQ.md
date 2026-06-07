@@ -3,6 +3,8 @@
 > **Central directory.** Open a **department office** below for focused work, or use shared references. This file stays lightweight; deep context lives in `docs/depts/` and `docs/`.
 >
 > **Legacy product name:** If you still see **StreamScape** somewhere, check [`HQ/streamscape-remnants-map.md`](HQ/streamscape-remnants-map.md) (intentional vs planned renames).
+>
+> **Session handoff (agent / dev):** [`assistant.md`](assistant.md) — what we did last session and what’s next.
 
 ---
 
@@ -141,6 +143,7 @@ Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stre
 - **Public FAQ drafts (dual with getreeldive.com):** [docs/marketing/FAQ.md](docs/marketing/FAQ.md)
 - **Claude prompt — pre-launch autonomous marketing (standalone paste):** [docs/REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md](REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md)
 - **HTTP APIs & integrations (canonical list):** [docs/API-ENDPOINTS.md](docs/API-ENDPOINTS.md) — first-party `/api/*` routes, Supabase, TMDB, RapidAPI, Stream Finder, OMDb, env checklist.
+- **Infrastructure map (layers, user flows, change matrix):** [docs/infrastructure.md](docs/infrastructure.md) — what to update when product or user interactions change.
 - **QA & Triple-Platform test matrix:** [docs/depts/qa.md](docs/depts/qa.md)
 - **TV layout rules:** [docs/tv_layout_rules.md](docs/tv_layout_rules.md)
 - **User / waitlist migration:** [docs/user_migration.md](docs/user_migration.md)
