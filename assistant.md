@@ -13,6 +13,20 @@
 
 ---
 
+## Cross-session backlog (todo)
+
+Persistent queue — **do not remove** when adding a new session; check off or move items when done.
+
+- [ ] **Paywall & subscription tiers** — Spec in [`docs/depts/product.md`](docs/depts/product.md#monetization--paywall--planned-not-built). **1-month trial** with full paywalled features, then real free tier; **2-week data retention** if user does not upgrade. **TBD:** which features are gated, billing provider, purge policy after grace period, TV/web parity on gates.
+- [ ] **Open PR** — `web-tv-parity-6-4` → `main` (if not merged).
+- [ ] **Manual TV QA** — Watched ratings, add-flow, cast, release-TV trailers.
+- [ ] **Google TV store submission** — signing, permissions, AAB, listing assets.
+- [ ] **Watched data model cleanup** — align `watchlist-status-context` with `user_library`.
+- [ ] **TV Focus Bridge (Home rows)**.
+- [ ] **Handset vs TV build split** — separate Expo/EAS profiles.
+
+---
+
 ## Session 2026-06-06
 
 **Branch:** `web-tv-parity-6-4` (pushed to `origin`)  
@@ -42,12 +56,7 @@
 
 ### Next
 
-1. **Open PR** for `web-tv-parity-6-4` → `main` (if not already merged).
-2. **Manual TV QA** — Watched add/rate flow, row D-pad focus, cast inert cards, trailers on release build.
-3. **Google TV store submission** — signing, permissions, signed AAB, listing assets.
-4. **Watched data model cleanup** — align `watchlist-status-context` watched toggle with `user_library` (still writes `watched_history` only).
-5. **TV Focus Bridge (Home rows)** — HQ WIP.
-6. **Handset vs TV build split** — fix `isTvTarget()` on phone builds.
+See **Cross-session backlog** above (session-specific work absorbed into persistent todo list).
 
 ### Notes
 

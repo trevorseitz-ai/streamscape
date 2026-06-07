@@ -239,4 +239,22 @@ These affect **what to update** when touching “watched” behavior:
 
 ---
 
+## 10. Planned: monetization & paywall (not built)
+
+**Product spec:** [`docs/depts/product.md`](depts/product.md) — **Monetization & paywall**.
+
+When implemented, expect changes across:
+
+| Layer | Likely work |
+| :--- | :--- |
+| **Supabase** | Subscription / entitlement columns on **`profiles`** or dedicated table; trial start/end timestamps; **`data_retention_until`** or soft-delete flags on user-owned rows (`watchlist`, **`user_library`**, etc.). |
+| **RLS / gates** | Policies or client checks that block paywalled writes/reads after trial unless entitled. |
+| **Client** | Paywall UI, trial banners, locked states on gated features; store purchase flows (web + mobile + TV store rules differ). |
+| **Jobs** | Cron / Edge Function: after trial expiry → 2-week hold → purge or anonymize if still not subscribed. |
+| **Marketing / legal** | Trial terms, grace-period copy, deletion notice — [`docs/depts/marketing.md`](depts/marketing.md). |
+
+**Track build tasks:** [`assistant.md`](../assistant.md) cross-session backlog.
+
+---
+
 *Last updated: 2026-06-06. Refresh when deployment topology, authority tables, or major product surfaces change.*

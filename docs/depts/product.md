@@ -64,6 +64,26 @@ Umbrella milestone after triple-platform stability: **UX polish**, **reliability
 6. **Handset build split** — Separate Expo/EAS profiles so **`isTvTarget()`** is false on phone/tablet builds.
 7. **Bug squashing & UX polish** — Ongoing defects, regressions on any of the three targets, empty/error states, and performance follow-ups surfaced in QA.
 
+### Monetization & paywall — **PLANNED (not built)**
+
+**Status:** Decision captured; engineering not started. Track implementation in [`assistant.md`](../../assistant.md) cross-session backlog.
+
+| Rule | Detail |
+| :--- | :--- |
+| **Paywall scope** | Some features will sit **behind a paid tier** (exact feature list **TBD** — e.g. Watched ratings, watchlist depth, advanced Discover filters, export, etc.). |
+| **Launch trial** | On signup (or first paywall-eligible use), users get **full access to paywalled features for 1 calendar month** — treated as a **trial**, not permanent free tier. |
+| **Post-trial free tier** | After the 1-month trial, **real free tier** limits apply; paywalled features lock or downgrade per Product spec (**TBD** per feature). |
+| **Data retention on downgrade** | If the user does **not** upgrade when trial ends, **retain their data for 2 weeks** (grace period) so they can subscribe and restore access without re-entering lists/ratings. After 2 weeks without upgrade, data handling **TBD** (soft-delete vs hard-delete vs anonymize — legal/privacy review required). |
+
+**Open product decisions (before build):**
+
+- Which features are free forever vs trial-only vs paid-only.
+- Billing provider (App Store / Play / Stripe on web) and cross-platform entitlement sync.
+- Copy for trial start, trial ending, grace period, and data deletion warnings.
+- Whether TV and web share identical tier gates.
+
+**Engineering touchpoints (when built):** [`docs/infrastructure.md`](../infrastructure.md) — entitlements on `profiles` or subscription table, client gate components, Supabase RLS by tier, scheduled job for 2-week retention, store receipt webhooks.
+
 ### Hybrid data model — **project standard**
 
 For all **Featured**, **Top**, and equivalent curated rails:
@@ -116,3 +136,5 @@ Use this as the working queue until **`HQ.md`** priorities are updated.
 | **7** | **Watchlist cross-device sync semantics** — conflict-safe ordering | Product + backend |
 
 **Not planned for immediate v1:** inline re-rate control on movie detail action row (re-edit stays on Watched tab unless user feedback demands it).
+
+**Planned (post–Phase 2 / monetization):** Paywall with **1-month full-feature trial**, then free tier; **2-week data retention** grace if user does not upgrade — see [Monetization & paywall](#monetization--paywall--planned-not-built).
