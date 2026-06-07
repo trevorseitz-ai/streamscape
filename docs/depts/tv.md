@@ -18,6 +18,27 @@ Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-
 
 ---
 
+## Recent delivery (June 2026 — web/TV parity + Watched ratings)
+
+Shipped on branch **`web-tv-parity-6-4`** (commits through **`8277d59`**). All items below apply to **Android TV** unless noted.
+
+| Area | What shipped | TV notes |
+|------|--------------|----------|
+| **Watched ratings (1–5 stars)** | **`user_library.personal_rating`** column + UPDATE RLS; shared **`RatingPickerModal`** / **`StarDisplay`** (`components/StarRating.tsx`). | Watched list rows use a **split focus pattern** (main cell → movie detail; rate cell → modal) — see [Watched tab layout](#watched-tab-layout-apptabswatchedtsx). Rating modal stars are **D-pad focusable** with visible focus rings. |
+| **Rate on add to Watched** | **`app/movie/[id].tsx`** opens the same picker immediately after a successful **Add to Watched** insert. | Modal overlay — **no new focus targets** in the locked movie-detail action row. Re-edit later from the **Watched** tab. |
+| **Watched stats header** | **`WatchedHistoryStatsHeader`** now reads **`user_library`** (not **`watched_history`**) on a **1–5** scale. | Softer label weights on TV unchanged. |
+| **Movie detail — cast nav** | Cast/crew cards are **inert** (non-focusable, no navigation) when a person lacks a numeric TMDB id (Supabase UUID rows). | Prevents D-pad dead-ends on error screens. |
+| **Movie detail — IMDb rating** | OMDb-sourced **IMDb** chip renders alongside RT / Metacritic when cached. | Same chip row as Web; no TV-specific layout fork. |
+| **Movie detail — trailers** | Supabase-backed titles with **`tmdb_id`** fetch trailer keys via **direct client TMDB** (`fetchTrailerKeyFromTmdb`) before server API fallback. | Fixes release-TV builds where the Vercel **`/api/*`** origin is unreachable. |
+| **Movie detail — provider tiles cleanup** | Removed obsolete TMDB provider-tile renderer (~200 lines dead code). | **Watch on** strip uses **`WatchOnButton`** + RapidAPI / intent matrix only — see [Intent handoff protocol](#intent-handoff-protocol-bravia--native). |
+| **Watched list focus ring** | D-pad focus border on list rows (`#00F5FF`). | Matches Watchlist / home poster ring intent. |
+| **Watchlist provider logos** | Brand-grouped, cached logos (14-day TTL) on Watchlist + Watched rows. | Same **`providerBrands`** / enabled-service dimming as Watchlist. |
+| **DB migrations** | All legacy **`database/migrations`** consolidated into **`supabase/migrations`** with repaired remote history. | No TV runtime change; enables reliable **`supabase db push`**. |
+
+**Data model note:** The **Watched shelf** (`user_library`) is the **source of truth** for the Watched tab list, personal ratings, and stats. **`watched_history`** still receives inserts from the global watched toggle in **`lib/watchlist-status-context.tsx`** but is **not** the ratings/stats authority.
+
+---
+
 ## TV poster grid standard (all tabs)
 
 **Android TV** — **Home**, **Discover**, and any other TV poster rails — must use one uniform layout. Do **not** derive poster width by dividing usable row width (no fluid math, no fractional pixel cell widths on TV).
@@ -130,12 +151,25 @@ Shared implementation for **Web**, handset, and **Android TV**. Authoritative st
 
 ### Watched tab layout (`app/(tabs)/watched.tsx`)
 
-Renamed from legacy **Library**; reflects **`user_library`** (saved shelf) plus **`watched_history`** analytics.
+Renamed from legacy **Library**. The **Watched shelf** is **`user_library`** — one row per saved title, joined to **`media`**. Personal ratings live on **`user_library.personal_rating`** (1–5, nullable).
 
 | Order | Block |
 |:-----:|-------|
-| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — stats + rating chart sourced from **`watched_history`**; mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
-| **2** | **Saved titles list** — **`user_library`** rows joined to **`media`** (existing row UI: poster, added date, provider logos, TMDB vote line). |
+| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — movies watched, average rating, favorite title, **1–5** distribution chart; sourced from **`user_library`** + nested **`media`**. Mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
+| **2** | **Saved titles list** — **`user_library`** rows: poster, title, added date, brand-grouped provider logos, TMDB vote line, and a **rate cell** (stars or **Rate** hint). |
+
+**TV focus pattern (list rows):** Each row is a **`View`** wrapper with two sibling **`Pressable`** cells — **not** nested pressables:
+
+| Cell | D-pad role | Action |
+|------|------------|--------|
+| **`rowMain`** | Primary focus target | Navigates to **`/movie/[id]`** (requires **`tmdb_id`**). |
+| **`rateCell`** | Secondary focus target (right edge, **72px**) | Opens **`RatingPickerModal`** for that row. |
+
+Both cells share the row-level **`rowTvFocused`** border when either has focus. Follows [No Nested Pressables](#3-no-nested-pressables).
+
+**Rating picker (`components/StarRating.tsx`):** Modal with five focusable star buttons (Left/Right on D-pad), **Clear**, and **Cancel**. Hover preview is **Web-only**; TV uses **`onFocus`** preview. Focus rings use **`#00F5FF`**.
+
+**Movie detail entry:** Tapping **Add to Watched** on **`app/movie/[id].tsx`** inserts into **`user_library`** and opens the same modal (optimistic shelf toggle; rating write is separate UPDATE). Removing from Watched clears **`personal_rating`** locally and closes the modal.
 
 Type tokens for the Hero text column:
 
@@ -206,7 +240,7 @@ Lean-back and handset builds **must not** fork routing per OEM (**Sony**, **TCL*
 
 Full **`nflx://`**, **`collectStreamingLaunchCandidates`**, and RapidAPI **`videoLink`** chains remain in **`lib/linking-utils.ts`** (**`launchStreamingApp`**).
 
-**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones); **`app/movie/[id].tsx`** TMDB provider tiles when **`direct_url`** is absent (`launchStreamingService(provider_id)` → storefront home). **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
+**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones). Movie detail **Watch on** strip uses **`WatchOnButton`** + RapidAPI availability — the legacy TMDB provider-tile renderer was removed **2026-06**. **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
 
 ---
 
