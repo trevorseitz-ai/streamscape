@@ -30,12 +30,49 @@ Shipped on branch **`web-tv-parity-6-4`** (commits through **`8277d59`**). All i
 | **Movie detail — cast nav** | Cast/crew cards are **inert** (non-focusable, no navigation) when a person lacks a numeric TMDB id (Supabase UUID rows). | Prevents D-pad dead-ends on error screens. |
 | **Movie detail — IMDb rating** | OMDb-sourced **IMDb** chip renders alongside RT / Metacritic when cached. | Same chip row as Web; no TV-specific layout fork. |
 | **Movie detail — trailers** | Supabase-backed titles with **`tmdb_id`** fetch trailer keys via **direct client TMDB** (`fetchTrailerKeyFromTmdb`) before server API fallback. | Fixes release-TV builds where the Vercel **`/api/*`** origin is unreachable. |
+| **Movie detail — trailer aspect (QA)** | **Known issue:** trailer iframe sized by **60% window height** + **full width** → non-16:9 stretch on lean-back displays. **Planned fix:** lock **16:9** frame — see [Trailer modal — aspect ratio](#trailer-modal--aspect-ratio-planned-fix). |
 | **Movie detail — provider tiles cleanup** | Removed obsolete TMDB provider-tile renderer (~200 lines dead code). | **Watch on** strip uses **`WatchOnButton`** + RapidAPI / intent matrix only — see [Intent handoff protocol](#intent-handoff-protocol-bravia--native). |
 | **Watched list focus ring** | D-pad focus border on list rows (`#00F5FF`). | Matches Watchlist / home poster ring intent. |
 | **Watchlist provider logos** | Brand-grouped, cached logos (14-day TTL) on Watchlist + Watched rows. | Same **`providerBrands`** / enabled-service dimming as Watchlist. |
 | **DB migrations** | All legacy **`database/migrations`** consolidated into **`supabase/migrations`** with repaired remote history. | No TV runtime change; enables reliable **`supabase db push`**. |
 
 **Data model note:** The **Watched shelf** (`user_library`) is the **source of truth** for the Watched tab list, personal ratings, and stats. **`watched_history`** still receives inserts from the global watched toggle in **`lib/watchlist-status-context.tsx`** but is **not** the ratings/stats authority.
+
+---
+
+## Trailer modal — aspect ratio (planned fix)
+
+**Symptom (QA / TV):** YouTube trailers in the fullscreen modal look **stretched or letterboxed wrong** — especially on **Android TV** wide panels.
+
+**Root cause (current code):** [`app/movie/[id].tsx`](../../app/movie/[id].tsx) passes **`height={Math.floor(windowHeight * 0.6)}`** to [`TrailerPlayer`](../../components/TrailerPlayer.tsx) while the player container spans **full width** (`trailerModalPlayer` **`flex: 1`**). That decouples width from height, so the iframe is not a **16:9** box.
+
+**Does YouTube / TMDB send aspect ratio?**
+
+| Source | Aspect ratio? | Notes |
+|--------|:-------------:|-------|
+| **TMDB** `/movie/{id}/videos` | **No** | Returns YouTube **`key`**, `site`, `type`, `name` only — no width/height. |
+| **YouTube iframe embed** | **Implicit 16:9** | Player expects a **16:9 viewport**; wrong container geometry causes stretch/letterbox artifacts. |
+| **YouTube oEmbed** (`/oembed?url=…`) | **Yes (embed box)** | Returns default **`width`** / **`height`** (typically **16:9**). Optional runtime fetch; not used today. |
+| **YouTube Data API v3** | **Mostly no (for us)** | Public **`contentDetails`** has duration, not display AR. **`fileDetails.videoStreams[].aspectRatio`** is **owner-only** — not available for third-party trailer IDs. |
+
+**Product default:** Theatrical **movie trailers** on YouTube are overwhelmingly **16:9**. Size the modal player to **16:9** unless we later detect vertical **Shorts** (9:16) via oEmbed **`height > width`**.
+
+**Planned implementation**
+
+1. **`TrailerPlayer` / modal shell**
+   - Derive size from **width first:** `playerWidth = min(windowWidth - horizontalPad, maxContentWidth)`; `playerHeight = round(playerWidth * 9 / 16)`.
+   - Or RN **`aspectRatio: 16/9`** on the wrapper with **`width: '100%'`** and **`alignSelf: 'center'`** — no fixed **`height: 60%`** of window.
+   - Pass **matching `width` and `height`** into **`react-native-youtube-iframe`** (library supports both).
+2. **TV modal layout**
+   - Center the 16:9 frame vertically in the black fullscreen modal; **pillarbox** (side bars) on ultrawide is OK — **do not** stretch to fill width and height independently.
+   - Keep **`tvPlayGate`** overlay aligned to the **same 16:9 bounds** as the iframe (not the full-screen flex region).
+3. **Web parity**
+   - Same **`TrailerPlayer`** math on web export so browser and TV behave identically.
+4. **Optional v2**
+   - On open, fetch **YouTube oEmbed** once per `videoId` to confirm 16:9 vs 9:16; switch container ratio for Shorts only.
+5. **QA verification** — see [**`qa.md`**](qa.md) trailer checklist.
+
+**Files:** `components/TrailerPlayer.tsx`, `app/movie/[id].tsx` (modal styles), optionally shared helper `lib/trailerLayout.ts`.
 
 ---
 

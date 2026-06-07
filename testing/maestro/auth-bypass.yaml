@@ -1,0 +1,15 @@
+# Maestro / local E2E — skip TV login redirect (dev builds only).
+# Requires __DEV__ + EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1 in .env; restart Metro after change.
+#
+# Used by testing/maestro/trailer-tv.yaml instead of auth-flow.yaml.
+#
+appId: com.reeldive.app
+---
+- launchApp:
+    clearState: true
+
+# With bypass enabled, cold start lands in tabs instead of /login.
+- extendedWaitUntil:
+    visible:
+      id: "maestro-tab-discover"
+    timeout: 90000

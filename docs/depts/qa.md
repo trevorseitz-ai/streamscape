@@ -30,6 +30,19 @@
 
 - **Login only:** `maestro test … testing/maestro/auth-flow.yaml`
 - **Full smoke:** `npm run test:smoke-maestro` (must forward **`-e`** credentials the same way).
+- **Trailer (no login):** `npm run test:trailer-maestro` uses [`auth-bypass.yaml`](../../testing/maestro/auth-bypass.yaml) when **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** is in **`.env`** (dev builds only — see below).
+
+### Dev auth bypass (Maestro / local E2E)
+
+For flows that do not need a signed-in user (e.g. **movie detail + trailer**), skip the TV login wall:
+
+1. Add to **`.env`**: **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`**
+2. **Restart Metro** (`npm run android` or reload after env change).
+3. Run flows that use [`auth-bypass.yaml`](../../testing/maestro/auth-bypass.yaml) instead of [`auth-flow.yaml`](../../testing/maestro/auth-flow.yaml).
+
+**Safety:** [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts) gates on **`__DEV__`** — inactive in release/store builds even if the env var is set at build time.
+
+**Smoke / Profile flows** still need real credentials (`auth-flow.yaml`) because they assert signed-in UI.
 
 ---
 
@@ -58,8 +71,37 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 ## Manual / extended QA pointers
 
 - **Web:** Mobile Safari width bucketing & mount guards — [**`web.md`**](web.md#mobile-web-stability-standards).
-- **TV:** Focus graph rules (`tvNextFocus*`, sidebar escape) — [**`tv.md`**](tv.md#core-logic).
+- **TV:** Focus graph rules (`tvNextFocus*`, sidebar escape) — [**`tv.md`**](tv.md#spatial-engine-routing--focus-graphs).
 - **Regression scale:** Discover at **~1k+** mirrored rows stays scroll-smooth (**`product.md`** / **`web.md`**).
+
+### Trailer modal — aspect ratio (known issue / fix verification)
+
+**Reported:** YouTube trailers play at the **wrong aspect ratio** on lean-back (stretch or incorrect letterboxing).
+
+**Cause:** Player height is **`~60%` of window height** while width fills the modal — not a locked **16:9** frame. See [**`tv.md` — Trailer modal**](tv.md#trailer-modal--aspect-ratio-planned-fix).
+
+**Metadata:** **TMDB does not send aspect ratio** (YouTube `key` only). **YouTube does not push AR into the iframe** at runtime; **oEmbed** can return embed width/height (usually 16:9) if we fetch it — optional v2.
+
+| Check | Pass criteria |
+| :--- | :--- |
+| **Geometry** | Trailer picture is **16:9** — circles/logos in frame look round, not horizontally squashed. |
+| **Ultrawide / 4K TV** | Black **pillarbox** on sides is OK; video content must not stretch to fill non-16:9 box. |
+| **Play gate (TV)** | D-pad **Play** overlay covers the **same 16:9 region** as the video, not the full modal. |
+| **Web parity** | Same title on browser — visually matches TV framing (allow minor browser chrome). |
+| **Close control** | Close (×) remains focusable; no focus trap outside the player after fix. |
+
+**Test titles:** Pick at least one TMDB-backed movie and one TMDB-id-only path; open **Watch trailer** from movie detail on **physical Android TV** (emulator + device if possible).
+
+**Planned code touchpoints:** `components/TrailerPlayer.tsx`, `app/movie/[id].tsx`, `lib/trailerLayout.ts`, `lib/tmdb-trailer.ts`.
+
+**Automated checks**
+
+| Layer | Command | Pass criteria |
+| :--- | :--- | :--- |
+| **Layout simulation** | `npm run simulate:trailer-tv` | All viewport profiles **16:9**; Android TV legacy stretch **~2.96:1** vs fixed **~1.78:1**; Fight Club picks official **1080p** key. |
+| **Maestro E2E (device)** | `npm run test:trailer-maestro` (**`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** in `.env`, dev build) | Auth bypass → **`reeldive://movie/550`** → **`maestro-movie-watch-trailer`** → modal **`maestro-trailer-player-frame`** → **`maestro-trailer-play`** → **`maestro-trailer-close`**. Flow: [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml). |
+
+**Maestro testIDs:** `maestro-movie-watch-trailer`, `maestro-trailer-modal`, `maestro-trailer-player-frame`, `maestro-trailer-play`, `maestro-trailer-close`.
 
 ---
 

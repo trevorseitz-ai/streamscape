@@ -11,7 +11,6 @@ import {
   Alert,
   Keyboard,
   Modal,
-  Dimensions,
   FlatList,
   findNodeHandle,
 } from 'react-native';
@@ -46,6 +45,8 @@ import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
+import { pickBestYoutubeTrailerKey } from '../../lib/tmdb-trailer';
+import { computeTrailerPlayerLayout } from '../../lib/trailerLayout';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -145,7 +146,14 @@ interface TMDBMovieResponse {
     }>;
   };
   videos?: {
-    results?: Array<{ key: string; site: string; type: string }>;
+    results?: Array<{
+      key: string;
+      site: string;
+      type: string;
+      size?: number;
+      official?: boolean;
+      published_at?: string;
+    }>;
   };
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
   keywords?: {
@@ -353,9 +361,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   const us = watchProvidersResults?.US;
   const availability = buildAvailabilityFromProviders(us);
 
-  const trailer = (data.videos?.results ?? []).find(
-    (v) => v.site === 'YouTube' && v.type === 'Trailer'
-  );
+  const trailerKey = pickBestYoutubeTrailerKey(data.videos?.results);
 
   const usCertification = extractUsCertification(data.release_dates);
 
@@ -386,7 +392,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       ),
       imdb_id: imdbFromTmdb,
     },
-    trailerKey: trailer?.key ?? null,
+    trailerKey,
     watchProvidersResults,
   };
 }
@@ -556,7 +562,15 @@ export default function MovieDetailsScreen() {
     setSearchError,
   } = useSearch();
   const { setTitle } = useMovie();
-  const { isLandscape: breakpointLandscape, height: viewportHeight } = useBreakpoint();
+  const {
+    isLandscape: breakpointLandscape,
+    height: viewportHeight,
+    width: viewportWidth,
+  } = useBreakpoint();
+  const trailerPlayerLayout = useMemo(
+    () => computeTrailerPlayerLayout(viewportWidth, viewportHeight),
+    [viewportWidth, viewportHeight]
+  );
   const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
   const isTV = isTvTarget();
   const tvNf =
@@ -1014,12 +1028,16 @@ export default function MovieDetailsScreen() {
       });
       if (!res.ok) return null;
       const data = (await res.json()) as {
-        results?: { key?: string; site?: string; type?: string }[];
+        results?: {
+          key?: string;
+          site?: string;
+          type?: string;
+          size?: number;
+          official?: boolean;
+          published_at?: string;
+        }[];
       };
-      const trailer = (data.results ?? []).find(
-        (v) => v.site === 'YouTube' && v.type === 'Trailer'
-      );
-      return trailer?.key ?? null;
+      return pickBestYoutubeTrailerKey(data.results);
     } catch {
       return null;
     }
@@ -1646,6 +1664,7 @@ export default function MovieDetailsScreen() {
             {...tvNf}
           >
             <Pressable
+              testID="maestro-movie-watch-trailer"
               ref={
                 ((node) => {
                   setTrailerRowEntryRef(node);
@@ -2150,18 +2169,20 @@ export default function MovieDetailsScreen() {
         presentationStyle="fullScreen"
         onRequestClose={() => setTrailerModalVisible(false)}
       >
-        <View style={styles.trailerModalContainer} {...tvNf}>
+        <View style={styles.trailerModalContainer} testID="maestro-trailer-modal" {...tvNf}>
           {trailerKey ? (
             <View style={styles.trailerModalPlayer}>
               <TrailerPlayer
                 videoId={trailerKey}
-                height={Math.floor(Dimensions.get('window').height * 0.6)}
+                width={trailerPlayerLayout.width}
+                height={trailerPlayerLayout.height}
                 tvPlayGate={tvDpadFocus}
                 modalVisible={trailerModalVisible}
               />
             </View>
           ) : null}
           <Pressable
+            testID="maestro-trailer-close"
             {...tvFocusable()}
             focusable={tvDpadFocus ? true : undefined}
             onFocus={() => setTrailerCloseFocused(true)}
@@ -2576,7 +2597,9 @@ const styles = StyleSheet.create({
   },
   trailerModalPlayer: {
     flex: 1,
-    marginTop: Platform.OS === 'ios' ? 100 : 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
   },
   posterPlaceholderText: {
     fontSize: 24,

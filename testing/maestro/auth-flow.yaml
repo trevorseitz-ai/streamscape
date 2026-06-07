@@ -60,6 +60,12 @@ appId: com.reeldive.app
 
 - inputText: ${MAESTRO_TEST_USER_EMAIL}
 
+- scrollUntilVisible:
+    element:
+      id: "maestro-login-password"
+    direction: DOWN
+    timeout: 20000
+
 - tapOn:
     id: "maestro-login-password"
 

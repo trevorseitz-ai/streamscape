@@ -24,7 +24,9 @@
     "check:env-security": "npx tsx scripts/check-env-security.ts",
     "report:qa": "npx tsx scripts/generate-qa-report.ts",
     "test:auth-maestro": "maestro test testing/maestro/auth-flow.yaml",
-    "test:smoke-maestro": "maestro test testing/maestro/smoke-test.yaml"
+    "test:smoke-maestro": "maestro test testing/maestro/smoke-test.yaml",
+    "simulate:trailer-tv": "npx tsx scripts/simulate-trailer-tv.ts",
+    "test:trailer-maestro": "npx tsx scripts/simulate-trailer-tv.ts && maestro test testing/maestro/trailer-tv.yaml"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

@@ -3,7 +3,8 @@ import { View, StyleSheet } from 'react-native';
 
 interface TrailerPlayerProps {
   videoId: string;
-  height?: number;
+  width: number;
+  height: number;
 }
 
 const iframe = React.createElement as (
@@ -11,14 +12,21 @@ const iframe = React.createElement as (
   props: Record<string, unknown>,
 ) => React.ReactElement;
 
-export function TrailerPlayer({ videoId, height = 250 }: TrailerPlayerProps) {
+export function TrailerPlayer({ videoId, width, height }: TrailerPlayerProps) {
+  const embedSrc = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1`;
+
   return (
-    <View style={[styles.container, height ? { height } : undefined]}>
+    <View
+      testID="maestro-trailer-player-frame"
+      style={[styles.container, { width, height }]}
+    >
       {iframe('iframe', {
-        src: `https://www.youtube.com/embed/${videoId}`,
-        width: '100%',
+        src: embedSrc,
+        width,
         height,
-        style: { border: 'none', borderRadius: 12 },
+        style: { border: 'none', borderRadius: 12, display: 'block' },
+        allow:
+          'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
         allowFullScreen: true,
         title: 'Movie Trailer',
       })}
@@ -30,5 +38,7 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 12,
     overflow: 'hidden',
+    flexGrow: 0,
+    flexShrink: 0,
   },
 });

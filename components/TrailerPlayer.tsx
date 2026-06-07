@@ -7,7 +7,8 @@ import { tvPreferredFocusProps } from '../lib/tvFocus';
 
 interface TrailerPlayerProps {
   videoId: string;
-  height?: number;
+  width: number;
+  height: number;
   /**
    * TV / **`EXPO_PUBLIC_TV_FOCUS`**: RN **Play** control with **`hasTVPreferredFocus`** drives iframe
    * **`play`** so the Close (×) chip is not the first focus trap.
@@ -19,7 +20,8 @@ interface TrailerPlayerProps {
 
 export function TrailerPlayer({
   videoId,
-  height = 250,
+  width,
+  height,
   tvPlayGate = false,
   modalVisible = true,
 }: TrailerPlayerProps) {
@@ -47,16 +49,26 @@ export function TrailerPlayer({
   }, []);
 
   return (
-    <View style={[styles.container, height ? { height } : undefined]}>
+    <View
+      testID="maestro-trailer-player-frame"
+      style={[styles.container, { width, height }]}
+    >
       <YoutubePlayer
         ref={youtubeRef}
+        width={width}
         height={height}
         videoId={videoId}
         play={playControlled}
         forceAndroidAutoplay={tvPlayGate && Platform.OS === 'android'}
+        initialPlayerParams={{
+          rel: false,
+          modestbranding: true,
+          preventFullScreen: false,
+        }}
       />
       {tvPlayGate && !playing ? (
         <Pressable
+          testID="maestro-trailer-play"
           {...tvPreferredFocusProps()}
           style={({ pressed }) => [styles.playOverlay, pressed && styles.playOverlayPressed]}
           onPress={handleInitialPlayPress}
@@ -78,6 +90,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   playOverlay: {
     ...StyleSheet.absoluteFillObject,

@@ -1,4 +1,5 @@
 import { createSupabaseAdmin } from '../../lib/supabase-server';
+import { pickBestYoutubeTrailerKey } from '../../lib/tmdb-trailer';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
@@ -62,6 +63,9 @@ interface TMDBFullMovie {
       key: string;
       site: string;
       type: string;
+      size?: number;
+      official?: boolean;
+      published_at?: string;
     }>;
   };
 }
@@ -233,9 +237,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const trailer = (movieData.videos?.results ?? []).find(
-      (v) => v.site === 'YouTube' && v.type === 'Trailer'
-    );
+    const trailerKey = pickBestYoutubeTrailerKey(movieData.videos?.results);
 
     return Response.json({
       success: true,
@@ -243,7 +245,7 @@ export async function GET(request: Request) {
       enriched: true,
       castCount: castEntries.length,
       platformCount: platforms.length,
-      trailerKey: trailer?.key ?? null,
+      trailerKey,
     });
   } catch (error) {
     console.error('[Movie API] Unhandled error:', error);

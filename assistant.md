@@ -18,6 +18,7 @@
 Persistent queue — **do not remove** when adding a new session; check off or move items when done.
 
 - [ ] **Paywall & subscription tiers** — Spec in [`docs/depts/product.md`](docs/depts/product.md#monetization--paywall--planned-not-built). **1-month trial** with full paywalled features, then real free tier; **2-week data retention** if user does not upgrade. **TBD:** which features are gated, billing provider, purge policy after grace period, TV/web parity on gates.
+- [x] **Trailer modal 16:9 fix** — Shipped: `lib/trailerLayout.ts`, TMDB trailer pick, Maestro [`trailer-tv.yaml`](testing/maestro/trailer-tv.yaml). Verify per [`docs/depts/qa.md`](docs/depts/qa.md#trailer-modal--aspect-ratio-known-issue--fix-verification).
 - [ ] **Open PR** — `web-tv-parity-6-4` → `main` (if not merged).
 - [ ] **Manual TV QA** — Watched ratings, add-flow, cast, release-TV trailers.
 - [ ] **Google TV store submission** — signing, permissions, AAB, listing assets.

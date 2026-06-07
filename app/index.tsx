@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { isTvTarget } from '../lib/isTv';
 import { tvFocusable } from '../lib/tvFocus';
+import { isMaestroAuthBypassEnabled } from '../lib/maestroBypass';
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -30,6 +31,14 @@ export default function LandingScreen() {
   }, [isTV, width, height]);
 
   useEffect(() => {
+    if (isMaestroAuthBypassEnabled()) {
+      if (__DEV__) {
+        console.log('[Landing] Maestro auth bypass — entering tabs without session');
+      }
+      router.replace('/(tabs)');
+      return;
+    }
+
     let cancelled = false;
     const timeoutMs = 8000;
     const t = setTimeout(() => {
