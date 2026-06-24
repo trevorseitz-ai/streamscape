@@ -54,6 +54,71 @@ For flows that do not need a signed-in user (e.g. **movie detail + trailer**), s
 
 Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.md), [**`web-tv-parity.md`**](web-tv-parity.md), [**`web.md`**](web.md), [**`tv.md`**](tv.md), [**`shared.md`**](shared.md).
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow — some automation, no CI, manual sign-off incomplete**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+
+### Testing already done
+
+| What | How | Result |
+| :--- | :--- | :--- |
+| Secret scan | `npm run check:env-security` | Operational |
+| Trailer layout math | `npm run simulate:trailer-tv` | **Pass** (June 2026) |
+| Trailer flow (TV emulator) | `npm run test:trailer-maestro` | **Pass** (June 2026) |
+| Discover at ~1k rows | Phase 1 validation | Pass |
+| Mobile web layout stability | Viewport bucketing | Pass ([`web.md`](web.md)) |
+
+### Testing gaps (automation)
+
+- No **GitHub Actions** CI in repo  
+- **`npm run test:smoke-maestro`** not verified green — needs `MAESTRO_TEST_USER_*` + **`discover-smoke-poster`** testID on Discover  
+- No Web browser E2E (Playwright/Cypress)  
+- No unit test suite  
+- Maestro on **release** APK with real auth (dev bypass off in production)  
+- Physical Android TV sign-off  
+- Formal checklist for Watched ratings (June 2026 ship)  
+
+### Manual testing still required before launch
+
+**Account:** Sign up/in/out Web + TV; session survives restart; same account → same watchlist on both.
+
+**Discover:** Grid loads; ~16 providers, ~1,206 titles post-sync; filters work.
+
+**Watchlist & Watched:** Add/remove/reorder; rate from Watched tab; stats update; **`watched_history` vs `user_library`** behavior documented or fixed.
+
+**Movie detail:** TMDB-id and Supabase-id paths; cast navigation when TMDB id exists; trailer 16:9 on real TV + Web; “Watch on” on physical TV.
+
+**TV-only:** Full D-pad path; TV keyboard login; release build without Metro.
+
+**Web-only:** Mobile Safari 390–430px; desktop 6-column Discover.
+
+**Store:** Release AAB installs; permissions acceptable to Play policy.
+
+Use [Test matrix](#test-matrix) and [Manual / extended QA pointers](#manual--extended-qa-pointers) below for detail.
+
+### QA-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Full QA on **physical** Android TV (signed checklist) |
+| P0 | Green Maestro smoke on **release** APK with test user |
+| P0 | Green `check:env-security` on RC branch |
+| P1 | GitHub Actions — env-security on PR; optional nightly `report:qa` |
+| P1 | Wire `discover-smoke-poster` testID for smoke flow |
+
+### Proof deliverables (QA)
+
+- Signed copy of this office checklist for RC  
+- `qa-audit-summary.json` from `npm run report:qa` — PASS  
+- Maestro logs: smoke + trailer on **release** build  
+- Physical TV test notes + trailer 16:9 sign-off  
+
 ---
 
 ## Test matrix

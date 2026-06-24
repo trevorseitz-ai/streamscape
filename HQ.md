@@ -5,6 +5,8 @@
 > **Legacy product name:** If you still see **StreamScape** somewhere, check [`HQ/streamscape-remnants-map.md`](HQ/streamscape-remnants-map.md) (intentional vs planned renames).
 >
 > **Session handoff (agent / dev):** [`assistant.md`](assistant.md) — what we did last session and what’s next.
+>
+> **Launch readiness (all departments, human-readable):** [`docs/reeldive-launch-readiness-report-june-2026.md`](docs/reeldive-launch-readiness-report-june-2026.md)
 
 ---
 
@@ -85,6 +87,7 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 | **TV App** | [docs/depts/tv.md](docs/depts/tv.md) | Android TV: D-pad focus, sidebar, lean-back layout. |
 | **Shared components** | [docs/depts/shared.md](docs/depts/shared.md) | Cross-surface primitives (e.g. `MovieRow` / viewport bucketing). See also [Web ↔ TV parity](docs/depts/web-tv-parity.md). |
 | **QA & Automation** | [docs/depts/qa.md](docs/depts/qa.md) | Test matrix, **`npm run report:qa`** autonomous digest (**Resend**), nightly schedule (**08:00 UTC**) — **Operational**. |
+| **Launch readiness (June 2026)** | [docs/reeldive-launch-readiness-report-june-2026.md](docs/reeldive-launch-readiness-report-june-2026.md) | Master handoff report; dept slices in each office file under **Launch readiness (June 2026)**. |
 
 ---
 

@@ -5,6 +5,42 @@
 
 **Related:** [`docs/API-ENDPOINTS.md`](API-ENDPOINTS.md) · [`docs/NATIVE_OPERATIONAL_URLS.md`](NATIVE_OPERATIONAL_URLS.md) · [`docs/database_schema.md`](database_schema.md) · [`docs/depts/product.md`](depts/product.md) · [`reeldive_state.md`](../reeldive_state.md)
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Green for current scope — production Supabase in use**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+
+### What’s running
+
+- **Supabase:** Auth, profiles, watchlists, **`user_library`** (watched shelf + **1–5** `personal_rating`) with RLS  
+- **Migrations:** [`supabase/migrations/`](../supabase/migrations/) only — do not hand-edit production  
+- **Stream Finder sync:** Catalog mirror (~**1,206** titles, **16** providers at last documented sync, April 30, 2026) via `npm run sync:stream-finder`  
+- **TMDB:** Enrichment + filtered Discover  
+- **RapidAPI:** Per-title streaming availability  
+- **OMDb:** External rating chips when keyed and cached on `media`  
+
+### Known data issue (launch-critical)
+
+Global watched toggle writes **`watched_history`**; Watched tab authority is **`user_library`**. Product must fix or waive — see [`product.md`](depts/product.md#launch-readiness-june-2026).
+
+### Before launch (backend / ops)
+
+- [ ] Run fresh **`npm run sync:stream-finder`**; verify ~1,206 titles / 16 providers  
+- [ ] Confirm all migrations applied through **`20260605161700_user_library_personal_rating.sql`**  
+- [ ] Production Supabase keys rotated; service role **not** in client bundle  
+- [ ] OMDb production key + rating backfill plan (P1)  
+
+### Proof deliverables (Backend)
+
+- Applied migration list + verification  
+- Stream Finder sync report (title count, provider count, timestamp)  
+- Production env confirmation (no secrets in git)  
+
 ---
 
 ## 1. System layers (top to bottom)

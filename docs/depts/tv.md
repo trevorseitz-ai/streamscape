@@ -4,6 +4,58 @@
 
 > **Web ↔ Android TV — high-level parity & crossover:** [Web ↔ TV parity & crossover](web-tv-parity.md).
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow on product, Red on store — best lean-back experience, not yet submitted**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+
+### What’s in good shape
+
+Primary lean-back investment: fixed **140×210** poster grid, **5** columns, D-pad on major tabs, Watched ratings + TV modal, **16:9** trailers (fixed June 2026; [`npm run test:trailer-maestro`](../../package.json) PASS on emulator), “Watch on” intents to installed streamers. Release builds use direct TMDB when Vercel `/api/*` is unreachable — see [Recent delivery](#recent-delivery-june-2026--webtv-parity--watched-ratings).
+
+### What’s missing or risky
+
+- **Google Play:** No signed AAB uploaded; listing screenshots, copy, content rating open.  
+- **Physical device QA:** Trailer pass on emulator only; real TVs differ for focus and intents.  
+- **Focus Bridge on Home:** Sidebar → Home row focus still WIP ([`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx)).  
+- **`android.isTV: true`:** Phone APKs get TV chrome until EAS flavors split.
+
+### Before TV goes live
+
+Sideload **release AAB** on a real Google TV device. Full D-pad walkthrough. Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing. Focus Bridge done **or** signed waiver.
+
+### TV-specific manual QA (launch gate)
+
+- [ ] Full D-pad path: sidebar → each tab → back  
+- [ ] Home row Focus Bridge (or waiver documented)  
+- [ ] Login IME + submit on lean-back  
+- [ ] Release build without Metro (sideload AAB)  
+- [ ] Trailer **16:9** on **physical** panel  
+- [ ] “Watch on” on physical TV (top 5 streamers minimum)  
+- [ ] Release AAB installs cleanly; permissions match Play policy  
+
+### TV-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Signed Android TV AAB → Play (internal/beta track) |
+| P0 | Physical Android TV QA (matrix above) |
+| P0 | Play Console listing (screenshots, banner, data safety) |
+| P1 | Focus Bridge on Home rows OR documented waiver |
+| P1 | Release signing secured (EAS / Play App Signing) |
+
+### Proof deliverables (TV)
+
+- Signed AAB + `versionCode`  
+- Physical TV test notes (device model, Android version, pass/fail)  
+- Maestro trailer logs on **release** build  
+- Photo/note: 16:9 trailer on real panel  
+
 ---
 
 ## Success story: resolving `Network request failed` on TV
