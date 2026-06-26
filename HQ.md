@@ -31,7 +31,7 @@ _Update this table when priorities shift._
 - **Active roadmap:** **Phase 2 — User utility & bug squashing** (**in progress**) — Watched **1–5 star ratings** shipped; web/TV movie-detail parity (cast, IMDb, trailers, **16:9 trailer modal**); migration consolidation. See [`docs/depts/product.md`](docs/depts/product.md).
 - **Completed (June 2026):** Watched personal ratings; Stream Finder migration unification; movie-detail parity pass; **trailer 16:9 layout + Maestro E2E** on branch **`web-tv-parity-6-4`** (`a21fb63`).
 - **Current Focus:** Google TV store prep + manual TV QA; D-pad **Focus Bridge** on Home rows.
-- **Next Step:** See **Product** office — prioritized queue (store submission, watched data-model cleanup, deep linking, handset build split).
+- **Next Step:** See **Product** office — [Pre-launch plan (workable task list)](docs/depts/product.md#pre-launch-plan--workable-task-list-june-2026).
 
 ---
 
