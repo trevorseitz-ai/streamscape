@@ -325,13 +325,13 @@ export function TvSidebarTabBar({ state, descriptors, navigation, insets }: Bott
         };
 
         /**
-         * Search → field tag. Else → `mainContentEntryNativeTag` (Discover = monetization **All**
-         * chip `discoverAllFilterButton`; Home / Watchlist publish their own anchors). If missing,
-         * omit `nextFocusRight` so Android searches east.
+         * Search → first results row when populated, else search field. Other tabs →
+         * `mainContentEntryNativeTag` (Discover = monetization **All** chip; Home / Watchlist
+         * publish their own anchors). If missing, omit `nextFocusRight` so Android searches east.
          */
         const mainRightBridge: number | undefined =
-          slotName === 'search' && searchFieldNativeTag != null
-            ? searchFieldNativeTag
+          slotName === 'search'
+            ? (mainContentEntryNativeTag ?? searchFieldNativeTag ?? undefined)
             : mainContentEntryNativeTag ?? undefined;
         const nextFocusRightTarget = mainRightBridge;
 

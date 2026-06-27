@@ -15,7 +15,8 @@ type TvSearchFocusState = {
   registerSidebarSlotNavTag: (slot: string, tag: number | null) => void;
   /**
    * Default Android `nextFocusRight` target from the sidebar into the tab scene
-   * (e.g. home hero — first focusable in main content).
+   * (e.g. home hero — first focusable in main content). On **Search**, when results
+   * are visible, takes precedence over the search field tag for sidebar bridge.
    */
   mainContentEntryNativeTag: number | null;
   setMainContentEntryNativeTag: (tag: number | null) => void;

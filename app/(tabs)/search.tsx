@@ -4,6 +4,7 @@ import {
   useState,
   useLayoutEffect,
   useCallback,
+  useMemo,
   type ElementRef,
 } from 'react';
 import { useRouter } from 'expo-router';
@@ -17,17 +18,22 @@ import {
   Pressable,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { MovieCard, type Movie } from '../../components/MovieCard';
 import { useSearch } from '../../lib/search-context';
 import { fetchTmdb } from '../../lib/tmdbFetch';
-import { isTvTarget } from '../../lib/isTv';
+import { isTvTarget, shouldUseTvDpadFocus } from '../../lib/isTv';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
+import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
+import { tvFocusable } from '../../lib/tvFocus';
 
 const TMDB_POSTER_W92 = 'https://image.tmdb.org/t/p/w92';
+/** TV list-row focus ring — matches Watchlist `rowTvFocused`. */
+const TV_ROW_FOCUS_CYAN = '#00F5FF';
 
 interface SuggestionMovie {
   id: number;
@@ -36,30 +42,92 @@ interface SuggestionMovie {
   release_date?: string;
 }
 
+type TvSearchSuggestionRowProps = {
+  suggestion: SuggestionMovie;
+  isLast: boolean;
+  isFirst: boolean;
+  firstRowRef: (node: ElementRef<typeof Pressable> | null) => void;
+  sidebarLeftTag: number | null;
+  searchFieldTag: number | null;
+  onSelect: () => void;
+  onContentFocus: () => void;
+};
+
+function TvSearchSuggestionRow({
+  suggestion,
+  isLast,
+  isFirst,
+  firstRowRef,
+  sidebarLeftTag,
+  searchFieldTag,
+  onSelect,
+  onContentFocus,
+}: TvSearchSuggestionRowProps) {
+  const [focused, setFocused] = useState(false);
+  const year =
+    suggestion.release_date?.length >= 4 ? suggestion.release_date.slice(0, 4) : '';
+
+  return (
+    <Pressable
+      ref={isFirst ? (firstRowRef as never) : undefined}
+      {...tvFocusable()}
+      {...(Platform.OS === 'android'
+        ? tvAndroidNavProps({
+            nextFocusLeft: sidebarLeftTag,
+            nextFocusUp: isFirst ? searchFieldTag : undefined,
+          })
+        : {})}
+      style={[
+        styles.suggestionRowTv,
+        isLast && styles.suggestionRowTvLast,
+        focused && styles.suggestionRowTvFocused,
+      ]}
+      onPress={onSelect}
+      onFocus={() => {
+        setFocused(true);
+        onContentFocus();
+      }}
+      onBlur={() => setFocused(false)}
+    >
+      {suggestion.poster_path ? (
+        <Image
+          source={{ uri: `${TMDB_POSTER_W92}${suggestion.poster_path}` }}
+          style={styles.suggestionThumb}
+        />
+      ) : (
+        <View style={styles.suggestionThumbPlaceholder}>
+          <Text style={styles.suggestionThumbInitial}>{suggestion.title.charAt(0)}</Text>
+        </View>
+      )}
+      <View style={styles.suggestionTextCol}>
+        <Text style={styles.suggestionTitle} numberOfLines={2}>
+          {suggestion.title}
+        </Text>
+        {year ? <Text style={styles.suggestionYear}>{year}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function SearchScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const isTV = isTvTarget();
+  const tvDpadFocus = shouldUseTvDpadFocus();
+  const tvNav = tvDpadFocus && Platform.OS === 'android';
+  const tvNf =
+    tvNav ? ({ focusable: false, collapsable: false } as const) : {};
   const inputRef = useRef<ElementRef<typeof TextInput>>(null);
   const { setRef: setSearchNavRef, nativeTag: searchFieldNavTag } = useTvNativeTag();
-  const { setSearchFieldNativeTag, setTvContentHasFocus } = useTvSearchFocusBridge();
+  const { setRef: setFirstSuggestionRef, nativeTag: firstSuggestionNavTag } = useTvNativeTag();
+  const [searchResultPosterTag, setSearchResultPosterTag] = useState<number | null>(null);
+  const {
+    setSearchFieldNativeTag,
+    setMainContentEntryNativeTag,
+    setTvContentHasFocus,
+    sidebarSlotNativeTags,
+  } = useTvSearchFocusBridge();
 
-  const setInputRefMerged = useCallback(
-    (node: ElementRef<typeof TextInput> | null) => {
-      inputRef.current = node;
-      setSearchNavRef(node);
-    },
-    [setSearchNavRef]
-  );
-
-  useLayoutEffect(() => {
-    if (!isTV || !isFocused) {
-      setSearchFieldNativeTag(null);
-      return;
-    }
-    setSearchFieldNativeTag(searchFieldNavTag);
-    return () => setSearchFieldNativeTag(null);
-  }, [isTV, isFocused, searchFieldNavTag, setSearchFieldNativeTag]);
   const {
     query,
     setQuery,
@@ -74,6 +142,57 @@ export default function SearchScreen() {
   const [suggestions, setSuggestions] = useState<SuggestionMovie[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const suggestionRequestId = useRef(0);
+
+  const searchSidebarLeftTag = tvNav ? (sidebarSlotNativeTags['search'] ?? null) : null;
+
+  const setInputRefMerged = useCallback(
+    (node: ElementRef<typeof TextInput> | null) => {
+      inputRef.current = node;
+      setSearchNavRef(node);
+    },
+    [setSearchNavRef]
+  );
+
+  useLayoutEffect(() => {
+    if (!tvNav || !isFocused) {
+      setSearchFieldNativeTag(null);
+      return;
+    }
+    setSearchFieldNativeTag(searchFieldNavTag);
+    return () => setSearchFieldNativeTag(null);
+  }, [tvNav, isFocused, searchFieldNavTag, setSearchFieldNativeTag]);
+
+  const contentEntryTag = useMemo(() => {
+    if (!tvNav) return null;
+    if (searchResult != null && searchResultPosterTag != null) {
+      return searchResultPosterTag;
+    }
+    if (suggestions.length > 0 && firstSuggestionNavTag != null) {
+      return firstSuggestionNavTag;
+    }
+    return null;
+  }, [
+    tvNav,
+    searchResult,
+    searchResultPosterTag,
+    suggestions.length,
+    firstSuggestionNavTag,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!tvNav || !isFocused) {
+      setMainContentEntryNativeTag(null);
+      return;
+    }
+    setMainContentEntryNativeTag(contentEntryTag);
+    return () => setMainContentEntryNativeTag(null);
+  }, [tvNav, isFocused, contentEntryTag, setMainContentEntryNativeTag]);
+
+  useEffect(() => {
+    if (searchResult == null) {
+      setSearchResultPosterTag(null);
+    }
+  }, [searchResult]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -132,15 +251,34 @@ export default function SearchScreen() {
     router.back();
   };
 
+  const openSuggestion = useCallback(
+    (suggestionId: number) => {
+      Keyboard.dismiss();
+      setSearchResult(null);
+      setSearchError(null);
+      router.push(`/movie/${suggestionId}`);
+    },
+    [router, setSearchResult, setSearchError]
+  );
+
+  const handleSearchResultPosterTag = useCallback((tag: number | null) => {
+    setSearchResultPosterTag(tag);
+  }, []);
+
+  const showSuggestions = query.trim().length >= 3 && suggestions.length > 0;
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={handleBack} style={styles.backButton} hitSlop={8}>
-          <Ionicons name="arrow-back" size={24} color="#ffffff" />
-        </Pressable>
-        <View style={styles.inputWrapper}>
+    <SafeAreaView style={styles.container} edges={['top']} {...tvNf}>
+      <View style={styles.header} {...tvNf}>
+        {!isTV ? (
+          <Pressable onPress={handleBack} style={styles.backButton} hitSlop={8}>
+            <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          </Pressable>
+        ) : null}
+        <View style={styles.inputWrapper} {...tvNf}>
+          {/** Keep a stable instance — remounting (e.g. via `key`) dismisses the keyboard when suggestions update. */}
           <TextInput
-            ref={isTV ? setInputRefMerged : inputRef}
+            ref={tvNav ? setInputRefMerged : inputRef}
             style={styles.input}
             placeholder="Search movies..."
             placeholderTextColor="#6b7280"
@@ -155,10 +293,22 @@ export default function SearchScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus
-            onFocus={isTV ? () => setTvContentHasFocus(true) : undefined}
+            focusable={tvNav ? true : undefined}
+            onFocus={tvNav ? () => setTvContentHasFocus(true) : undefined}
+            {...(tvNav
+              ? tvAndroidNavProps({
+                  nextFocusLeft: searchSidebarLeftTag,
+                  nextFocusDown: contentEntryTag,
+                })
+              : {})}
           />
           {query.length > 0 ? (
-            <Pressable style={styles.clearButton} onPress={() => setQuery('')} hitSlop={8}>
+            <Pressable
+              style={styles.clearButton}
+              onPress={() => setQuery('')}
+              hitSlop={8}
+              {...(isTV ? { focusable: false } : {})}
+            >
               <Ionicons name="close-circle" size={20} color="#6b7280" />
             </Pressable>
           ) : null}
@@ -171,13 +321,30 @@ export default function SearchScreen() {
         </View>
       ) : null}
 
-      {query.trim().length >= 3 && suggestions.length > 0 && (
+      {showSuggestions ? (
+        tvNav ? (
+          <View style={styles.suggestionsListTv} {...tvNf}>
+            {suggestions.slice(0, 5).map((suggestion, index) => {
+              const isLast = index === Math.min(suggestions.length, 5) - 1;
+              const isFirst = index === 0;
+              return (
+                <TvSearchSuggestionRow
+                  key={suggestion.id}
+                  suggestion={suggestion}
+                  isLast={isLast}
+                  isFirst={isFirst}
+                  firstRowRef={setFirstSuggestionRef}
+                  sidebarLeftTag={searchSidebarLeftTag}
+                  searchFieldTag={searchFieldNavTag}
+                  onSelect={() => openSuggestion(suggestion.id)}
+                  onContentFocus={() => setTvContentHasFocus(true)}
+                />
+              );
+            })}
+          </View>
+        ) : (
         <View style={styles.suggestionsDropdown}>
           {suggestions.slice(0, 5).map((suggestion, index) => {
-            const year =
-              suggestion.release_date?.length >= 4
-                ? suggestion.release_date.slice(0, 4)
-                : '';
             const isLast = index === Math.min(suggestions.length, 5) - 1;
             return (
               <Pressable
@@ -187,18 +354,11 @@ export default function SearchScreen() {
                   isLast && styles.suggestionRowLast,
                   pressed && styles.suggestionRowPressed,
                 ]}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setSearchResult(null);
-                  setSearchError(null);
-                  router.push(`/movie/${suggestion.id}`);
-                }}
+                onPress={() => openSuggestion(suggestion.id)}
               >
                 {suggestion.poster_path ? (
                   <Image
-                    source={{
-                      uri: `${TMDB_POSTER_W92}${suggestion.poster_path}`,
-                    }}
+                    source={{ uri: `${TMDB_POSTER_W92}${suggestion.poster_path}` }}
                     style={styles.suggestionThumb}
                   />
                 ) : (
@@ -212,17 +372,20 @@ export default function SearchScreen() {
                   <Text style={styles.suggestionTitle} numberOfLines={2}>
                     {suggestion.title}
                   </Text>
-                  {year ? (
-                    <Text style={styles.suggestionYear}>{year}</Text>
+                  {suggestion.release_date?.length >= 4 ? (
+                    <Text style={styles.suggestionYear}>
+                      {suggestion.release_date.slice(0, 4)}
+                    </Text>
                   ) : null}
                 </View>
               </Pressable>
             );
           })}
         </View>
-      )}
+        )
+      ) : null}
 
-      <View style={styles.content}>
+      <View style={styles.content} {...tvNf}>
         {searchLoading && (
           <View style={styles.resultBox}>
             <ActivityIndicator size="large" color="#6366f1" />
@@ -238,7 +401,13 @@ export default function SearchScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Search Result</Text>
             <View style={styles.resultRow}>
-              <MovieCard movie={searchResult} onPress={() => handleMoviePress(searchResult)} />
+              <MovieCard
+                movie={searchResult}
+                onPress={() => handleMoviePress(searchResult)}
+                tvNextFocusLeft={tvNav ? searchSidebarLeftTag : undefined}
+                tvNextFocusUp={tvNav ? searchFieldNavTag : undefined}
+                onTvPosterNavTag={tvNav ? handleSearchResultPosterTag : undefined}
+              />
             </View>
           </View>
         )}
@@ -313,6 +482,27 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 8,
+  },
+  /** Android TV: separate rows (Watchlist-style) instead of grouped dropdown. */
+  suggestionsListTv: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 2,
+  },
+  suggestionRowTv: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 80,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2d2d2d',
+  },
+  suggestionRowTvLast: {},
+  suggestionRowTvFocused: {
+    borderColor: TV_ROW_FOCUS_CYAN,
+    borderWidth: 2,
   },
   suggestionRow: {
     flexDirection: 'row',

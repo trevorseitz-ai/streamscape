@@ -22,7 +22,8 @@ Primary lean-back investment: fixed **140×210** poster grid, **5** columns, D-p
 
 - **Google Play:** No signed AAB uploaded; listing screenshots, copy, content rating open.  
 - **Physical device QA:** Trailer pass on emulator only; real TVs differ for focus and intents.  
-- **Focus Bridge on Home:** Sidebar → Home row focus still WIP ([`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx)).  
+- **Focus Bridge on Home:** Shipped — sidebar → hero / trending via `mainContentEntryNativeTag`.  
+- **Focus Bridge on Search (results):** Shipped — when suggestions or a search-result poster populate (keyboard dismissed), sidebar → first result row via `mainContentEntryNativeTag`; field `nextFocusDown` wired. See [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx).
 - **`android.isTV: true`:** Phone APKs get TV chrome until EAS flavors split.
 
 ### Before TV goes live

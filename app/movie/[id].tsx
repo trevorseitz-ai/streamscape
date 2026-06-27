@@ -632,6 +632,8 @@ export default function MovieDetailsScreen() {
   const { setRef: setCastRowEntryRef, nativeTag: castRowEntryTag } = useTvNativeTag();
   const { setRef: setCrewRowEntryRef, nativeTag: crewRowEntryTag } = useTvNativeTag();
   const { setRef: setSimilarRowEntryRef, nativeTag: similarRowEntryTag } = useTvNativeTag();
+  /** “Discover More Like This” — second row below watchlist / watched actions. */
+  const { setRef: setSimilarActionBtnRef, nativeTag: similarActionBtnTag } = useTvNativeTag();
   /** Trailer row (single “Watch trailer” under streaming) — first/only focus in that row. */
   const { setRef: setTrailerRowEntryRef, nativeTag: trailerRowEntryTag } = useTvNativeTag();
   /** Left self-trap on the first control in the secondary action row. */
@@ -1462,8 +1464,10 @@ export default function MovieDetailsScreen() {
           ? secondaryActionRowEntryTag
           : castRowEntryTag)
       : null;
-    const downFromSecondaryLadder = tvLadderAndroid
-      ? (castRowEntryTag ?? crewRowEntryTag)
+    const downFromSecondaryTopRow = tvLadderAndroid
+      ? hasSimilarActionBtn
+        ? similarActionBtnTag
+        : castRowEntryTag ?? crewRowEntryTag
       : null;
     const upAboveSecondary = tvLadderAndroid
       ? hasTrailer
@@ -1473,7 +1477,10 @@ export default function MovieDetailsScreen() {
           : streamRowEntryTag
       : null;
     const upOnCastLadder = tvLadderAndroid
-      ? (secondaryActionRowEntryTag ?? trailerRowEntryTag ?? streamRowEntryTag)
+      ? (similarActionBtnTag ??
+        secondaryActionRowEntryTag ??
+        trailerRowEntryTag ??
+        streamRowEntryTag)
       : null;
     const downOnCastLadder = tvLadderAndroid
       ? (crewRowEntryTag ?? similarRowEntryTag)
@@ -1508,14 +1515,24 @@ export default function MovieDetailsScreen() {
     const similarLadderNav = buildLadder(upOnSimilarLadder, null);
     const secondaryActionRowNav = buildLadder(
       upAboveSecondary,
-      downFromSecondaryLadder,
+      downFromSecondaryTopRow,
+    );
+    const similarActionBtnNav = buildLadder(
+      session ? lastSecondaryLocalTag : upAboveSecondary,
+      castRowEntryTag ?? crewRowEntryTag,
     );
     const trailerRowNav = buildLadder(
       hasStreams ? streamRowAnchorUpTag : null,
       downFromTrailerRow,
     );
-    const lastWallIsSimilar = hasSimilarActionBtn;
-    const lastWallIsLibrary = !!session && !hasSimilarActionBtn;
+    const lastWallIsLibrary = !!session;
+    const hasTopActionRow =
+      !!session ||
+      (!hasSimilarActionBtn &&
+        (fromWatchedParam === 'true' ||
+          (shouldShowRecommendations &&
+            recommendations.length === 0 &&
+            fromWatchedParam !== 'true')));
 
     return (
       <>
@@ -1748,7 +1765,9 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
-        <View style={styles.actionRow} {...tvNf}>
+        <View style={styles.actionActionsColumn} {...tvNf}>
+          {hasTopActionRow ? (
+          <View style={styles.actionRow} {...tvNf}>
           {session ? (
             <Pressable
               ref={
@@ -1860,29 +1879,47 @@ export default function MovieDetailsScreen() {
               </Text>
             </Pressable>
           ) : null}
+          {!hasSimilarActionBtn && fromWatchedParam === 'true' ? (
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Watched
+              </Text>
+            </View>
+          ) : !hasSimilarActionBtn &&
+            shouldShowRecommendations &&
+            recommendations.length === 0 &&
+            fromWatchedParam !== 'true' ? (
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Movie Info
+              </Text>
+            </View>
+          ) : null}
+          </View>
+          ) : null}
           {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
               ref={
                 ((node) => {
-                  if (!session && hasSimilarActionBtn) {
+                  setSimilarActionBtnRef(node);
+                  if (!session) {
                     setFirstSecondaryLocalRef(node);
                     setSecondaryActionRowEntryRef(node);
-                  }
-                  if (lastWallIsSimilar) {
                     setLastSecondaryLocalRef(node);
                     setSecondaryRowLastWallRef(node);
                   }
                 }) as never
               }
-              {...(secondaryActionRowNav as object)}
+              {...(similarActionBtnNav as object)}
               {...(tvLadderAndroid
                 ? (tvAndroidNavProps({
-                    ...(!session && hasSimilarActionBtn
-                      ? { nextFocusLeft: mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag }
+                    ...(!session
+                      ? {
+                          nextFocusLeft:
+                            mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag,
+                        }
                       : {}),
-                    ...(lastWallIsSimilar
-                      ? { nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag }
-                      : {}),
+                    nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag,
                   }) as object)
                 : {})}
               {...(detailsTvPrimary === 'similar' ? tvPreferredFocusProps() : tvFocusable())}
@@ -1891,6 +1928,7 @@ export default function MovieDetailsScreen() {
               onBlur={() => setSimilarBtnFocused(false)}
               style={({ pressed }) => [
                 styles.viewSimilarButton,
+                styles.viewSimilarButtonFullWidth,
                 isLandscape && styles.viewSimilarButtonDesktop,
                 similarBtnFocused && styles.viewSimilarButtonTvFocused,
                 pressed && styles.viewSimilarButtonPressed,
@@ -1902,20 +1940,6 @@ export default function MovieDetailsScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color="#ffffff" />
             </Pressable>
-          ) : fromWatchedParam === 'true' ? (
-            <View style={styles.watchedBadgeStatic} {...tvNf}>
-              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
-                ✓ Watched
-              </Text>
-            </View>
-          ) : shouldShowRecommendations &&
-            recommendations.length === 0 &&
-            fromWatchedParam !== 'true' ? (
-            <View style={styles.watchedBadgeStatic} {...tvNf}>
-              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
-                ✓ Movie Info
-              </Text>
-            </View>
           ) : null}
         </View>
 
@@ -2537,11 +2561,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6b7280',
   },
-  actionRow: {
-    flexDirection: 'row',
+  actionActionsColumn: {
+    width: '100%',
     gap: 10,
     marginTop: 16,
     marginBottom: 20,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
     width: '100%',
   },
   actionButton: {
@@ -2585,7 +2613,6 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   viewSimilarButton: {
-    flex: 1,
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2594,6 +2621,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
     borderRadius: 12,
     paddingHorizontal: 16,
+  },
+  viewSimilarButtonFullWidth: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   viewSimilarButtonDesktop: {
     minHeight: 52,
