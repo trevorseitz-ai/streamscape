@@ -3,6 +3,10 @@
 > **Central directory.** Open a **department office** below for focused work, or use shared references. This file stays lightweight; deep context lives in `docs/depts/` and `docs/`.
 >
 > **Legacy product name:** If you still see **StreamScape** somewhere, check [`HQ/streamscape-remnants-map.md`](HQ/streamscape-remnants-map.md) (intentional vs planned renames).
+>
+> **Session handoff (agent / dev):** [`assistant.md`](assistant.md) — what we did last session and what’s next.
+>
+> **Launch readiness (all departments, human-readable):** [`docs/reeldive-launch-readiness-report-june-2026.md`](docs/reeldive-launch-readiness-report-june-2026.md)
 
 ---
 
@@ -10,9 +14,9 @@
 
 | Area | Status |
 | :--- | :--- |
-| **Android TV UI** | Refining Discover/Home layouts; follow `docs/tv_layout_rules.md`. |
-| **Backend** | Supabase auth, profiles, watchlists; schema in `docs/database_schema.md`. |
-| **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE** on all three—Discover + hybrid data + adaptive grids; verified scale **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md). **Web × TV parity:** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md). |
+| **Android TV UI** | Discover/Home layouts + **D-pad Focus Bridge** (Home + Search) shipped — see [`docs/depts/tv.md`](docs/depts/tv.md). **Watched ratings** + **trailer 16:9 modal** + **physical TV Metro dev client** on branch **`web-tv-parity-6-4`**. |
+| **Backend** | Supabase auth, profiles, watchlists, **`user_library`** (Watched shelf + ratings); schema in `docs/database_schema.md`. Migrations: **`supabase/migrations/`** only. |
+| **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE**; **Phase 2** is **in progress** (ratings, parity fixes)—see [`docs/depts/product.md`](docs/depts/product.md). **Web × TV parity:** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md). **State audit:** [`reeldive_state.md`](reeldive_state.md). |
 
 _Update this table when priorities shift._
 
@@ -24,10 +28,10 @@ _Update this table when priorities shift._
 
 - **Discover Phase 1 — Discovery & Stability:** ✅ **100% COMPLETE** — **Web**, **mobile**, and **TV**; **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md).
 - **Autonomous audit pipeline:** ✅ **100% COMPLETE** — **`npm run report:qa`** ([`scripts/generate-qa-report.ts`](scripts/generate-qa-report.ts)): **`check:env-security`** + **`test:smoke-maestro`**, **`qa-audit-summary.json`**, optional **Resend** email (**`RESEND_API_KEY`**, **`REPORT_EMAIL`**). Schedule and CI notes: [`docs/depts/qa.md`](docs/depts/qa.md) (**08:00 UTC** cron **`0 8 * * *`**).
-- **Active roadmap:** **Phase 2 — User utility & bug squashing** (placeholder umbrella; includes watchlist sync, deep linking, polish)—see Product office.
-- **Completed:** Validated TV/Web architecture and automated the Waitlist-to-Auth migration pipeline.
-- **Current Focus:** Ensuring D-pad navigation "Focus Bridge" works across all Home screen rows.
-- **Next Step:** See **Product** office — **Phase 2** (**user utility & bug squashing**): watchlist syncing, deep linking, and cross-surface polish; TV focus bridge continues per `tv.md`.
+- **Active roadmap:** **Phase 2 — User utility & bug squashing** (**in progress**) — Watched **1–5 star ratings** shipped; web/TV movie-detail parity (cast, IMDb, trailers, **16:9 trailer modal**); migration consolidation. See [`docs/depts/product.md`](docs/depts/product.md).
+- **Completed (June 2026):** Watched personal ratings; Stream Finder migration unification; movie-detail parity pass; **trailer 16:9 layout + Maestro E2E**; **TV Search focus bridge + suggestion rows**; **movie detail two-row actions**; **signed-out TV → `/login`**; **`expo-dev-client`** for physical TV Metro — branch **`web-tv-parity-6-4`** (`cfb2dd7`).
+- **Current Focus:** Google TV store prep + manual TV QA on **physical** panels (trailer, Search D-pad, movie detail actions).
+- **Next Step:** See **Product** office — [Pre-launch plan (workable task list)](docs/depts/product.md#pre-launch-plan--workable-task-list-june-2026).
 
 ---
 
@@ -55,7 +59,7 @@ _Add concrete URLs and repos here when they are finalized._
 - **Profile** is the **anchor** slot (far right / bottom)—see [`docs/depts/product.md`](docs/depts/product.md).
 - **Account** is **not** a tab: Phase 1 removed the unused **`account`** route from **`app/(tabs)/`**—see [`docs/depts/web.md`](docs/depts/web.md).
 
-**Profile screen structure** (shared Web / mobile / TV — **`app/(tabs)/profile.tsx`**): **`My Services`** block and **service search field** appear **first** in the scroll stack, then provider tiles, then supplementary footer content; **`Save Preferences`** stays **pinned to the bottom edge of the viewport** (outside the **`FlatList`**). Personal viewing statistics (**`watched_history`**) render on **`app/(tabs)/watched.tsx`** — see **`docs/depts/tv.md`** (**Watched tab layout**).
+**Profile screen structure** (shared Web / mobile / TV — **`app/(tabs)/profile.tsx`**): **`My Services`** block and **service search field** appear **first** in the scroll stack, then provider tiles, then supplementary footer content; **`Save Preferences`** stays **pinned to the bottom edge of the viewport** (outside the **`FlatList`**). Personal viewing statistics and **1–5 star ratings** render on **`app/(tabs)/watched.tsx`** from **`user_library`** — see **`docs/depts/tv.md`** (**Watched tab layout**). Legacy **`watched_history`** still receives the global watched toggle but is **not** the Watched tab authority.
 
 ---
 
@@ -83,6 +87,7 @@ Work in **one office at a time** so context stays clean. In Cursor, `@` the offi
 | **TV App** | [docs/depts/tv.md](docs/depts/tv.md) | Android TV: D-pad focus, sidebar, lean-back layout. |
 | **Shared components** | [docs/depts/shared.md](docs/depts/shared.md) | Cross-surface primitives (e.g. `MovieRow` / viewport bucketing). See also [Web ↔ TV parity](docs/depts/web-tv-parity.md). |
 | **QA & Automation** | [docs/depts/qa.md](docs/depts/qa.md) | Test matrix, **`npm run report:qa`** autonomous digest (**Resend**), nightly schedule (**08:00 UTC**) — **Operational**. |
+| **Launch readiness (June 2026)** | [docs/reeldive-launch-readiness-report-june-2026.md](docs/reeldive-launch-readiness-report-june-2026.md) | Master handoff report; dept slices in each office file under **Launch readiness (June 2026)**. |
 
 ---
 
@@ -141,6 +146,7 @@ Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stre
 - **Public FAQ drafts (dual with getreeldive.com):** [docs/marketing/FAQ.md](docs/marketing/FAQ.md)
 - **Claude prompt — pre-launch autonomous marketing (standalone paste):** [docs/REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md](REELDIVE_PRELAUNCH_CLAUDE_PROMPT.md)
 - **HTTP APIs & integrations (canonical list):** [docs/API-ENDPOINTS.md](docs/API-ENDPOINTS.md) — first-party `/api/*` routes, Supabase, TMDB, RapidAPI, Stream Finder, OMDb, env checklist.
+- **Infrastructure map (layers, user flows, change matrix):** [docs/infrastructure.md](docs/infrastructure.md) — what to update when product or user interactions change.
 - **QA & Triple-Platform test matrix:** [docs/depts/qa.md](docs/depts/qa.md)
 - **TV layout rules:** [docs/tv_layout_rules.md](docs/tv_layout_rules.md)
 - **User / waitlist migration:** [docs/user_migration.md](docs/user_migration.md)
@@ -151,7 +157,7 @@ Hybrid read path and TMDB enrichment: [`lib/stream-finder-supabase.ts`](lib/stre
 
 | Track | Functionality | Security | Store Assets |
 | :--- | :--- | :--- | :--- |
-| **Smoke / E2E** | Maestro [`testing/maestro/smoke-test.yaml`](testing/maestro/smoke-test.yaml) runs [`auth-flow.yaml`](testing/maestro/auth-flow.yaml) first (**`launchApp`** + Supabase login via **`maestro-login-*`** testIDs), then **Discover** → **`discover-smoke-poster`** → **Profile**. Run: `npm run test:smoke-maestro` with **`-e MAESTRO_TEST_USER_EMAIL=… -e MAESTRO_TEST_USER_PASSWORD=…`** (or exported env). Requires [Maestro](https://maestro.mobile.dev/) + device **`com.reeldive.app`**. Detail: [`docs/depts/qa.md`](docs/depts/qa.md) (Maestro credentials). | — | — |
+| **Smoke / E2E** | Maestro [`testing/maestro/smoke-test.yaml`](testing/maestro/smoke-test.yaml) runs [`auth-flow.yaml`](testing/maestro/auth-flow.yaml) first (**`launchApp`** + Supabase login via **`maestro-login-*`** testIDs), then **Discover** → **`discover-smoke-poster`** → **Profile**. Run: `npm run test:smoke-maestro` with **`-e MAESTRO_TEST_USER_EMAIL=… -e MAESTRO_TEST_USER_PASSWORD=…`** (or exported env). **Trailer modal (no login):** `npm run test:trailer-maestro` with **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** in `.env` — see [`testing/maestro/trailer-tv.yaml`](testing/maestro/trailer-tv.yaml). Requires [Maestro](https://maestro.mobile.dev/) + device **`com.reeldive.app`**. Detail: [`docs/depts/qa.md`](docs/depts/qa.md). | — | — |
 | **Env & secrets** | App reads keys via **`EXPO_PUBLIC_*`** / **`process.env`** (see [`.env.example`](.env.example)). | Automated scan: `npm run check:env-security` ([`scripts/check-env-security.ts`](scripts/check-env-security.ts)) — fails on suspicious literals in **`app/`**, **`lib/`**, **`components/`**, **`scripts/`**, etc. | — |
 | **Android build** | **Discover**, **Profile**, auth **`/login`**, hybrid data paths per Product office. | Network policy [`plugins/withAndroidNetworkSecurity.js`](plugins/withAndroidNetworkSecurity.js); no keys in repo. | Adaptive icon + **`android.package`** **`com.reeldive.app`** in [`app.json`](app.json); TV banner `./assets/tv-banner.png`; Play listing copy / screenshots owned by Marketing. |
 | **iOS build** | Parity with shared routes (handset targets). | Same secret posture as Android. | **`ios.bundleIdentifier`** **`com.reeldive.app`** in [`app.json`](app.json); App Store screenshots / metadata owned by Marketing. |

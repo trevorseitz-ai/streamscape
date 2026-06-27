@@ -36,6 +36,7 @@ import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { tvScale } from '../../lib/tvUiScale';
 import { tvBodyFontSize, tvTitleFontSize } from '../../lib/tvTypography';
 import { supabase } from '../../lib/supabase';
+import { isMaestroAuthBypassEnabled } from '../../lib/maestroBypass';
 import {
   enrichWithTmdbImages,
   enrichTmdbReleaseYearsForDiscover,
@@ -1131,7 +1132,7 @@ export default function DiscoverScreen() {
   }
 
   // Auth resolved: explicit signed-out (`null`).
-  if (session === null) {
+  if (session === null && !isMaestroAuthBypassEnabled()) {
     return (
       <View style={styles.blackout}>
         <TouchableOpacity

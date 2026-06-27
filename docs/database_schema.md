@@ -1,6 +1,6 @@
 # 🗃️ Database Schema (Auto-generated)
 
-*Last Updated: 4/23/2026*
+*Last Updated: 6/6/2026*
 
 ---
 
@@ -26,6 +26,8 @@
 | `metascore` | text |
 
 ## 📋 Table: watched_history
+
+Legacy / parallel watched tracking. Rows are still inserted by the global **watched toggle** in **`lib/watchlist-status-context.tsx`**. **Not** the source of truth for the **Watched tab**, personal ratings, or viewing stats — those use **`user_library`** (see below).
 
 | Column | Type |
 | :--- | :--- |
@@ -55,19 +57,23 @@
 
 ## 📋 Table: user_library
 
-User-owned collection (distinct from the watchlist). One row per user per `media` row.
+User-owned collection (the **Watched** shelf, distinct from the watchlist). One row per user per `media` row. Source of truth for the Watched tab list and stats.
 
 | Column | Type |
 | :--- | :--- |
 | `id` | uuid (primary key, default `gen_random_uuid()`) |
 | `user_id` | uuid (foreign key → `auth.users(id)`) |
 | `media_id` | uuid (foreign key → `media(id)`, **ON DELETE CASCADE**) |
+| `personal_rating` | integer, nullable (1–5 star rating; `NULL` = unrated; `CHECK 1..5`) |
 | `created_at` | timestamp with time zone |
 
 **Constraints**
 
 - `UNIQUE (user_id, media_id)` — a user can save a given title at most once.
 - The foreign key on `media_id` **must** reference `media(id)` with **ON DELETE CASCADE** so library rows are removed when a `media` row is deleted from the master table.
+- `personal_rating` has a `CHECK (personal_rating IS NULL OR personal_rating BETWEEN 1 AND 5)`.
+
+**RLS** — `authenticated` users have SELECT / INSERT / UPDATE / DELETE on rows where `auth.uid() = user_id` (UPDATE policy added so ratings can be written).
 
 ## 📋 Table: streaming_cache
 

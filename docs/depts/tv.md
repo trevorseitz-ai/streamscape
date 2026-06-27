@@ -4,6 +4,63 @@
 
 > **Web ↔ Android TV — high-level parity & crossover:** [Web ↔ TV parity & crossover](web-tv-parity.md).
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow on product, Red on store — best lean-back experience, not yet submitted**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
+
+### What’s in good shape
+
+Primary lean-back investment: fixed **140×210** poster grid, **5** columns, D-pad on major tabs, Watched ratings + TV modal, **16:9** trailers (fixed June 2026; [`npm run test:trailer-maestro`](../../package.json) PASS on emulator), “Watch on” intents to installed streamers. Release builds use direct TMDB when Vercel `/api/*` is unreachable — see [Recent delivery](#recent-delivery-june-2026--webtv-parity--watched-ratings).
+
+### What’s missing or risky
+
+- **Google Play:** No signed AAB uploaded; listing screenshots, copy, content rating open.  
+- **Physical device QA:** Trailer pass on emulator only; real TVs differ for focus and intents.  
+- **Focus Bridge on Home:** Shipped — sidebar → hero / trending via `mainContentEntryNativeTag`.
+- **Focus Bridge on Search (results):** Shipped — sidebar → first suggestion row or search-result poster when populated; search field **`nextFocusDown`** wired. Suggestion rows use **Watchlist-style** cyan focus rings. **Do not remount** the search `TextInput` when suggestions update (preserves IME / keyboard). See [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx).
+- **Movie detail action row:** Shipped — row 1: **Watchlist** + **Add to Watched**; row 2 (full width): **Discover More Like This** when recommendations exist. See [`app/movie/[id].tsx`](../../app/movie/[id].tsx).
+- **Signed-out TV auth:** Shipped — unsigned users on **Home** redirect to **`/login`** (not in-tab blackout). **Maestro dev bypass** (`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`, **`__DEV__` only**) still allows Home/Discover TMDB browse without session — see [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts).
+- **Physical TV Metro dev:** **`expo-dev-client`** + `adb reverse tcp:8081 tcp:8081` + deep link to `localhost:8081` — see [`docs/depts/qa.md`](qa.md#physical-android-tv--metro-dev-client).
+- **`android.isTV: true`:** Phone APKs get TV chrome until EAS flavors split.
+
+### Before TV goes live
+
+Sideload **release AAB** on a real Google TV device. Full D-pad walkthrough. Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing. **Human sign-off:** Search focus bridge + movie detail action layout on physical panel.
+
+### TV-specific manual QA (launch gate)
+
+- [ ] Full D-pad path: sidebar → each tab → back  
+- [x] Home + Search Focus Bridge (sidebar → content) — code shipped **`cfb2dd7`**; physical TV sign-off pending  
+- [ ] Search IME: keyboard stays open while suggestion list updates (typing path)  
+- [ ] Login IME + submit on lean-back  
+- [ ] Release build without Metro (sideload AAB)  
+- [ ] Trailer **16:9** on **physical** panel  
+- [ ] “Watch on” on physical TV (top 5 streamers minimum)  
+- [ ] Release AAB installs cleanly; permissions match Play policy  
+
+### TV-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Signed Android TV AAB → Play (internal/beta track) |
+| P0 | Physical Android TV QA (matrix above) |
+| P0 | Play Console listing (screenshots, banner, data safety) |
+| P1 | Physical TV QA sign-off (Search focus, movie detail actions, trailer 16:9) |
+| P1 | Release signing secured (EAS / Play App Signing) |
+
+### Proof deliverables (TV)
+
+- Signed AAB + `versionCode`  
+- Physical TV test notes (device model, Android version, pass/fail)  
+- Maestro trailer logs on **release** build  
+- Photo/note: 16:9 trailer on real panel  
+
 ---
 
 ## Success story: resolving `Network request failed` on TV
@@ -15,6 +72,63 @@ The lean-back client hit **`TypeError: Network request failed`** on initial Supa
 3. **Rebuild:** **`npm run tv:clean`** (**`expo prebuild --clean`** for Android + **`expo run:android`**) after plugin or env contract changes so the manifest picks up network policy.
 
 Full matrix: [Troubleshooting: Network request failed](#troubleshooting-network-request-failed).
+
+---
+
+## Recent delivery (June 2026 — web/TV parity + Watched ratings)
+
+Shipped on branch **`web-tv-parity-6-4`** (commits through **`8277d59`**). All items below apply to **Android TV** unless noted.
+
+| Area | What shipped | TV notes |
+|------|--------------|----------|
+| **Watched ratings (1–5 stars)** | **`user_library.personal_rating`** column + UPDATE RLS; shared **`RatingPickerModal`** / **`StarDisplay`** (`components/StarRating.tsx`). | Watched list rows use a **split focus pattern** (main cell → movie detail; rate cell → modal) — see [Watched tab layout](#watched-tab-layout-apptabswatchedtsx). Rating modal stars are **D-pad focusable** with visible focus rings. |
+| **Rate on add to Watched** | **`app/movie/[id].tsx`** opens the same picker immediately after a successful **Add to Watched** insert. | Modal overlay — **no new focus targets** in the locked movie-detail action row. Re-edit later from the **Watched** tab. |
+| **Watched stats header** | **`WatchedHistoryStatsHeader`** now reads **`user_library`** (not **`watched_history`**) on a **1–5** scale. | Softer label weights on TV unchanged. |
+| **Movie detail — cast nav** | Cast/crew cards are **inert** (non-focusable, no navigation) when a person lacks a numeric TMDB id (Supabase UUID rows). | Prevents D-pad dead-ends on error screens. |
+| **Movie detail — IMDb rating** | OMDb-sourced **IMDb** chip renders alongside RT / Metacritic when cached. | Same chip row as Web; no TV-specific layout fork. |
+| **Movie detail — trailers** | Supabase-backed titles with **`tmdb_id`** fetch trailer keys via **direct client TMDB** (`fetchTrailerKeyFromTmdb`) before server API fallback. | Fixes release-TV builds where the Vercel **`/api/*`** origin is unreachable. |
+| **Movie detail — trailer aspect** | **Shipped (June 2026):** locked **16:9** modal player via [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts); official/high-res TMDB pick via [`lib/tmdb-trailer.ts`](../../lib/tmdb-trailer.ts). | Replaces legacy **60% window height × full width** stretch on lean-back. See [Trailer modal — aspect ratio](#trailer-modal--aspect-ratio). |
+| **Movie detail — provider tiles cleanup** | Removed obsolete TMDB provider-tile renderer (~200 lines dead code). | **Watch on** strip uses **`WatchOnButton`** + RapidAPI / intent matrix only — see [Intent handoff protocol](#intent-handoff-protocol-bravia--native). |
+| **Watched list focus ring** | D-pad focus border on list rows (`#00F5FF`). | Matches Watchlist / home poster ring intent. |
+| **Watchlist provider logos** | Brand-grouped, cached logos (14-day TTL) on Watchlist + Watched rows. | Same **`providerBrands`** / enabled-service dimming as Watchlist. |
+| **TV Search focus bridge** | Sidebar → suggestion rows / search-result poster; Watchlist-style row focus; stable search field (no IME reset on list update). | [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx), [`TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). |
+| **Movie detail action layout** | Two-row stack: Watchlist + Watched, then full-width **Discover More Like This**. | Prevents cramped three-button row on lean-back. |
+| **Signed-out TV auth** | Home redirects to **`/login`**; Maestro bypass allows TMDB browse on Home/Discover in **`__DEV__`**. | [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx), [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts). |
+| **Physical TV dev client** | **`expo-dev-client`** for Metro hot reload on Bravia / hardware TV. | See [QA — Physical Android TV + Metro dev client](qa.md#physical-android-tv--metro-dev-client). |
+| **DB migrations** | All legacy **`database/migrations`** consolidated into **`supabase/migrations`** with repaired remote history. | No TV runtime change; enables reliable **`supabase db push`**. |
+
+**Data model note:** The **Watched shelf** (`user_library`) is the **source of truth** for the Watched tab list, personal ratings, and stats. **`watched_history`** still receives inserts from the global watched toggle in **`lib/watchlist-status-context.tsx`** but is **not** the ratings/stats authority.
+
+---
+
+## Trailer modal — aspect ratio
+
+**Status:** **Shipped** (June 2026, commit **`a21fb63`** on **`web-tv-parity-6-4`**).
+
+**Former symptom (QA):** YouTube trailers in the fullscreen modal looked **stretched or letterboxed wrong** on **Android TV** wide panels.
+
+**Former root cause:** [`app/movie/[id].tsx`](../../app/movie/[id].tsx) passed **`height={Math.floor(windowHeight * 0.6)}`** to [`TrailerPlayer`](../../components/TrailerPlayer.tsx) while the player container spanned **full width** — a **~2.96:1** box on typical TV logical viewports (see **`npm run simulate:trailer-tv`**).
+
+**Implementation (current)**
+
+1. **`lib/trailerLayout.ts`** — `computeTrailerPlayerLayout()` fits the **largest 16:9 rectangle** in the modal (width-first, height-clamped); centered with pillarbox gutters.
+2. **`lib/tmdb-trailer.ts`** — `pickBestYoutubeTrailerKey()` prefers **official** TMDB uploads, then highest **`size`** (1080 over 720), then newest **`published_at`**.
+3. **`TrailerPlayer` / modal** — explicit matching **`width` + `height`** to **`react-native-youtube-iframe`**; TV **Play** overlay shares the same bounds.
+4. **Web parity** — [`TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) uses the same dimensions (no `width: 100%` + arbitrary height).
+
+**Metadata (unchanged)**
+
+| Source | Aspect ratio? | Notes |
+|--------|:-------------:|-------|
+| **TMDB** `/movie/{id}/videos` | **No** (display) | Returns YouTube **`key`**, **`size`**, **`official`** — not stream AR. |
+| **YouTube iframe embed** | **Implicit 16:9** | Adaptive quality follows player viewport size; no API to force 1080p. |
+| **YouTube oEmbed** | **Yes (embed box)** | Optional v2 for vertical Shorts detection. |
+
+**QA & automation:** [`docs/depts/qa.md`](qa.md#trailer-modal--aspect-ratio-verification) — **`npm run simulate:trailer-tv`**, **`npm run test:trailer-maestro`** (dev auth bypass).
+
+**Optional v2:** Fetch **YouTube oEmbed** once per `videoId` to switch container ratio for **9:16** Shorts only.
+
+**Files:** `lib/trailerLayout.ts`, `lib/tmdb-trailer.ts`, `components/TrailerPlayer.tsx`, `components/TrailerPlayer.web.tsx`, `app/movie/[id].tsx`, `testing/maestro/trailer-tv.yaml`.
 
 ---
 
@@ -130,12 +244,25 @@ Shared implementation for **Web**, handset, and **Android TV**. Authoritative st
 
 ### Watched tab layout (`app/(tabs)/watched.tsx`)
 
-Renamed from legacy **Library**; reflects **`user_library`** (saved shelf) plus **`watched_history`** analytics.
+Renamed from legacy **Library**. The **Watched shelf** is **`user_library`** — one row per saved title, joined to **`media`**. Personal ratings live on **`user_library.personal_rating`** (1–5, nullable).
 
 | Order | Block |
 |:-----:|-------|
-| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — stats + rating chart sourced from **`watched_history`**; mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
-| **2** | **Saved titles list** — **`user_library`** rows joined to **`media`** (existing row UI: poster, added date, provider logos, TMDB vote line). |
+| **1** | **`WatchedHistoryStatsHeader`** (`components/WatchedHistoryStats.tsx`) — movies watched, average rating, favorite title, **1–5** distribution chart; sourced from **`user_library`** + nested **`media`**. Mounted as **`FlatList` `ListHeaderComponent`**. Uses softer label weights on TV for scan readability. |
+| **2** | **Saved titles list** — **`user_library`** rows: poster, title, added date, brand-grouped provider logos, TMDB vote line, and a **rate cell** (stars or **Rate** hint). |
+
+**TV focus pattern (list rows):** Each row is a **`View`** wrapper with two sibling **`Pressable`** cells — **not** nested pressables:
+
+| Cell | D-pad role | Action |
+|------|------------|--------|
+| **`rowMain`** | Primary focus target | Navigates to **`/movie/[id]`** (requires **`tmdb_id`**). |
+| **`rateCell`** | Secondary focus target (right edge, **72px**) | Opens **`RatingPickerModal`** for that row. |
+
+Both cells share the row-level **`rowTvFocused`** border when either has focus. Follows [No Nested Pressables](#3-no-nested-pressables).
+
+**Rating picker (`components/StarRating.tsx`):** Modal with five focusable star buttons (Left/Right on D-pad), **Clear**, and **Cancel**. Hover preview is **Web-only**; TV uses **`onFocus`** preview. Focus rings use **`#00F5FF`**.
+
+**Movie detail entry:** Tapping **Add to Watched** on **`app/movie/[id].tsx`** inserts into **`user_library`** and opens the same modal (optimistic shelf toggle; rating write is separate UPDATE). Removing from Watched clears **`personal_rating`** locally and closes the modal.
 
 Type tokens for the Hero text column:
 
@@ -206,7 +333,7 @@ Lean-back and handset builds **must not** fork routing per OEM (**Sony**, **TCL*
 
 Full **`nflx://`**, **`collectStreamingLaunchCandidates`**, and RapidAPI **`videoLink`** chains remain in **`lib/linking-utils.ts`** (**`launchStreamingApp`**).
 
-**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones); **`app/movie/[id].tsx`** TMDB provider tiles when **`direct_url`** is absent (`launchStreamingService(provider_id)` → storefront home). **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
+**Where it’s wired:** **`components/WatchOnButton.tsx`** (Android: universal HTTPS after TV **`ACTION_VIEW`** fails, and before **`launchStreamingApp`** on phones). Movie detail **Watch on** strip uses **`WatchOnButton`** + RapidAPI availability — the legacy TMDB provider-tile renderer was removed **2026-06**. **Poster grids** (**`TvMovieGridRow`**) do not launch streaming apps — navigation stays on movie routes.
 
 ---
 
@@ -337,7 +464,18 @@ ReelDive mirrors **16** Stream Finder streaming services in **`stream_finder_pro
 
 ---
 
-TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search, horizontal rows) so focus can move predictably across the screen.
+TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search field, suggestion rows, horizontal rows) so focus can move predictably across the screen.
+
+**Shipped bridges (June 2026, `cfb2dd7`):**
+
+| Tab / screen | Sidebar **`nextFocusRight`** | Content entry |
+| :--- | :--- | :--- |
+| **Home** | Hero **View Details** or first trending poster | `mainContentEntryNativeTag` from [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx) |
+| **Search** | First suggestion row **or** search-result poster when present; else search field | Same context; field **`nextFocusDown`** → first result |
+| **Discover** | Monetization **All** chip (existing) | Unchanged |
+| **Watchlist / Watched** | First list row (existing) | Per-tab anchors |
+
+**Search typing UX:** The search **`TextInput` must stay mounted** while TMDB suggestions refresh — never change its React **`key`** when `mainContentEntryNativeTag` updates, or the Android IME / keyboard will dismiss mid-query.
 
 **D-pad navigation** is implemented with React Native TV primitives: **`nextFocus*`** props, native focus tags via [`hooks/useTvNativeTag.ts`](../../hooks/useTvNativeTag.ts), and the left rail in [`components/TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). Row geometry and margins follow [`docs/tv_layout_rules.md`](../tv_layout_rules.md); home horizontal lists use [`components/HomeTvMovieRow.tsx`](../../components/HomeTvMovieRow.tsx).
 

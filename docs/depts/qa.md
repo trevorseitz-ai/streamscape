@@ -30,6 +30,35 @@
 
 - **Login only:** `maestro test … testing/maestro/auth-flow.yaml`
 - **Full smoke:** `npm run test:smoke-maestro` (must forward **`-e`** credentials the same way).
+- **Trailer (no login):** `npm run test:trailer-maestro` uses [`auth-bypass.yaml`](../../testing/maestro/auth-bypass.yaml) when **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** is in **`.env`** (dev builds only — see below).
+
+### Dev auth bypass (Maestro / local E2E)
+
+For flows that do not need a signed-in user (e.g. **movie detail + trailer**), skip the TV login wall:
+
+1. Add to **`.env`**: **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`**
+2. **Restart Metro** (`npm run android` or reload after env change).
+3. Run flows that use [`auth-bypass.yaml`](../../testing/maestro/auth-bypass.yaml) instead of [`auth-flow.yaml`](../../testing/maestro/auth-flow.yaml).
+
+**Safety:** [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts) gates on **`__DEV__`** — inactive in release/store builds even if the env var is set at build time.
+
+**With bypass on:** Landing skips login and opens tabs; **Home** and **Discover** allow TMDB browse without a session. **Watchlist / Profile** still require login. Remove the env var and **restart Metro** for normal signed-out TV → **`/login`** flow.
+
+**Smoke / Profile flows** still need real credentials (`auth-flow.yaml`) because they assert signed-in UI.
+
+---
+
+## Physical Android TV + Metro dev client
+
+For **hot reload on a physical TV** (e.g. Sony Bravia on LAN):
+
+1. **`npx expo install expo-dev-client`** (already in **`package.json`** on **`web-tv-parity-6-4`**).
+2. **`npm run android`** with device connected (`adb connect <tv-ip>:5555` if wireless).
+3. Terminal A: **`npx expo start --dev-client --port 8081 --clear`**
+4. Terminal B: **`adb reverse tcp:8081 tcp:8081`**, force-stop app, launch with deep link using **`localhost:8081`** (LAN IP often returns **403** from Metro).
+5. Confirm Metro shows **`Android Bundled`**; press **`r`** to reload after JS changes.
+
+**Signed-out UX (no Maestro bypass):** App should land on **`/login`** with logo + email/password — **not** a blank Home tab. See [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx).
 
 ---
 
@@ -41,6 +70,73 @@
 
 Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.md), [**`web-tv-parity.md`**](web-tv-parity.md), [**`web.md`**](web.md), [**`tv.md`**](tv.md), [**`shared.md`**](shared.md).
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow — some automation, no CI, manual sign-off incomplete**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
+
+### Testing already done
+
+| What | How | Result |
+| :--- | :--- | :--- |
+| Secret scan | `npm run check:env-security` | Operational |
+| Trailer layout math | `npm run simulate:trailer-tv` | **Pass** (June 2026) |
+| Trailer flow (TV emulator) | `npm run test:trailer-maestro` | **Pass** (June 2026) |
+| TV Search focus bridge (code) | Manual D-pad on Search tab | Shipped **`cfb2dd7`** — physical TV sign-off pending |
+| Search IME stability | Type 3+ chars; watch suggestions update | Keyboard must **stay open** while list refreshes (no `TextInput` remount) |
+| Discover at ~1k rows | Phase 1 validation | Pass |
+| Mobile web layout stability | Viewport bucketing | Pass ([`web.md`](web.md)) |
+
+### Testing gaps (automation)
+
+- No **GitHub Actions** CI in repo  
+- **`npm run test:smoke-maestro`** not verified green — needs `MAESTRO_TEST_USER_*` + **`discover-smoke-poster`** testID on Discover  
+- No Web browser E2E (Playwright/Cypress)  
+- No unit test suite  
+- Maestro on **release** APK with real auth (dev bypass off in production)  
+- Physical Android TV sign-off  
+- Formal checklist for Watched ratings (June 2026 ship)  
+
+### Manual testing still required before launch
+
+**Account:** Sign up/in/out Web + TV; session survives restart; same account → same watchlist on both.
+
+**Discover:** Grid loads; ~16 providers, ~1,206 titles post-sync; filters work.
+
+**Watchlist & Watched:** Add/remove/reorder; rate from Watched tab; stats update; **`watched_history` vs `user_library`** behavior documented or fixed.
+
+**Movie detail:** TMDB-id and Supabase-id paths; cast navigation when TMDB id exists; trailer 16:9 on real TV + Web; “Watch on” on physical TV.
+
+**TV-only:** Full D-pad path; TV keyboard login; release build without Metro.
+
+**Web-only:** Mobile Safari 390–430px; desktop 6-column Discover.
+
+**Store:** Release AAB installs; permissions acceptable to Play policy.
+
+Use [Test matrix](#test-matrix) and [Manual / extended QA pointers](#manual--extended-qa-pointers) below for detail.
+
+### QA-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Full QA on **physical** Android TV (signed checklist) |
+| P0 | Green Maestro smoke on **release** APK with test user |
+| P0 | Green `check:env-security` on RC branch |
+| P1 | GitHub Actions — env-security on PR; optional nightly `report:qa` |
+| P1 | Wire `discover-smoke-poster` testID for smoke flow |
+
+### Proof deliverables (QA)
+
+- Signed copy of this office checklist for RC  
+- `qa-audit-summary.json` from `npm run report:qa` — PASS  
+- Maestro logs: smoke + trailer on **release** build  
+- Physical TV test notes + trailer 16:9 sign-off  
+
 ---
 
 ## Test matrix
@@ -48,18 +144,46 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 | Axis | Goal | Repo / tooling | Pass criteria (v1.0.0) |
 |:-----|:-----|:---------------|:--------------------------|
 | **Functional** | End-to-end tab shell + Discover + Profile on a native build. | [Maestro](https://maestro.mobile.dev/) — [`testing/maestro/smoke-test.yaml`](../../testing/maestro/smoke-test.yaml) (includes [`auth-flow.yaml`](../../testing/maestro/auth-flow.yaml)); run **`npm run test:smoke-maestro`** with **`MAESTRO_TEST_USER_*`** set. | Flow completes without timeout; **`discover-smoke-poster`** appears; **`My Services`** visible after **Profile**. Device **`applicationId`** matches **`smoke-test.yaml`** (**`com.reeldive.app`**). |
+| **Trailer (TV/Web)** | Movie detail **Watch trailer** modal — **16:9** geometry + open/close on device. | **`npm run simulate:trailer-tv`** (offline); **`npm run test:trailer-maestro`** + [`trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml) (device; **`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`**). | Simulation: all viewports **16:9**; Maestro: modal + player frame + Play + Close; no login required in dev bypass mode. |
 | **Security** | No secret literals merged into **`app/`** / libs / scripts. | [`scripts/check-env-security.ts`](../../scripts/check-env-security.ts); run **`npm run check:env-security`**. | Exit code **0**; findings must be **`process.env` / CI-secret** sourced only. Client keys remain **`EXPO_PUBLIC_*`** from env at build time (see **`.env.example`**). |
 | **Layout** | Adaptive Discover density + stable viewport math across surfaces. | **`discoverPosterGridColumns`** + **`bucketViewportWidth`** (**10px**) in **`lib/viewport-utils.ts`** (re-exported from **`MovieRow`**); parity rules in **`web.md`** / **`tv.md`**. | **3 / 4 / 6** tiers at canonical breakpoints (**&lt;600 → 3**, **600–899 → 4**, **≥900 → 6**); layouts do not thrash from fractional **`useWindowDimensions()`** jitter. |
 | **Data integrity** | Stream Finder mirror in Supabase matches production scale expectations. | Sync: **`npm run sync:stream-finder`**; read path **`lib/stream-finder-supabase.ts`**. Validate row counts (`stream_finder_movies`) vs checkpoint (HQ **STREAM_FINDER_SYNC** block targets **~1,200+** titles; **16** providers roster). | Discover default landing hydrates without persistent empty grids when network + RLS permit; QA records **movie count + provider count** vs last successful sync banner in **`HQ.md`**. |
-| **Store readiness** | Lean-back / TV + handset Play policy alignment. | **D-pad / focus bridge** (`lib/tv-search-focus-context.tsx`, **`TvSidebarTabBar`**, **`tv.md`**). Android IME: **`expo.android.softwareKeyboardLayoutMode: "pan"`** → **`adjustPan`** ([**`app.json`**](../../app.json), **`shared.md`**). | No invalid **`windowSoftInputMode`** strings; TV navigation survives smoke path; Marketing owns screenshots / listings. |
+| **Store readiness** | Lean-back / TV + handset Play policy alignment. | **D-pad / focus bridge** (Home + Search — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx), **`TvSidebarTabBar`**, **`tv.md`**). Android IME: **`expo.android.softwareKeyboardLayoutMode: "pan"`** → **`adjustPan`** ([**`app.json`**](../../app.json), **`shared.md`**). | No invalid **`windowSoftInputMode`** strings; TV navigation survives smoke path; Search typing preserves IME; Marketing owns screenshots / listings. |
 
 ---
 
 ## Manual / extended QA pointers
 
 - **Web:** Mobile Safari width bucketing & mount guards — [**`web.md`**](web.md#mobile-web-stability-standards).
-- **TV:** Focus graph rules (`tvNextFocus*`, sidebar escape) — [**`tv.md`**](tv.md#core-logic).
+- **TV:** Focus graph rules (`tvNextFocus*`, sidebar escape) — [**`tv.md`**](tv.md#spatial-engine-routing--focus-graphs).
 - **Regression scale:** Discover at **~1k+** mirrored rows stays scroll-smooth (**`product.md`** / **`web.md`**).
+
+### Trailer modal — aspect ratio verification
+
+**Status:** **Fix shipped** (June 2026). Legacy bug: player height was **`~60%` of window height`** while width filled the modal (**~2.96:1** on Android TV). Current: **16:9** via [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts). Detail: [**`tv.md` — Trailer modal**](tv.md#trailer-modal--aspect-ratio).
+
+**Metadata:** **TMDB** sends YouTube **`key`** + **`size`** / **`official`** (not display AR). **YouTube** adaptive quality follows iframe viewport size; no embed API to force 1080p.
+
+| Check | Pass criteria |
+| :--- | :--- |
+| **Geometry** | Trailer picture is **16:9** — circles/logos in frame look round, not horizontally squashed. |
+| **Ultrawide / 4K TV** | Black **pillarbox** on sides is OK; video content must not stretch to fill non-16:9 box. |
+| **Play gate (TV)** | D-pad **Play** overlay covers the **same 16:9 region** as the video, not the full modal. |
+| **Web parity** | Same title on browser — visually matches TV framing (allow minor browser chrome). |
+| **Close control** | Close (×) remains focusable; no focus trap outside the player after fix. |
+
+**Test titles:** Pick at least one TMDB-backed movie and one TMDB-id-only path; open **Watch trailer** from movie detail on **physical Android TV** (emulator + device if possible). Maestro fixture: **`reeldive://movie/550`** (Fight Club).
+
+**Code touchpoints:** `lib/trailerLayout.ts`, `lib/tmdb-trailer.ts`, `components/TrailerPlayer.tsx`, `app/movie/[id].tsx`, `lib/maestroBypass.ts`.
+
+**Automated checks**
+
+| Layer | Command | Pass criteria |
+| :--- | :--- | :--- |
+| **Layout simulation** | `npm run simulate:trailer-tv` | All viewport profiles **16:9**; Android TV legacy stretch **~2.96:1** vs fixed **~1.78:1**; Fight Club picks official **1080p** key. |
+| **Maestro E2E (device)** | `npm run test:trailer-maestro` (**`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`** in `.env`, dev build) | Auth bypass → **`reeldive://movie/550`** → **`maestro-movie-watch-trailer`** → modal **`maestro-trailer-player-frame`** → **`maestro-trailer-play`** → **`maestro-trailer-close`**. Flow: [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml). **Verified passing** on **ReelDive_TV** emulator (June 2026). |
+
+**Maestro testIDs:** `maestro-movie-watch-trailer`, `maestro-trailer-modal`, `maestro-trailer-player-frame`, `maestro-trailer-play`, `maestro-trailer-close`.
 
 ---
 

@@ -22,7 +22,8 @@ All product routes live under the shared **`app/`** tree (Expo Router). Componen
 
 TV is not “mobile with a bigger screen.” Focus is **explicit**, not left to default React Native auto-focus alone.
 
-- **Focus bridge:** [`lib/tv-search-focus-context.tsx`](lib/tv-search-focus-context.tsx) coordinates cross-region focus (e.g. search vs. rows) so the remote has predictable entry and exit points.
+- **Focus bridge:** [`lib/tv-search-focus-context.tsx`](lib/tv-search-focus-context.tsx) coordinates cross-region focus (sidebar ↔ Home hero/trending ↔ **Search suggestions** ↔ rows) so the remote has predictable entry and exit points.
+- **Physical TV + Metro:** Install **`expo-dev-client`** (`npm run android` on device/emulator), run **`npx expo start --dev-client --port 8081`**, then **`adb reverse tcp:8081 tcp:8081`** and launch with a **`localhost:8081`** deep link — see [`docs/depts/qa.md`](docs/depts/qa.md#physical-android-tv--metro-dev-client).
 - **Spatial hints:** Focusable views use **`nextFocus*` props** (and related TV focus APIs) so the D-pad moves between the left rail, horizontal rows, and detail targets in a defined order — see also [`hooks/useTvNativeTag.ts`](hooks/useTvNativeTag.ts) and [`components/TvSidebarTabBar.tsx`](components/TvSidebarTabBar.tsx).
 
 Layout and row math for TV home rows are documented in [`docs/tv_layout_rules.md`](docs/tv_layout_rules.md); horizontal rows on Home use [`components/HomeTvMovieRow.tsx`](components/HomeTvMovieRow.tsx).
@@ -41,6 +42,8 @@ Layout and row math for TV home rows are documented in [`docs/tv_layout_rules.md
 
 - **[`scripts/sync-schema.js`](scripts/sync-schema.js)** — Calls the Supabase RPC **`get_schema_details`** (service role in `.env`) and refreshes **`docs/database_schema.md`** so the doc matches the live public schema.
 - **[`scripts/migrate-waitlist.js`](scripts/migrate-waitlist.js)** — Uses **`SUPABASE_SERVICE_ROLE_KEY`** to read pending **`waitlist`** rows, **`inviteUserByEmail`**, and update status. Operational steps: [`docs/user_migration.md`](docs/user_migration.md).
+- **Maestro E2E:** **`npm run test:smoke-maestro`** (auth + Discover smoke); **`npm run test:trailer-maestro`** (16:9 trailer flow, dev auth bypass — see [`docs/depts/qa.md`](docs/depts/qa.md)).
+- **Trailer layout simulation:** **`npm run simulate:trailer-tv`** — offline viewport math + TMDB trailer-pick checks ([`scripts/simulate-trailer-tv.ts`](scripts/simulate-trailer-tv.ts)).
 
 ---
 

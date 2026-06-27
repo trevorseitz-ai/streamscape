@@ -12,7 +12,8 @@ import { supabase } from '../lib/supabase';
 import { isTvTarget } from '../lib/isTv';
 
 /**
- * Stats block sourced from **`watched_history`** for the **Watched** tab header (TV-friendly spacing).
+ * Stats block sourced from **`user_library`** (the Watched list source of truth)
+ * for the **Watched** tab header (TV-friendly spacing). Ratings are 1-5 stars.
  */
 export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
   const router = useRouter();
@@ -24,20 +25,32 @@ export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
   const labelWeight = isTV ? ('400' as const) : ('500' as const);
 
   const [rows, setRows] = useState<
-    { tmdb_id: number; title: string | null; personal_rating: number | null }[]
+    {
+      tmdb_id: number | null;
+      title: string | null;
+      personal_rating: number | null;
+    }[]
   >([]);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
-      .from('watched_history')
-      .select('tmdb_id, title, personal_rating')
+      .from('user_library')
+      .select('personal_rating, media (tmdb_id, title)')
       .eq('user_id', userId);
     if (error) {
-      console.warn('watched_history stats:', error.message);
+      console.warn('user_library stats:', error.message);
       setRows([]);
       return;
     }
-    setRows(data ?? []);
+    const mapped = (data ?? []).map((r) => {
+      const media = (r as { media?: { tmdb_id?: number | null; title?: string | null } | null }).media;
+      return {
+        tmdb_id: media?.tmdb_id ?? null,
+        title: media?.title ?? null,
+        personal_rating: (r as { personal_rating?: number | null }).personal_rating ?? null,
+      };
+    });
+    setRows(mapped);
   }, [userId]);
 
   useFocusEffect(
@@ -62,10 +75,10 @@ export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
         : Math.round(
             (nonNull.reduce((sum, n) => sum + n, 0) / nonNull.length) * 10
           ) / 10;
-    const counts = Array.from({ length: 10 }, () => 0);
+    const counts = Array.from({ length: 5 }, () => 0);
     for (const row of rows) {
       const v = row.personal_rating;
-      if (v != null && v >= 1 && v <= 10) counts[v - 1] += 1;
+      if (v != null && v >= 1 && v <= 5) counts[v - 1] += 1;
     }
 
     let fav: (typeof rows)[number] | null = null;
@@ -91,7 +104,7 @@ export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
         Your viewing stats
       </Text>
       <Text style={[styles.sectionHint, isTV && styles.sectionHintTv]}>
-        {"From titles you've rated in watched history"}
+        {"From titles you've rated in your Watched list"}
       </Text>
 
       <View style={styles.statsRow} {...tvNf}>
@@ -113,15 +126,17 @@ export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
 
       {favoriteMovie ? (
         <Pressable
-          onPress={() =>
+          disabled={favoriteMovie.tmdb_id == null}
+          onPress={() => {
+            if (favoriteMovie.tmdb_id == null) return;
             router.push({
               pathname: '/movie/[id]',
               params: {
                 id: String(favoriteMovie.tmdb_id),
                 fromWatched: 'true',
               },
-            })
-          }
+            });
+          }}
           style={({ pressed }) => [
             styles.favoriteMoviePressable,
             { opacity: pressed ? 0.7 : 1 },
@@ -132,7 +147,7 @@ export function WatchedHistoryStatsHeader({ userId }: { userId: string }) {
           </Text>
           <Text style={styles.favoriteMovieText} numberOfLines={2}>
             {favoriteMovie.title?.trim() || 'Untitled'} ⭐️{' '}
-            {favoriteMovie.personal_rating}/10
+            {favoriteMovie.personal_rating}/5
           </Text>
         </Pressable>
       ) : null}

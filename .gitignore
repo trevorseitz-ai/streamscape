@@ -58,6 +58,3 @@ RealDive Launch Deck/*.mp3
 # Generated LLM context bundles (regenerated; do not commit)
 reeldive-llm-context.zip
 reeldive-llm-pack-*/
-
-# Local-only state/scratch docs
-reeldive_state.md

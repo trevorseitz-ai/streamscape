@@ -11,7 +11,7 @@
 | Area | What is shared |
 | :--- | :--- |
 | **Codebase & routes** | Single **Expo Router** app: shared **`app/(tabs)/`** screens (**Home → Search → Watchlist → Watched → Discover → Profile**). Auth via **`/login`**; no separate **Account** tab. |
-| **Backend** | **Supabase** (auth, **`profiles`**, watchlists, library, watched history, etc.) per [`docs/database_schema.md`](../database_schema.md). |
+| **Backend** | **Supabase** (auth, **`profiles`**, watchlists, **`user_library`** (Watched shelf + ratings), legacy **`watched_history`**, etc.) per [`docs/database_schema.md`](../database_schema.md). |
 | **Discovery data** | **Stream Finder → Supabase mirror** drives default **Discover** curation, availability, and **Profile → My services** (provider catalog from **`GET /api/providers`**, pruning on sync). **TMDB** enriches imagery; filtered Discover can call TMDB Discover—see [Web data architecture](web.md#data-architecture-sync). |
 | **Hybrid mandate** | Default unfiltered landing stays **Stream Finder–ordered**; TMDB is **not** a drop-in replacement for that ordering. |
 | **High-traffic screen** | **`app/(tabs)/discover.tsx`** is **one implementation** shared by browser and TV; surface-specific layout branches apply inside. |
@@ -25,11 +25,13 @@ These capabilities are **intended to be available** on both **Web** and **Androi
 | Capability | Notes |
 | :--- | :--- |
 | **Browse Home / rails** | Curated rows; TV uses lean-back rows and focus; Web uses pointer/scroll. |
-| **Search** | Shared route; **TV** uses **D-pad** focus and native keyboard/IME behavior per [TV office](tv.md). |
-| **Watchlist & Watched** | Same underlying data; presentation tuned per surface. |
+| **Search** | Shared route; **TV** uses **D-pad** focus bridge (sidebar → suggestion rows / result poster), **Watchlist-style** row rings, and **stable search field** (suggestions refresh must not remount the input — preserves keyboard/IME). Web/mobile: standard typeahead dropdown. See [TV office — Focus Bridge](tv.md#spatial-engine-routing--focus-graphs). |
+| **Movie detail actions** | Shared route; when recommendations exist, **Discover More Like This** renders **full width on row 2** below **Watchlist** + **Add to Watched** (lean-back readability). |
+| **Watchlist & Watched** | Same underlying data; presentation tuned per surface. **Watched shelf + 1–5 personal ratings** on **`user_library`** — rate from Watched rows or when **Add to Watched** on movie detail ([`components/StarRating.tsx`](../../components/StarRating.tsx)). |
 | **Discover** | Same **Stream Finder** default feed + filters; **grid math differs** (see §4). |
 | **Profile** | **My services**, provider tiles, save flows—**shared** stack; **TV** layout & focus rules—see **[TV office — Profile](tv.md)**. |
 | **Title / availability discovery** | See where titles stream (badges/logos from mirror + fallbacks)—**not** in-player streaming of third-party catalogs. |
+| **Movie trailers** | **YouTube** embed on movie detail — **16:9** locked player (Web + TV); TMDB official-trailer pick. See [TV — Trailer modal](tv.md#trailer-modal--aspect-ratio). |
 
 **Product framing (copy-safe):** ReelDive is a **discovery and availability** surface. It **does not** replace paid **subscriber/streamer apps** for playback entitlement, and it is **not** a universal **in-app playback** product for catalog titles.
 
@@ -43,7 +45,7 @@ When the **same account** is used on **Web** and **TV**:
 | :--- | :--- |
 | **Identity & session** | Supabase Auth; **Web** persists via **browser storage**, **native/TV** via **AsyncStorage** (see [`HQ.md`](../../HQ.md)). |
 | **Profile & preferences** | e.g. **enabled_services** / synced provider selections constrained to **`stream_finder_providers`** after sync—details in [Profile & My services — auto-pruning](web.md#profile--my-services--auto-pruning). |
-| **Watchlist / Watched / library** | Same tables and RPC patterns in Supabase (**engineered parity**); **cross-device UX** (ordering, latency, Phase 2 watchlist semantics) evolves per [Product roadmap](product.md). |
+| **Watchlist / Watched / library** | **`user_library`** is the Watched list + **`personal_rating`** authority (stats header included). **`watched_history`** still written by the global watched toggle — cleanup queued in [Product roadmap](product.md). **Cross-device UX** (ordering, latency, Phase 2 watchlist semantics) evolves per Product. |
 
 Agents should assume **conceptual parity** (“one account everywhere”) unless **Product** documents an intentional exception.
 
@@ -89,8 +91,9 @@ Use this block in **FAQ / external** copy when tightening expectations:
 | TV grid, sidebar order, Discover stride, emulation | [TV office](tv.md) |
 | TV spacing & scroll law | [`docs/tv_layout_rules.md`](../tv_layout_rules.md) |
 | Shared viewport helpers | [Shared components](shared.md) |
-| Roadmap & milestones | [Product office](product.md) |
+| Roadmap & milestones | [Product office](product.md) · [State audit](../../reeldive_state.md) · [Infrastructure map](../infrastructure.md) |
 | QA / smoke matrix | [QA office](qa.md) |
+| Trailer 16:9 + Maestro | [QA — Trailer verification](qa.md#trailer-modal--aspect-ratio-verification) · [`testing/maestro/trailer-tv.yaml`](../../testing/maestro/trailer-tv.yaml) |
 | Public FAQ drafts (dual with site) | [`docs/marketing/FAQ.md`](../marketing/FAQ.md) |
 
 ---

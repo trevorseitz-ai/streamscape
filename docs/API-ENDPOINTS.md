@@ -12,7 +12,7 @@ These live under `app/api/*+api.ts`. On web, they are served at **`/api/...`** r
 
 | Route | Method | Purpose |
 |--------|--------|---------|
-| **`/api/movie`** | `GET` | Loads or refreshes a **Supabase `media`** row by id, enriches from **TMDB** (details, credits, watch providers, videos/trailer), and writes related **`media_cast_crew`** / **`media_availability`** rows. Used when the client needs a **trailer key** or full metadata for a Supabase-backed movie. |
+| **`/api/movie`** | `GET` | Loads or refreshes a **Supabase `media`** row by id, enriches from **TMDB** (details, credits, watch providers, videos/trailer), and writes related **`media_cast_crew`** / **`media_availability`** rows. Trailer key via [`lib/tmdb-trailer.ts`](../lib/tmdb-trailer.ts) (official + highest **`size`**). Used when the client needs a **trailer key** or full metadata for a Supabase-backed movie. |
 | **`/api/search`** | `POST` | **Admin-style ingest:** given a search query, finds a film via **TMDB search**, pulls credits, upserts **`media`** + availability + cast in **Supabase**. Intended for backfill / tooling, not the main in-app search UX. |
 | **`/api/discover`** | `GET` | **Discover pipeline / sync:** fetches from **TMDB**, upserts **`media`** and availability into **Supabase** for curated discover data (see handler query params in `app/api/discover+api.ts`). |
 | **`/api/providers`** | `GET` | Returns **US watch provider metadata** from **TMDB** (`/watch/providers/movie`) as JSON: ids, names, logo URLs (w92). Used to align provider lists with TMDB. |

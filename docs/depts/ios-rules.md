@@ -2,6 +2,43 @@
 
 Companion to **[`IOS_NATIVE_DEVELOPER_ONBOARDING.md`](../IOS_NATIVE_DEVELOPER_ONBOARDING.md)** (secrets, operational URLs). Operational URL matrix: **[`docs/NATIVE_OPERATIONAL_URLS.md`](../NATIVE_OPERATIONAL_URLS.md)**. This file captures **constraints and pitfalls** specific to Apple platforms; global product/API mandates live in **[`.cursorrules`](../../.cursorrules)**, **`HQ.md`**, **[`docs/API-ENDPOINTS.md`](../API-ENDPOINTS.md)**.
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Red — not a launch surface**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
+
+The same codebase runs on phones, but handset is **not** treated as a product for v1 launch. Global **landscape lock** ([§2 Orientation](#2-orientation-and-chrome)) hurts phone UX. Android builds use **TV mode** ([§7 `isTvTarget()`](#7-istvtarget--critical-config-interaction)). No App Store or Play Store plan, no handset-specific QA. [`marketing.md`](marketing.md) says **do not promise phone store dates**.
+
+### Before any handset launch
+
+- Separate **EAS build profiles** (TV vs phone; [`eas.json`](../../eas.json) is template-only)  
+- **`android.isTV: false`** (or profile-specific) for phone APK  
+- Portrait-friendly layout if Product requires it  
+- Store assets + dated entry in marketing bible  
+- Handset Maestro / manual QA matrix  
+
+### Handset deferrals (P2 — post Web + TV GA)
+
+- App Store / Play public launch  
+- tvOS (Apple TV hardware)  
+- Pocket-companion marketing as “available now”  
+
+### Mobile capability snapshot (engineering only)
+
+| Capability | Phone build today |
+| :--- | :---: |
+| Routes compile / auth works | Yes |
+| Distinct phone UX (bottom tabs, portrait) | No |
+| Store listing / GTM | No |
+| Launch target for v1 | **No** |
+
+See [product.md — feature matrix](product.md#launch-readiness-june-2026) for cross-surface comparison.
+
 ---
 
 ## 1. What “iOS” means in this repo

@@ -3,6 +3,75 @@
 **Version:** 2.0.0 (4-Platform Omni-Channel Update)  
 **Target Audience:** Autonomous Marketing Agents & Central Mesh Database  
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow on strategy, Red on execution assets**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
+
+### Do we have a plan?
+
+**Yes.** This bible, [`docs/marketing/reeldive-prelaunch-marketing-action-plan.md`](../marketing/reeldive-prelaunch-marketing-action-plan.md) (12-week W1–W12), [`docs/marketing/FAQ.md`](../marketing/FAQ.md), and live [getreeldive.com](https://getreeldive.com) (separate repo).
+
+**Launch doctrine (do not violate):**
+
+- ReelDive is **discovery**, not playback  
+- **Web + Android TV** launch together at product launch  
+- **Phone stores: TBD** — no App Store / Play handset dates in copy  
+- **No public ship date yet** — no countdown until Product adds a date below ([Announced ship date](#announced-ship-date--movie-ticket-cadence))
+
+The 12-week plan is a **complete spec**. Most **W1–W2** ops tasks (spreadsheet, channel inventory, FAQ audit, landing analytics) appear **not started**.
+
+### Do we have assets?
+
+**Partial.**
+
+**In repo (`assets/`):** App icon, splash, favicon, Android adaptive icons, TV banner, brand logos, hero mark.
+
+**Missing for launch:**
+
+- Web Discover screenshots (desktop, 6-column, Hollywood-premium)  
+- Android TV Discover screenshots (5-column per [`tv.md`](tv.md))  
+- Promo video / social cuts (2.39:1 per [§3 Visual Identity](#3-visual-identity--cinematic-brand-aesthetics))  
+- Final Play Store and web marketing copy  
+- Press kit / one-pager  
+- Waitlist email tooling (ESP, UTM — open questions in action plan §A.6)
+
+Planned capture folder: **`assets/marketing/`** (does not exist yet).
+
+### What marketing still needs
+
+1. Answer **nine clarifying questions** in prelaunch action plan §A.6 (UTM, ESP, analytics, social handles, press list, beta pipeline, legal reviewer, etc.)  
+2. Execute **Week 1–2 tickets** — ops sheet, FAQ parity audit vs getreeldive.com, landing analytics  
+3. **Capture product screenshots** with founder aesthetic sign-off  
+4. **Set ship date** in this file when Product approves — only then enable countdowns  
+5. **Play Store listing pack** — descriptions, TV screenshots, feature graphic  
+6. **Founder approval** on every customer-facing artifact  
+
+### Marketing-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Play Console listing copy + TV screenshots + feature graphic |
+| P0 | FAQ parity: [`docs/marketing/FAQ.md`](../marketing/FAQ.md) ↔ getreeldive.com |
+| P0 | Ship date in this bible OR soft-launch memo (no countdown) |
+| P1 | Product screenshots in `assets/marketing/` |
+| P1 | Privacy policy / ToS links for Web + store |
+| P1 | Sentinel checklist on all outbound copy |
+
+### Proof deliverables (Marketing & GTM)
+
+- Ship date memo in this file  
+- FAQ parity sign-off  
+- Final store listing copy  
+- Screenshot set: Web Discover, TV Discover, movie detail, Watched ratings  
+- Sentinel pass (no playback, chatbot, or handset store claims)  
+- Waitlist / launch email ready if emailing the list  
+
 ---
 
 ## 1. Executive Summary & Core Positioning

@@ -4,6 +4,51 @@
 
 > **Web ↔ Android TV (parity, shared state, playback boundaries — product + marketing):** [Web ↔ TV parity & crossover](web-tv-parity.md).
 
+> **Launch readiness:** [Launch readiness (June 2026)](#launch-readiness-june-2026) · Master report: [`docs/reeldive-launch-readiness-report-june-2026.md`](../reeldive-launch-readiness-report-june-2026.md)
+
+---
+
+## Launch readiness (June 2026)
+
+**Overall: Yellow — close, needs QA and a go-live decision**
+
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
+
+### What’s in good shape
+
+Most mature surface: responsive Discover grid (**3 / 4 / 6** columns via [`discoverPosterGridColumns`](../../lib/viewport-utils.ts)), stable mobile Safari ([viewport bucketing](#viewport-bucketing)), full auth, watchlist, watched ratings, movie detail with **16:9** trailers ([`TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx)), Profile / My Services. Vercel `/api/*` routes support enrichment. Account state syncs with TV through Supabase.
+
+### What’s missing or risky
+
+- **Pre-launch vs full open:** Live URL may show “Coming soon” until Marketing sets a ship date ([Pre-GA web](#pre-general-availability-web-coming-soon--countdown)). Confirm gate is implemented before launch.  
+- **No browser E2E:** Maestro is native-focused; no Playwright/Cypress in repo.  
+- **Production:** Verify env vars and CSP on Vercel before traffic.
+
+### Before Web goes live
+
+Manually test Chrome and Safari (desktop + phone widths): sign in, Discover at full catalog (~1.2k rows), watchlist and watched with ratings, movie detail + trailer, Profile save. Decide with Marketing: **full app** or **coming-soon shell**.
+
+### Web-specific manual QA (launch gate)
+
+- [ ] Mobile Safari **390–430px** — no layout thrash  
+- [ ] Desktop **6-column** Discover  
+- [ ] Pre-GA or GA shell per marketing decision  
+
+### Web-owned launch tasks
+
+| Priority | Task |
+| :--------: | :--- |
+| P0 | Web go-live decision implemented (full app vs Coming soon) |
+| P0 | Production Vercel env + deploy verified |
+| P1 | Browser regression pass (Chrome/Safari desktop + mobile) |
+
+### Proof deliverables (Web)
+
+- Production Vercel URL (pinned deployment)  
+- Manual QA sign-off for browser matrix above  
+
+---
+
 ## Universal Web Strategy
 
 - **Route logic:** Uses the shared **`app/(tabs)`** routes ([`_layout.tsx`](../../app/%28tabs%29/_layout.tsx)). Platform-specific UI is gated via **`Platform.OS === 'web'`**.
@@ -21,7 +66,7 @@
 
 **Profile** is intentionally **last** (anchored)—see [`product.md`](product.md).
 
-- **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes.
+- **Hybrid components:** `.web.tsx` extensions override implementations for the browser when Metro resolves the platform suffix — e.g. [`components/TrailerPlayer.web.tsx`](../../components/TrailerPlayer.web.tsx) for YouTube iframes (shared **16:9** sizing via [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts) on movie detail).
 - **Auth flow:** Standard `signInWithPassword` in [`app/login.tsx`](../../app/login.tsx), shared with the TV redirect logic in [`app/index.tsx`](../../app/index.tsx).
 
 ## Pre-general-availability web (coming soon → countdown)

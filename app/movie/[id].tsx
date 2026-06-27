@@ -11,9 +11,10 @@ import {
   Alert,
   Keyboard,
   Modal,
-  Dimensions,
   FlatList,
   findNodeHandle,
+  BackHandler,
+  type LayoutChangeEvent,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,6 +38,7 @@ import { tvFocusable, tvPreferredFocusProps } from '../../lib/tvFocus';
 import { useMovie } from '../../lib/movie-context';
 import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
+import { RatingPickerModal } from '../../components/StarRating';
 import { SearchResultsOverlay } from '../../components/SearchResultsOverlay';
 import { MovieDetailsHeader } from '../../components/MovieDetailsHeader';
 import { WatchOnButton } from '../../components/WatchOnButton';
@@ -45,6 +47,8 @@ import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import getOmdbScores, { normalizeImdbId } from '../../lib/ratings';
 import { getMetroDevServerOrigin } from '../../lib/metroOrigin';
+import { pickBestYoutubeTrailerKey } from '../../lib/tmdb-trailer';
+import { computeTrailerPlayerLayout } from '../../lib/trailerLayout';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const RATINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -144,7 +148,14 @@ interface TMDBMovieResponse {
     }>;
   };
   videos?: {
-    results?: Array<{ key: string; site: string; type: string }>;
+    results?: Array<{
+      key: string;
+      site: string;
+      type: string;
+      size?: number;
+      official?: boolean;
+      published_at?: string;
+    }>;
   };
   production_countries?: Array<{ iso_3166_1: string; name: string }>;
   keywords?: {
@@ -352,9 +363,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
   const us = watchProvidersResults?.US;
   const availability = buildAvailabilityFromProviders(us);
 
-  const trailer = (data.videos?.results ?? []).find(
-    (v) => v.site === 'YouTube' && v.type === 'Trailer'
-  );
+  const trailerKey = pickBestYoutubeTrailerKey(data.videos?.results);
 
   const usCertification = extractUsCertification(data.release_dates);
 
@@ -385,7 +394,7 @@ async function fetchMovieFromTMDB(tmdbId: number): Promise<{
       ),
       imdb_id: imdbFromTmdb,
     },
-    trailerKey: trailer?.key ?? null,
+    trailerKey,
     watchProvidersResults,
   };
 }
@@ -414,6 +423,11 @@ export default function MovieDetailsScreen() {
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
+  /** Measured fullscreen shell — drives 16:9 player size on TV. */
+  const [trailerShellBounds, setTrailerShellBounds] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [errorBackFocused, setErrorBackFocused] = useState(false);
   const [floatingBackFocused, setFloatingBackFocused] = useState(false);
   const [watchlistBtnFocused, setWatchlistBtnFocused] = useState(false);
@@ -422,6 +436,11 @@ export default function MovieDetailsScreen() {
   /** Watched shelf (`user_library`); toggled in UI, persisted in DB when storage exists. */
   const [isInLibrary, setIsInLibrary] = useState(false);
   const [libraryBtnFocused, setLibraryBtnFocused] = useState(false);
+  /** 1-5 star rating for this title in the user's Watched shelf (`user_library.personal_rating`). */
+  const [personalRating, setPersonalRating] = useState<number | null>(null);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  /** `media.id` used to write the rating once a Watched-shelf row exists. */
+  const [ratingMediaRowId, setRatingMediaRowId] = useState<string | null>(null);
   /** Instant `findNodeHandle` for trailer row self-trap before `useTvNativeTag` commits. */
   const [trailerPressableLocalTag, setTrailerPressableLocalTag] = useState<number | null>(null);
   const [trailerCloseFocused, setTrailerCloseFocused] = useState(false);
@@ -550,14 +569,59 @@ export default function MovieDetailsScreen() {
     setSearchError,
   } = useSearch();
   const { setTitle } = useMovie();
-  const { isLandscape: breakpointLandscape, height: viewportHeight } = useBreakpoint();
-  const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
+  const {
+    isLandscape: breakpointLandscape,
+    height: viewportHeight,
+    width: viewportWidth,
+  } = useBreakpoint();
   const isTV = isTvTarget();
+  const tvDpadFocus = shouldUseTvDpadFocus();
+  /** Phone APK on Bravia: `Platform.isTV` can be false while D-pad focus env is on. */
+  const useTvTrailerOverlay = Platform.OS === 'android' && tvDpadFocus;
+
+  useEffect(() => {
+    if (!trailerModalVisible) setTrailerShellBounds(null);
+  }, [trailerModalVisible]);
+
+  useEffect(() => {
+    if (!trailerModalVisible) return;
+    console.warn(
+      `[TrailerModal] open overlay=${useTvTrailerOverlay} tvDpad=${tvDpadFocus} isTV=${isTV}`
+    );
+  }, [trailerModalVisible, useTvTrailerOverlay, tvDpadFocus, isTV]);
+
+  useEffect(() => {
+    if (!trailerModalVisible || !useTvTrailerOverlay) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setTrailerModalVisible(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [trailerModalVisible, useTvTrailerOverlay]);
+
+  const onTrailerModalLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    const w = Math.floor(width);
+    const h = Math.floor(height);
+    if (w > 8 && h > 8) {
+      setTrailerShellBounds({ width: w, height: h });
+      console.warn('[TrailerModal] shell layout', w, 'x', h);
+    }
+  }, []);
+
+  const trailerPlayerLayout = useMemo(() => {
+    const width = trailerShellBounds?.width ?? viewportWidth;
+    const height = trailerShellBounds?.height ?? viewportHeight;
+    return computeTrailerPlayerLayout(width, height, {
+      horizontalPad: 24,
+      verticalPad: useTvTrailerOverlay ? 24 : 48,
+    });
+  }, [trailerShellBounds, viewportWidth, viewportHeight, useTvTrailerOverlay]);
+  const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
   const tvNf =
     isTV && Platform.OS === 'android'
       ? ({ focusable: false, collapsable: false } as const)
       : {};
-  const tvDpadFocus = shouldUseTvDpadFocus();
   /** Android D-pad: streams → trailer (if any) → secondary row → cast / crew; explicit tags in `buildLadder`. */
   const { setRef: setStreamRowEntryRef, nativeTag: streamRowEntryTag } = useTvNativeTag();
   const { setRef: setSecondaryActionRowEntryRef, nativeTag: secondaryActionRowEntryTag } =
@@ -568,6 +632,8 @@ export default function MovieDetailsScreen() {
   const { setRef: setCastRowEntryRef, nativeTag: castRowEntryTag } = useTvNativeTag();
   const { setRef: setCrewRowEntryRef, nativeTag: crewRowEntryTag } = useTvNativeTag();
   const { setRef: setSimilarRowEntryRef, nativeTag: similarRowEntryTag } = useTvNativeTag();
+  /** “Discover More Like This” — second row below watchlist / watched actions. */
+  const { setRef: setSimilarActionBtnRef, nativeTag: similarActionBtnTag } = useTvNativeTag();
   /** Trailer row (single “Watch trailer” under streaming) — first/only focus in that row. */
   const { setRef: setTrailerRowEntryRef, nativeTag: trailerRowEntryTag } = useTvNativeTag();
   /** Left self-trap on the first control in the secondary action row. */
@@ -628,6 +694,8 @@ export default function MovieDetailsScreen() {
       if (!mediaId) {
         setInWatchlist(false);
         setIsInLibrary(false);
+        setPersonalRating(null);
+        setRatingMediaRowId(null);
         return;
       }
 
@@ -641,7 +709,7 @@ export default function MovieDetailsScreen() {
           .maybeSingle(),
         supabase
           .from('user_library')
-          .select('id')
+          .select('id, personal_rating')
           .eq('user_id', userId)
           .eq('media_id', mediaId)
           .maybeSingle(),
@@ -649,6 +717,10 @@ export default function MovieDetailsScreen() {
 
       setInWatchlist(!!watchlistResult.data);
       setIsInLibrary(!!libraryResult.data);
+      setRatingMediaRowId(mediaId);
+      setPersonalRating(
+        (libraryResult.data?.personal_rating as number | null) ?? null
+      );
     }
 
     void checkWatchlistAndLibrary();
@@ -853,12 +925,12 @@ export default function MovieDetailsScreen() {
             user_id: userId,
             media_id: mediaRowId,
           });
-          if (error) {
-            if (error.code === '23505') {
-              return;
-            }
+          // 23505 = already on the shelf; treat as success and still let them rate.
+          if (error && error.code !== '23505') {
             throw error;
           }
+          setRatingMediaRowId(mediaRowId);
+          setRatingModalVisible(true);
         } else {
           const { error } = await supabase
             .from('user_library')
@@ -866,6 +938,8 @@ export default function MovieDetailsScreen() {
             .eq('user_id', userId)
             .eq('media_id', mediaRowId);
           if (error) throw error;
+          setPersonalRating(null);
+          setRatingModalVisible(false);
         }
       } catch (e) {
         if (__DEV__) {
@@ -881,6 +955,25 @@ export default function MovieDetailsScreen() {
 
     void syncLibrary();
   }, [session, isInLibrary]);
+
+  const applyDetailRating = useCallback(
+    async (next: number | null) => {
+      setRatingModalVisible(false);
+      if (!session || !ratingMediaRowId) return;
+      const previous = personalRating;
+      setPersonalRating(next);
+      const { error } = await supabase
+        .from('user_library')
+        .update({ personal_rating: next })
+        .eq('user_id', session.user.id)
+        .eq('media_id', ratingMediaRowId);
+      if (error) {
+        console.error('[MovieDetails] rating update error:', error);
+        setPersonalRating(previous);
+      }
+    },
+    [session, ratingMediaRowId, personalRating]
+  );
 
   async function fetchFromSupabase(mediaId: string) {
     const { data: mediaData, error: mediaError } = await supabase
@@ -981,12 +1074,16 @@ export default function MovieDetailsScreen() {
       });
       if (!res.ok) return null;
       const data = (await res.json()) as {
-        results?: { key?: string; site?: string; type?: string }[];
+        results?: {
+          key?: string;
+          site?: string;
+          type?: string;
+          size?: number;
+          official?: boolean;
+          published_at?: string;
+        }[];
       };
-      const trailer = (data.results ?? []).find(
-        (v) => v.site === 'YouTube' && v.type === 'Trailer'
-      );
-      return trailer?.key ?? null;
+      return pickBestYoutubeTrailerKey(data.results);
     } catch {
       return null;
     }
@@ -1367,8 +1464,10 @@ export default function MovieDetailsScreen() {
           ? secondaryActionRowEntryTag
           : castRowEntryTag)
       : null;
-    const downFromSecondaryLadder = tvLadderAndroid
-      ? (castRowEntryTag ?? crewRowEntryTag)
+    const downFromSecondaryTopRow = tvLadderAndroid
+      ? hasSimilarActionBtn
+        ? similarActionBtnTag
+        : castRowEntryTag ?? crewRowEntryTag
       : null;
     const upAboveSecondary = tvLadderAndroid
       ? hasTrailer
@@ -1378,7 +1477,10 @@ export default function MovieDetailsScreen() {
           : streamRowEntryTag
       : null;
     const upOnCastLadder = tvLadderAndroid
-      ? (secondaryActionRowEntryTag ?? trailerRowEntryTag ?? streamRowEntryTag)
+      ? (similarActionBtnTag ??
+        secondaryActionRowEntryTag ??
+        trailerRowEntryTag ??
+        streamRowEntryTag)
       : null;
     const downOnCastLadder = tvLadderAndroid
       ? (crewRowEntryTag ?? similarRowEntryTag)
@@ -1413,14 +1515,24 @@ export default function MovieDetailsScreen() {
     const similarLadderNav = buildLadder(upOnSimilarLadder, null);
     const secondaryActionRowNav = buildLadder(
       upAboveSecondary,
-      downFromSecondaryLadder,
+      downFromSecondaryTopRow,
+    );
+    const similarActionBtnNav = buildLadder(
+      session ? lastSecondaryLocalTag : upAboveSecondary,
+      castRowEntryTag ?? crewRowEntryTag,
     );
     const trailerRowNav = buildLadder(
       hasStreams ? streamRowAnchorUpTag : null,
       downFromTrailerRow,
     );
-    const lastWallIsSimilar = hasSimilarActionBtn;
-    const lastWallIsLibrary = !!session && !hasSimilarActionBtn;
+    const lastWallIsLibrary = !!session;
+    const hasTopActionRow =
+      !!session ||
+      (!hasSimilarActionBtn &&
+        (fromWatchedParam === 'true' ||
+          (shouldShowRecommendations &&
+            recommendations.length === 0 &&
+            fromWatchedParam !== 'true')));
 
     return (
       <>
@@ -1613,6 +1725,7 @@ export default function MovieDetailsScreen() {
             {...tvNf}
           >
             <Pressable
+              testID="maestro-movie-watch-trailer"
               ref={
                 ((node) => {
                   setTrailerRowEntryRef(node);
@@ -1652,7 +1765,9 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
 
-        <View style={styles.actionRow} {...tvNf}>
+        <View style={styles.actionActionsColumn} {...tvNf}>
+          {hasTopActionRow ? (
+          <View style={styles.actionRow} {...tvNf}>
           {session ? (
             <Pressable
               ref={
@@ -1764,29 +1879,47 @@ export default function MovieDetailsScreen() {
               </Text>
             </Pressable>
           ) : null}
+          {!hasSimilarActionBtn && fromWatchedParam === 'true' ? (
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Watched
+              </Text>
+            </View>
+          ) : !hasSimilarActionBtn &&
+            shouldShowRecommendations &&
+            recommendations.length === 0 &&
+            fromWatchedParam !== 'true' ? (
+            <View style={styles.watchedBadgeStatic} {...tvNf}>
+              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
+                ✓ Movie Info
+              </Text>
+            </View>
+          ) : null}
+          </View>
+          ) : null}
           {shouldShowRecommendations && recommendations.length > 0 ? (
             <Pressable
               ref={
                 ((node) => {
-                  if (!session && hasSimilarActionBtn) {
+                  setSimilarActionBtnRef(node);
+                  if (!session) {
                     setFirstSecondaryLocalRef(node);
                     setSecondaryActionRowEntryRef(node);
-                  }
-                  if (lastWallIsSimilar) {
                     setLastSecondaryLocalRef(node);
                     setSecondaryRowLastWallRef(node);
                   }
                 }) as never
               }
-              {...(secondaryActionRowNav as object)}
+              {...(similarActionBtnNav as object)}
               {...(tvLadderAndroid
                 ? (tvAndroidNavProps({
-                    ...(!session && hasSimilarActionBtn
-                      ? { nextFocusLeft: mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag }
+                    ...(!session
+                      ? {
+                          nextFocusLeft:
+                            mediaDetailsSidebarLeftTag ?? firstSecondaryLocalTag,
+                        }
                       : {}),
-                    ...(lastWallIsSimilar
-                      ? { nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag }
-                      : {}),
+                    nextFocusRightSelf: secondaryRowLastWallTag ?? lastSecondaryLocalTag,
                   }) as object)
                 : {})}
               {...(detailsTvPrimary === 'similar' ? tvPreferredFocusProps() : tvFocusable())}
@@ -1795,6 +1928,7 @@ export default function MovieDetailsScreen() {
               onBlur={() => setSimilarBtnFocused(false)}
               style={({ pressed }) => [
                 styles.viewSimilarButton,
+                styles.viewSimilarButtonFullWidth,
                 isLandscape && styles.viewSimilarButtonDesktop,
                 similarBtnFocused && styles.viewSimilarButtonTvFocused,
                 pressed && styles.viewSimilarButtonPressed,
@@ -1806,20 +1940,6 @@ export default function MovieDetailsScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color="#ffffff" />
             </Pressable>
-          ) : fromWatchedParam === 'true' ? (
-            <View style={styles.watchedBadgeStatic} {...tvNf}>
-              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
-                ✓ Watched
-              </Text>
-            </View>
-          ) : shouldShowRecommendations &&
-            recommendations.length === 0 &&
-            fromWatchedParam !== 'true' ? (
-            <View style={styles.watchedBadgeStatic} {...tvNf}>
-              <Text style={styles.watchedBadgeStaticText} {...tvNf}>
-                ✓ Movie Info
-              </Text>
-            </View>
           ) : null}
         </View>
 
@@ -1984,8 +2104,43 @@ export default function MovieDetailsScreen() {
     );
   }
 
+  const renderTrailerModalShell = () => (
+    <View
+      style={styles.trailerModalContainer}
+      testID="maestro-trailer-modal"
+      onLayout={onTrailerModalLayout}
+      {...tvNf}
+    >
+      {trailerKey ? (
+        <View style={styles.trailerModalPlayer}>
+          <TrailerPlayer
+            videoId={trailerKey}
+            width={trailerPlayerLayout.width}
+            height={trailerPlayerLayout.height}
+            tvPlayGate={tvDpadFocus}
+            modalVisible={trailerModalVisible}
+          />
+        </View>
+      ) : null}
+      <Pressable
+        testID="maestro-trailer-close"
+        {...tvFocusable()}
+        focusable={tvDpadFocus ? true : undefined}
+        onFocus={() => setTrailerCloseFocused(true)}
+        onBlur={() => setTrailerCloseFocused(false)}
+        style={[
+          styles.trailerModalClose,
+          trailerCloseFocused && styles.trailerModalCloseTvFocused,
+        ]}
+        onPress={() => setTrailerModalVisible(false)}
+      >
+        <Ionicons name="close" size={32} color="#ffffff" />
+      </Pressable>
+    </View>
+  );
+
   return (
-    <>
+    <View style={styles.movieScreenRoot}>
       <Stack.Screen
         options={{
           headerShown: !isTV,
@@ -1998,7 +2153,10 @@ export default function MovieDetailsScreen() {
         }}
       />
       <SafeAreaView
-        style={styles.safeAreaWrapper}
+        style={[
+          styles.safeAreaWrapper,
+          trailerModalVisible && useTvTrailerOverlay ? styles.contentHiddenUnderTrailer : null,
+        ]}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
         {...tvNf}
       >
@@ -2110,39 +2268,24 @@ export default function MovieDetailsScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Trailer Modal */}
-      <Modal
-        visible={trailerModalVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setTrailerModalVisible(false)}
-      >
-        <View style={styles.trailerModalContainer} {...tvNf}>
-          {trailerKey ? (
-            <View style={styles.trailerModalPlayer}>
-              <TrailerPlayer
-                videoId={trailerKey}
-                height={Math.floor(Dimensions.get('window').height * 0.6)}
-                tvPlayGate={tvDpadFocus}
-                modalVisible={trailerModalVisible}
-              />
-            </View>
-          ) : null}
-          <Pressable
-            {...tvFocusable()}
-            focusable={tvDpadFocus ? true : undefined}
-            onFocus={() => setTrailerCloseFocused(true)}
-            onBlur={() => setTrailerCloseFocused(false)}
-            style={[
-              styles.trailerModalClose,
-              trailerCloseFocused && styles.trailerModalCloseTvFocused,
-            ]}
-            onPress={() => setTrailerModalVisible(false)}
+      {/* Trailer — Android lean-back uses absolute overlay (`Modal` is half-height on Bravia). */}
+      {trailerModalVisible ? (
+        useTvTrailerOverlay ? (
+          <View style={styles.trailerTvFullscreenOverlay} {...tvNf}>
+            {renderTrailerModalShell()}
+          </View>
+        ) : (
+          <Modal
+            visible
+            animationType="slide"
+            presentationStyle="fullScreen"
+            statusBarTranslucent={Platform.OS === 'android'}
+            onRequestClose={() => setTrailerModalVisible(false)}
           >
-            <Ionicons name="close" size={32} color="#ffffff" />
-          </Pressable>
-        </View>
-      </Modal>
+            {renderTrailerModalShell()}
+          </Modal>
+        )
+      ) : null}
 
       {showSearchOverlay && (
         <SearchResultsOverlay
@@ -2158,7 +2301,16 @@ export default function MovieDetailsScreen() {
           }}
         />
       )}
-    </>
+
+      <RatingPickerModal
+        visible={ratingModalVisible}
+        value={personalRating}
+        title={movie?.title ?? ''}
+        onSelect={(n) => applyDetailRating(n)}
+        onClear={() => applyDetailRating(null)}
+        onClose={() => setRatingModalVisible(false)}
+      />
+    </View>
   );
 }
 
@@ -2229,6 +2381,13 @@ const styles = StyleSheet.create({
   safeAreaWrapper: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  movieScreenRoot: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
+  contentHiddenUnderTrailer: {
+    opacity: 0,
   },
   wrapper: {
     flex: 1,
@@ -2402,11 +2561,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6b7280',
   },
-  actionRow: {
-    flexDirection: 'row',
+  actionActionsColumn: {
+    width: '100%',
     gap: 10,
     marginTop: 16,
     marginBottom: 20,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
     width: '100%',
   },
   actionButton: {
@@ -2450,7 +2613,6 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   viewSimilarButton: {
-    flex: 1,
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2459,6 +2621,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
     borderRadius: 12,
     paddingHorizontal: 16,
+  },
+  viewSimilarButtonFullWidth: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   viewSimilarButtonDesktop: {
     minHeight: 52,
@@ -2516,8 +2682,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
+  trailerTvFullscreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+    backgroundColor: '#000000',
+  },
   trailerModalContainer: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
   },
   trailerModalClose: {
@@ -2534,7 +2708,10 @@ const styles = StyleSheet.create({
   },
   trailerModalPlayer: {
     flex: 1,
-    marginTop: Platform.OS === 'ios' ? 100 : 80,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
   },
   posterPlaceholderText: {
     fontSize: 24,

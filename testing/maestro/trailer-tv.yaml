@@ -1,0 +1,60 @@
+# ReelDive trailer modal — Maestro E2E (Android TV / emulator)
+#
+# Validates: movie detail → Watch Trailer → 16:9 modal shell → TV Play gate → Close.
+# Geometry proof (viewport math): npx tsx scripts/simulate-trailer-tv.ts
+#
+# Prerequisites:
+# - Device/emulator with `com.reeldive.app` installed (dev or release).
+# - EXPO_PUBLIC_TMDB_API_KEY in the running bundle (trailer button requires TMDB videos).
+# - EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1 in `.env` + Metro restart (dev builds skip login — see auth-bypass.yaml).
+#
+# Example:
+#   npm run test:trailer-maestro
+#
+appId: com.reeldive.app
+---
+- runFlow:
+    file: auth-bypass.yaml
+
+# Fight Club (TMDB 550) — official 1080p trailer fixture used in simulate-trailer-tv.ts
+- openLink: reeldive://movie/550
+
+- extendedWaitUntil:
+    visible:
+      id: "maestro-movie-watch-trailer"
+    timeout: 90000
+
+- assertVisible:
+    text: "Fight Club"
+
+- tapOn:
+    id: "maestro-movie-watch-trailer"
+
+- extendedWaitUntil:
+    visible:
+      id: "maestro-trailer-modal"
+    timeout: 30000
+
+- assertVisible:
+    id: "maestro-trailer-player-frame"
+
+# TV / EXPO_PUBLIC_TV_FOCUS builds show Play gate before iframe autostart.
+- assertVisible:
+    id: "maestro-trailer-play"
+
+- tapOn:
+    id: "maestro-trailer-play"
+
+- assertVisible:
+    id: "maestro-trailer-close"
+
+- tapOn:
+    id: "maestro-trailer-close"
+
+- extendedWaitUntil:
+    notVisible:
+      id: "maestro-trailer-modal"
+    timeout: 15000
+
+- assertVisible:
+    id: "maestro-movie-watch-trailer"

@@ -28,6 +28,7 @@ import { tvAndroidNavProps } from '../../lib/tvAndroidNavProps';
 import { useTvSearchFocusBridge } from '../../lib/tv-search-focus-context';
 import { useTvNativeTag } from '../../hooks/useTvNativeTag';
 import { supabase } from '../../lib/supabase';
+import { isMaestroAuthBypassEnabled } from '../../lib/maestroBypass';
 import { TvFocusGuideView } from '../../components/TvFocusGuideView';
 import { TV_SIDEBAR_WIDTH } from '../../components/TvSidebarTabBar';
 import {
@@ -85,7 +86,9 @@ export default function HomeScreen() {
 
   /** Android TV: non-Pressable surfaces must not participate in the focus graph. */
   const tvNf = isTV && Platform.OS === 'android' ? ({ focusable: false, collapsable: false } as const) : {};
-  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  type HomeSession = { user: { id: string; email?: string } };
+  /** `undefined` = auth still resolving; `null` = signed out. */
+  const [session, setSession] = useState<HomeSession | null | undefined>(undefined);
 
   const handleLogout = useCallback(() => {
     supabase.auth.signOut();
@@ -108,6 +111,15 @@ export default function HomeScreen() {
     );
     return () => subscription.unsubscribe();
   }, []);
+
+  /** TV: send signed-out users to the full login screen — not the in-tab blackout. */
+  useEffect(() => {
+    if (session !== null) return;
+    if (isMaestroAuthBypassEnabled()) return;
+    if (isTV) {
+      router.replace('/login');
+    }
+  }, [session, isTV, router]);
   const { selectedCountry } = useCountry();
   const { setSearchResult, setSearchError } = useSearch();
   const { setMainContentEntryNativeTag, setTvContentHasFocus, sidebarSlotNativeTags } =
@@ -303,8 +315,23 @@ export default function HomeScreen() {
     }
   }, [restTrending.length]);
 
-  // Auth guard: blackout when not logged in (immediate effect on signOut)
-  if (!session) {
+  // Auth guard: wait until session resolves, then gate signed-out users.
+  if (session === undefined) {
+    return (
+      <View style={[styles.blackout, { backgroundColor: screenBg }]} {...tvNf}>
+        <ActivityIndicator size="large" color="#6366f1" />
+      </View>
+    );
+  }
+
+  if (session === null && !isMaestroAuthBypassEnabled()) {
+    if (isTV) {
+      return (
+        <View style={[styles.blackout, { backgroundColor: screenBg }]} {...tvNf}>
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      );
+    }
     return (
       <View style={styles.blackout} {...tvNf}>
         <Text
