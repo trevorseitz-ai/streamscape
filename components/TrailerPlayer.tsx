@@ -60,6 +60,16 @@ export function TrailerPlayer({
         videoId={videoId}
         play={playControlled}
         forceAndroidAutoplay={tvPlayGate && Platform.OS === 'android'}
+        webViewStyle={{ width, height }}
+        webViewProps={
+          Platform.OS === 'android'
+            ? {
+                style: { width, height },
+                setBuiltInZoomControls: false,
+                scalesPageToFit: false,
+              }
+            : undefined
+        }
         initialPlayerParams={{
           rel: false,
           modestbranding: true,

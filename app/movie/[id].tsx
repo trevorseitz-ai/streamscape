@@ -13,6 +13,8 @@ import {
   Modal,
   FlatList,
   findNodeHandle,
+  BackHandler,
+  type LayoutChangeEvent,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -421,6 +423,11 @@ export default function MovieDetailsScreen() {
   const [supabaseMediaId, setSupabaseMediaId] = useState<string | null>(null);
   const [watchProvidersResults, setWatchProvidersResults] = useState<Record<string, WatchProviderCountry> | null>(null);
   const [trailerModalVisible, setTrailerModalVisible] = useState(false);
+  /** Measured fullscreen shell — drives 16:9 player size on TV. */
+  const [trailerShellBounds, setTrailerShellBounds] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [errorBackFocused, setErrorBackFocused] = useState(false);
   const [floatingBackFocused, setFloatingBackFocused] = useState(false);
   const [watchlistBtnFocused, setWatchlistBtnFocused] = useState(false);
@@ -567,17 +574,54 @@ export default function MovieDetailsScreen() {
     height: viewportHeight,
     width: viewportWidth,
   } = useBreakpoint();
-  const trailerPlayerLayout = useMemo(
-    () => computeTrailerPlayerLayout(viewportWidth, viewportHeight),
-    [viewportWidth, viewportHeight]
-  );
-  const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
   const isTV = isTvTarget();
+  const tvDpadFocus = shouldUseTvDpadFocus();
+  /** Phone APK on Bravia: `Platform.isTV` can be false while D-pad focus env is on. */
+  const useTvTrailerOverlay = Platform.OS === 'android' && tvDpadFocus;
+
+  useEffect(() => {
+    if (!trailerModalVisible) setTrailerShellBounds(null);
+  }, [trailerModalVisible]);
+
+  useEffect(() => {
+    if (!trailerModalVisible) return;
+    console.warn(
+      `[TrailerModal] open overlay=${useTvTrailerOverlay} tvDpad=${tvDpadFocus} isTV=${isTV}`
+    );
+  }, [trailerModalVisible, useTvTrailerOverlay, tvDpadFocus, isTV]);
+
+  useEffect(() => {
+    if (!trailerModalVisible || !useTvTrailerOverlay) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setTrailerModalVisible(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [trailerModalVisible, useTvTrailerOverlay]);
+
+  const onTrailerModalLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    const w = Math.floor(width);
+    const h = Math.floor(height);
+    if (w > 8 && h > 8) {
+      setTrailerShellBounds({ width: w, height: h });
+      console.warn('[TrailerModal] shell layout', w, 'x', h);
+    }
+  }, []);
+
+  const trailerPlayerLayout = useMemo(() => {
+    const width = trailerShellBounds?.width ?? viewportWidth;
+    const height = trailerShellBounds?.height ?? viewportHeight;
+    return computeTrailerPlayerLayout(width, height, {
+      horizontalPad: 24,
+      verticalPad: useTvTrailerOverlay ? 24 : 48,
+    });
+  }, [trailerShellBounds, viewportWidth, viewportHeight, useTvTrailerOverlay]);
+  const { sidebarSlotNativeTags } = useTvSearchFocusBridge();
   const tvNf =
     isTV && Platform.OS === 'android'
       ? ({ focusable: false, collapsable: false } as const)
       : {};
-  const tvDpadFocus = shouldUseTvDpadFocus();
   /** Android D-pad: streams → trailer (if any) → secondary row → cast / crew; explicit tags in `buildLadder`. */
   const { setRef: setStreamRowEntryRef, nativeTag: streamRowEntryTag } = useTvNativeTag();
   const { setRef: setSecondaryActionRowEntryRef, nativeTag: secondaryActionRowEntryTag } =
@@ -2036,8 +2080,43 @@ export default function MovieDetailsScreen() {
     );
   }
 
+  const renderTrailerModalShell = () => (
+    <View
+      style={styles.trailerModalContainer}
+      testID="maestro-trailer-modal"
+      onLayout={onTrailerModalLayout}
+      {...tvNf}
+    >
+      {trailerKey ? (
+        <View style={styles.trailerModalPlayer}>
+          <TrailerPlayer
+            videoId={trailerKey}
+            width={trailerPlayerLayout.width}
+            height={trailerPlayerLayout.height}
+            tvPlayGate={tvDpadFocus}
+            modalVisible={trailerModalVisible}
+          />
+        </View>
+      ) : null}
+      <Pressable
+        testID="maestro-trailer-close"
+        {...tvFocusable()}
+        focusable={tvDpadFocus ? true : undefined}
+        onFocus={() => setTrailerCloseFocused(true)}
+        onBlur={() => setTrailerCloseFocused(false)}
+        style={[
+          styles.trailerModalClose,
+          trailerCloseFocused && styles.trailerModalCloseTvFocused,
+        ]}
+        onPress={() => setTrailerModalVisible(false)}
+      >
+        <Ionicons name="close" size={32} color="#ffffff" />
+      </Pressable>
+    </View>
+  );
+
   return (
-    <>
+    <View style={styles.movieScreenRoot}>
       <Stack.Screen
         options={{
           headerShown: !isTV,
@@ -2050,7 +2129,10 @@ export default function MovieDetailsScreen() {
         }}
       />
       <SafeAreaView
-        style={styles.safeAreaWrapper}
+        style={[
+          styles.safeAreaWrapper,
+          trailerModalVisible && useTvTrailerOverlay ? styles.contentHiddenUnderTrailer : null,
+        ]}
         edges={isLandscape ? ['top', 'bottom', 'left', 'right'] : ['bottom', 'left', 'right']}
         {...tvNf}
       >
@@ -2162,41 +2244,24 @@ export default function MovieDetailsScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Trailer Modal */}
-      <Modal
-        visible={trailerModalVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setTrailerModalVisible(false)}
-      >
-        <View style={styles.trailerModalContainer} testID="maestro-trailer-modal" {...tvNf}>
-          {trailerKey ? (
-            <View style={styles.trailerModalPlayer}>
-              <TrailerPlayer
-                videoId={trailerKey}
-                width={trailerPlayerLayout.width}
-                height={trailerPlayerLayout.height}
-                tvPlayGate={tvDpadFocus}
-                modalVisible={trailerModalVisible}
-              />
-            </View>
-          ) : null}
-          <Pressable
-            testID="maestro-trailer-close"
-            {...tvFocusable()}
-            focusable={tvDpadFocus ? true : undefined}
-            onFocus={() => setTrailerCloseFocused(true)}
-            onBlur={() => setTrailerCloseFocused(false)}
-            style={[
-              styles.trailerModalClose,
-              trailerCloseFocused && styles.trailerModalCloseTvFocused,
-            ]}
-            onPress={() => setTrailerModalVisible(false)}
+      {/* Trailer — Android lean-back uses absolute overlay (`Modal` is half-height on Bravia). */}
+      {trailerModalVisible ? (
+        useTvTrailerOverlay ? (
+          <View style={styles.trailerTvFullscreenOverlay} {...tvNf}>
+            {renderTrailerModalShell()}
+          </View>
+        ) : (
+          <Modal
+            visible
+            animationType="slide"
+            presentationStyle="fullScreen"
+            statusBarTranslucent={Platform.OS === 'android'}
+            onRequestClose={() => setTrailerModalVisible(false)}
           >
-            <Ionicons name="close" size={32} color="#ffffff" />
-          </Pressable>
-        </View>
-      </Modal>
+            {renderTrailerModalShell()}
+          </Modal>
+        )
+      ) : null}
 
       {showSearchOverlay && (
         <SearchResultsOverlay
@@ -2221,7 +2286,7 @@ export default function MovieDetailsScreen() {
         onClear={() => applyDetailRating(null)}
         onClose={() => setRatingModalVisible(false)}
       />
-    </>
+    </View>
   );
 }
 
@@ -2292,6 +2357,13 @@ const styles = StyleSheet.create({
   safeAreaWrapper: {
     flex: 1,
     backgroundColor: '#0f0f0f',
+  },
+  movieScreenRoot: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
+  contentHiddenUnderTrailer: {
+    opacity: 0,
   },
   wrapper: {
     flex: 1,
@@ -2579,8 +2651,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
+  trailerTvFullscreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+    backgroundColor: '#000000',
+  },
   trailerModalContainer: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
   },
   trailerModalClose: {
@@ -2597,6 +2677,7 @@ const styles = StyleSheet.create({
   },
   trailerModalPlayer: {
     flex: 1,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
