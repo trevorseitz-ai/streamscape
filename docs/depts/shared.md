@@ -16,3 +16,5 @@ Secondary references: **[`web.md`](web.md)** (mobile-web stability section), **[
 ## Android Expo config (`app.json`)
 
 Shared native Android targets use **`expo.android.softwareKeyboardLayoutMode: "pan"`** in **`app.json`**, mapping to **`adjustPan`** (`windowSoftInputMode`) so Search and forms pan when the IME appears. Do **not** use **`onScroll`** there — Gradle/manifest tooling expects valid Android modes (**`resize`**, **`pan`**) and rejects invalid strings on prebuild/release.
+
+**Search / typeahead IME:** Do **not** change a focused **`TextInput`**'s React **`key`** when async suggestion lists update — remounting dismisses the keyboard mid-query (see [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx)).

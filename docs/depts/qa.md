@@ -42,7 +42,23 @@ For flows that do not need a signed-in user (e.g. **movie detail + trailer**), s
 
 **Safety:** [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts) gates on **`__DEV__`** — inactive in release/store builds even if the env var is set at build time.
 
+**With bypass on:** Landing skips login and opens tabs; **Home** and **Discover** allow TMDB browse without a session. **Watchlist / Profile** still require login. Remove the env var and **restart Metro** for normal signed-out TV → **`/login`** flow.
+
 **Smoke / Profile flows** still need real credentials (`auth-flow.yaml`) because they assert signed-in UI.
+
+---
+
+## Physical Android TV + Metro dev client
+
+For **hot reload on a physical TV** (e.g. Sony Bravia on LAN):
+
+1. **`npx expo install expo-dev-client`** (already in **`package.json`** on **`web-tv-parity-6-4`**).
+2. **`npm run android`** with device connected (`adb connect <tv-ip>:5555` if wireless).
+3. Terminal A: **`npx expo start --dev-client --port 8081 --clear`**
+4. Terminal B: **`adb reverse tcp:8081 tcp:8081`**, force-stop app, launch with deep link using **`localhost:8081`** (LAN IP often returns **403** from Metro).
+5. Confirm Metro shows **`Android Bundled`**; press **`r`** to reload after JS changes.
+
+**Signed-out UX (no Maestro bypass):** App should land on **`/login`** with logo + email/password — **not** a blank Home tab. See [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx).
 
 ---
 
@@ -62,7 +78,7 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 
 **Overall: Yellow — some automation, no CI, manual sign-off incomplete**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 ### Testing already done
 
@@ -71,6 +87,8 @@ Supporting context: **`HQ.md`** (release checklist), [**`product.md`**](product.
 | Secret scan | `npm run check:env-security` | Operational |
 | Trailer layout math | `npm run simulate:trailer-tv` | **Pass** (June 2026) |
 | Trailer flow (TV emulator) | `npm run test:trailer-maestro` | **Pass** (June 2026) |
+| TV Search focus bridge (code) | Manual D-pad on Search tab | Shipped **`cfb2dd7`** — physical TV sign-off pending |
+| Search IME stability | Type 3+ chars; watch suggestions update | Keyboard must **stay open** while list refreshes (no `TextInput` remount) |
 | Discover at ~1k rows | Phase 1 validation | Pass |
 | Mobile web layout stability | Viewport bucketing | Pass ([`web.md`](web.md)) |
 
@@ -130,7 +148,7 @@ Use [Test matrix](#test-matrix) and [Manual / extended QA pointers](#manual--ext
 | **Security** | No secret literals merged into **`app/`** / libs / scripts. | [`scripts/check-env-security.ts`](../../scripts/check-env-security.ts); run **`npm run check:env-security`**. | Exit code **0**; findings must be **`process.env` / CI-secret** sourced only. Client keys remain **`EXPO_PUBLIC_*`** from env at build time (see **`.env.example`**). |
 | **Layout** | Adaptive Discover density + stable viewport math across surfaces. | **`discoverPosterGridColumns`** + **`bucketViewportWidth`** (**10px**) in **`lib/viewport-utils.ts`** (re-exported from **`MovieRow`**); parity rules in **`web.md`** / **`tv.md`**. | **3 / 4 / 6** tiers at canonical breakpoints (**&lt;600 → 3**, **600–899 → 4**, **≥900 → 6**); layouts do not thrash from fractional **`useWindowDimensions()`** jitter. |
 | **Data integrity** | Stream Finder mirror in Supabase matches production scale expectations. | Sync: **`npm run sync:stream-finder`**; read path **`lib/stream-finder-supabase.ts`**. Validate row counts (`stream_finder_movies`) vs checkpoint (HQ **STREAM_FINDER_SYNC** block targets **~1,200+** titles; **16** providers roster). | Discover default landing hydrates without persistent empty grids when network + RLS permit; QA records **movie count + provider count** vs last successful sync banner in **`HQ.md`**. |
-| **Store readiness** | Lean-back / TV + handset Play policy alignment. | **D-pad / focus bridge** (`lib/tv-search-focus-context.tsx`, **`TvSidebarTabBar`**, **`tv.md`**). Android IME: **`expo.android.softwareKeyboardLayoutMode: "pan"`** → **`adjustPan`** ([**`app.json`**](../../app.json), **`shared.md`**). | No invalid **`windowSoftInputMode`** strings; TV navigation survives smoke path; Marketing owns screenshots / listings. |
+| **Store readiness** | Lean-back / TV + handset Play policy alignment. | **D-pad / focus bridge** (Home + Search — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx), **`TvSidebarTabBar`**, **`tv.md`**). Android IME: **`expo.android.softwareKeyboardLayoutMode: "pan"`** → **`adjustPan`** ([**`app.json`**](../../app.json), **`shared.md`**). | No invalid **`windowSoftInputMode`** strings; TV navigation survives smoke path; Search typing preserves IME; Marketing owns screenshots / listings. |
 
 ---
 

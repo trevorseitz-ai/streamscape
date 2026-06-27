@@ -14,7 +14,7 @@
 
 | Area | Status |
 | :--- | :--- |
-| **Android TV UI** | Refining Discover/Home layouts + D-pad Focus Bridge; follow `docs/tv_layout_rules.md`. **Watched ratings** + **trailer 16:9 modal** shipped — see [`docs/depts/tv.md`](docs/depts/tv.md). |
+| **Android TV UI** | Discover/Home layouts + **D-pad Focus Bridge** (Home + Search) shipped — see [`docs/depts/tv.md`](docs/depts/tv.md). **Watched ratings** + **trailer 16:9 modal** + **physical TV Metro dev client** on branch **`web-tv-parity-6-4`**. |
 | **Backend** | Supabase auth, profiles, watchlists, **`user_library`** (Watched shelf + ratings); schema in `docs/database_schema.md`. Migrations: **`supabase/migrations/`** only. |
 | **Cross-platform** | **Triple stack deployed:** **Web**, **mobile (iOS/Android)**, and **Android TV** share one Expo Router codebase. **Phase 1: Discovery & Stability** is **100% COMPLETE**; **Phase 2** is **in progress** (ratings, parity fixes)—see [`docs/depts/product.md`](docs/depts/product.md). **Web × TV parity:** [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md). **State audit:** [`reeldive_state.md`](reeldive_state.md). |
 
@@ -29,8 +29,8 @@ _Update this table when priorities shift._
 - **Discover Phase 1 — Discovery & Stability:** ✅ **100% COMPLETE** — **Web**, **mobile**, and **TV**; **1,206** movies / **16** providers; see [`docs/depts/product.md`](docs/depts/product.md).
 - **Autonomous audit pipeline:** ✅ **100% COMPLETE** — **`npm run report:qa`** ([`scripts/generate-qa-report.ts`](scripts/generate-qa-report.ts)): **`check:env-security`** + **`test:smoke-maestro`**, **`qa-audit-summary.json`**, optional **Resend** email (**`RESEND_API_KEY`**, **`REPORT_EMAIL`**). Schedule and CI notes: [`docs/depts/qa.md`](docs/depts/qa.md) (**08:00 UTC** cron **`0 8 * * *`**).
 - **Active roadmap:** **Phase 2 — User utility & bug squashing** (**in progress**) — Watched **1–5 star ratings** shipped; web/TV movie-detail parity (cast, IMDb, trailers, **16:9 trailer modal**); migration consolidation. See [`docs/depts/product.md`](docs/depts/product.md).
-- **Completed (June 2026):** Watched personal ratings; Stream Finder migration unification; movie-detail parity pass; **trailer 16:9 layout + Maestro E2E** on branch **`web-tv-parity-6-4`** (`a21fb63`).
-- **Current Focus:** Google TV store prep + manual TV QA; D-pad **Focus Bridge** on Home rows.
+- **Completed (June 2026):** Watched personal ratings; Stream Finder migration unification; movie-detail parity pass; **trailer 16:9 layout + Maestro E2E**; **TV Search focus bridge + suggestion rows**; **movie detail two-row actions**; **signed-out TV → `/login`**; **`expo-dev-client`** for physical TV Metro — branch **`web-tv-parity-6-4`** (`cfb2dd7`).
+- **Current Focus:** Google TV store prep + manual TV QA on **physical** panels (trailer, Search D-pad, movie detail actions).
 - **Next Step:** See **Product** office — [Pre-launch plan (workable task list)](docs/depts/product.md#pre-launch-plan--workable-task-list-june-2026).
 
 ---

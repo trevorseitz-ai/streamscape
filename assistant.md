@@ -23,10 +23,38 @@ Persistent queue — **do not remove** when adding a new session; check off or m
 - [ ] **Manual TV QA** — Watched ratings, add-flow, cast, **16:9 trailers** on physical TV (automated Maestro pass done on emulator).
 - [ ] **Google TV store submission** — signing, permissions, AAB, listing assets.
 - [ ] **Watched data model cleanup** — align `watchlist-status-context` with `user_library`.
-- [ ] **TV Focus Bridge (Home rows)**.
+- [x] **TV Focus Bridge (Home + Search)** — code shipped **`cfb2dd7`**; physical sign-off pending
 - [ ] **Handset vs TV build split** — separate Expo/EAS profiles.
 
 ---
+
+---
+
+---
+
+## Session 2026-06-08
+
+**Branch:** `web-tv-parity-6-4` @ `cfb2dd7` (pushed)  
+**Focus:** TV Search focus, movie detail actions, TV auth, physical Metro dev
+
+### Done
+
+- **Search (TV):** Sidebar → suggestion rows / result poster via **`mainContentEntryNativeTag`**; Watchlist-style cyan row focus; stable **`TextInput`** (keyboard no longer resets when suggestions update).
+- **Movie detail:** **Discover More Like This** on full-width row 2; Watchlist + Watched on row 1.
+- **TV auth:** Signed-out **Home** redirects to **`/login`**; Maestro bypass allows Home/Discover browse in **`__DEV__`**.
+- **Dev workflow:** **`expo-dev-client`** + **`adb reverse`** + physical Bravia Metro path documented in QA office.
+- **Trailer (prior):** Android TV fullscreen overlay fix (`bb1f1fe`).
+
+### Commits
+
+| Commit | Summary |
+|--------|---------|
+| `cfb2dd7` | TV search focus, movie detail actions, signed-out auth, expo-dev-client |
+| `bb1f1fe` | Android TV trailer modal fullscreen layout |
+
+### Next
+
+Physical TV QA sign-off; open PR to `main`; Google TV store submission.
 
 ---
 

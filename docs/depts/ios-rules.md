@@ -10,7 +10,7 @@ Companion to **[`IOS_NATIVE_DEVELOPER_ONBOARDING.md`](../IOS_NATIVE_DEVELOPER_ON
 
 **Overall: Red — not a launch surface**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 The same codebase runs on phones, but handset is **not** treated as a product for v1 launch. Global **landscape lock** ([§2 Orientation](#2-orientation-and-chrome)) hurts phone UX. Android builds use **TV mode** ([§7 `isTvTarget()`](#7-istvtarget--critical-config-interaction)). No App Store or Play Store plan, no handset-specific QA. [`marketing.md`](marketing.md) says **do not promise phone store dates**.
 

@@ -13,7 +13,7 @@
 
 **Overall: Green for current scope — production Supabase in use**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 ### What’s running
 
@@ -154,14 +154,14 @@ Use this when planning a feature: “If the user does X, what breaks if I only c
 
 | User action | Client | Backend / APIs | Update checklist |
 | :--- | :--- | :--- | :--- |
-| Search movies | `app/(tabs)/search.tsx` | TMDB `/search/movie` | Client TMDB key; TV focus bridge for search field |
+| Search movies | `app/(tabs)/search.tsx` | TMDB `/search/movie` | Client TMDB key; **TV focus bridge:** `mainContentEntryNativeTag` + sidebar `nextFocusRight` on Search tab; **do not remount** search `TextInput` on suggestion updates |
 | Admin ingest (not user UX) | — | `POST /api/search` | Vercel env + server TMDB key |
 
 ### 4.5 Movie & person detail
 
 | User action | Client | Backend / APIs | Update checklist |
 | :--- | :--- | :--- | :--- |
-| View metadata, cast, trailer | `app/movie/[id].tsx` | TMDB; Supabase `media`; **`/api/movie`** fallback on web; [`lib/tmdb-trailer.ts`](../../lib/tmdb-trailer.ts) | Release TV: prefer **direct TMDB** for trailers when Vercel unreachable; pick **official** + max **`size`** |
+| View metadata, cast, trailer | `app/movie/[id].tsx` | TMDB; Supabase `media`; **`/api/movie`** fallback on web; [`lib/tmdb-trailer.ts`](../../lib/tmdb-trailer.ts) | Release TV: prefer **direct TMDB** for trailers when Vercel unreachable; pick **official** + max **`size`**; **action row:** Watchlist + Watched (row 1), **Discover More** full width (row 2) when recommendations exist |
 | **Watch trailer (16:9 modal)** | `TrailerPlayer`, [`lib/trailerLayout.ts`](../../lib/trailerLayout.ts) | YouTube iframe (adaptive quality) | Modal centered pillarbox; **`computeTrailerPlayerLayout`**; Maestro: **`test:trailer-maestro`** |
 | View IMDb / RT / Metacritic | Same | OMDb → `media` cache | `EXPO_PUBLIC_OMDB_API_KEY`; migration on `media` if new columns |
 | Tap cast (navigate) | Cast cards | TMDB person id required | Supabase UUID cast → inert (no nav) |

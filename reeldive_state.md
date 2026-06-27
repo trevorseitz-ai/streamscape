@@ -1,7 +1,7 @@
 # ReelDive — Technical State Teardown
 
 **Generated:** 2026-06-07  
-**Branch checkpoint:** `web-tv-parity-6-4` @ `a21fb63`  
+**Branch checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7`  
 **Sources:** [`HQ.md`](HQ.md), [`docs/depts/product.md`](docs/depts/product.md), [`docs/depts/tv.md`](docs/depts/tv.md), [`docs/depts/web-tv-parity.md`](docs/depts/web-tv-parity.md), [`docs/database_schema.md`](docs/database_schema.md), and direct inspection of `app/`, `lib/`, `components/`, `supabase/migrations/`, and config files.  
 **Purpose:** Objective inventory for product, marketing, and engineering planning. Contradicts stale or aspirational copy where the code does not support it.
 
@@ -12,7 +12,7 @@
 | Area | Status (June 2026) |
 | :--- | :--- |
 | **Phase 1 — Discovery & Stability** | **Complete** on Web, mobile, and Android TV (Stream Finder mirror, hybrid TMDB enrichment, six-tab shell). |
-| **Phase 2 — User utility** | **In progress.** Shipped: **Watched 1–5 star ratings**, web/TV movie-detail parity (cast, IMDb, trailers), **16:9 trailer modal** + Maestro E2E, Watchlist/Watched provider-logo parity, migration consolidation. |
+| **Phase 2 — User utility** | **In progress.** Shipped: **Watched 1–5 star ratings**, web/TV movie-detail parity, **16:9 trailer modal** + Maestro E2E, **TV Search focus bridge**, **movie detail two-row actions**, **signed-out TV → login**, **`expo-dev-client`** for physical TV Metro. |
 | **Web + Android TV (engineering)** | **Launch-ready** — lean-back shell, fixed poster grid, D-pad focus on major tabs, ratings, streaming intents. **GTM:** no public ship date in [`docs/depts/marketing.md`](docs/depts/marketing.md); web may be pre-GA per [`docs/depts/web.md`](docs/depts/web.md). |
 | **Google TV / Play (TV store)** | **Pre-submission** — release signing, permissions audit, signed AAB, listing assets, on-device QA not closed. |
 | **iOS / Android handset stores** | **TBD.** Same Expo tree; **`android.isTV: true`** conflates handset vs TV shell until build flavors split. |
@@ -44,7 +44,7 @@
 | Platform | Supported? | Maturity | Notes |
 | :--- | :---: | :--- | :--- |
 | **Web** | Yes | **Highest** | Responsive grids ([`lib/viewport-utils.ts`](lib/viewport-utils.ts)), pointer/keyboard UX, `/api/*` on deploy origin. |
-| **Android TV** | Yes (primary lean-back) | **High, active polish** | Fixed **140×210** grid, **5** cols, **286px** Discover stride, D-pad focus. **Focus Bridge** on Home rows still WIP. |
+| **Android TV** | Yes (primary lean-back) | **High, active polish** | Fixed **140×210** grid, **5** cols, **286px** Discover stride, D-pad focus. **Focus Bridge** shipped on **Home + Search** (`cfb2dd7`); physical TV QA sign-off pending. |
 | **Android handset** | Partial | Medium | Same manifest as TV unless flavors split; may get TV sidebar via **`isTvTarget()`**. |
 | **iOS / iPad** | Partial | Medium-low | Landscape locked globally; no tvOS target. |
 | **tvOS (Apple TV hardware)** | No | Not targeted | “Apple TV” in code = **Apple TV+ streaming service** on Android TV. |
@@ -62,7 +62,7 @@
 | **`app/(tabs)/watchlist.tsx`** | Yes | CRUD, up/down reorder, brand-grouped cached provider logos. Legacy **`RatingModal`** on mark-watched (watchlist flow). |
 | **`app/(tabs)/watched.tsx`** | Yes | **`user_library`** list + **`WatchedHistoryStatsHeader`** (stats from **`user_library`**, 1–5 scale). **`RatingPickerModal`** on rows. Split TV focus: main cell + rate cell. |
 | **`app/(tabs)/profile.tsx`** | Yes | My services, provider tiles, save to **`profiles`**. Stats live on **Watched**, not Profile. |
-| **`app/movie/[id].tsx`** | Yes | Detail, **16:9 trailer modal** ([`lib/trailerLayout.ts`](lib/trailerLayout.ts)), direct TMDB on release-TV, cast (inert without TMDB id), RT/Metacritic/**IMDb** chips, **Watch on** via **`WatchOnButton`**, **Add to Watched** → rating modal. |
+| **`app/movie/[id].tsx`** | Yes | Detail, **16:9 trailer modal**, two-row actions (Watchlist + Watched / **Discover More**), direct TMDB on release-TV, cast (inert without TMDB id), RT/Metacritic/**IMDb** chips, **Watch on** via **`WatchOnButton`**, **Add to Watched** → rating modal. |
 | **`app/person/[id].tsx`** | Yes | TMDB person filmography (numeric id only). |
 | **`app/tv-landing.tsx`** | Yes (TV) | Unauthenticated TV entry; login-first flow. |
 
@@ -97,7 +97,7 @@
 | **Re-rate from movie detail** | Prompt on **add** only; re-edit on **Watched** tab (by design v1). |
 | **Cross-device watchlist sync** | Optimistic per-client reorder; no conflict semantics. |
 | **Deep linking (all 16 providers, all platforms)** | Android TV furthest; iOS/web incomplete. |
-| **TV Focus Bridge (Home rows)** | Partial; HQ WIP. |
+| **TV Focus Bridge (Home + Search)** | **Shipped** in code (`cfb2dd7`); physical TV human sign-off pending. |
 | **Handset vs TV build split** | `android.isTV: true` affects all native builds. |
 | **Google TV store submission** | Open blockers. |
 | **CI / Maestro in repo** | Script exists; no committed workflow. |
@@ -119,9 +119,9 @@ Migration: **`supabase/migrations/20260605161700_user_library_personal_rating.sq
 
 ## 7. Android TV focus — status
 
-**Implemented:** Sidebar rail, Discover grid stride, movie detail provider ladder, Watchlist/Watched list focus rings, Watched split-row pattern, **`RatingPickerModal`** D-pad stars, search ↔ content bridge ([`lib/tv-search-focus-context.tsx`](lib/tv-search-focus-context.tsx)).
+**Implemented:** Sidebar rail, Discover grid stride, movie detail provider ladder + **two-row action stack**, Watchlist/Watched list focus rings, Watched split-row pattern, **`RatingPickerModal`** D-pad stars, **Search ↔ sidebar bridge** (suggestion rows + result poster, stable IME), Home hero/trending bridge ([`lib/tv-search-focus-context.tsx`](lib/tv-search-focus-context.tsx)).
 
-**Still WIP:** **Focus Bridge** across all **Home** horizontal rows (HQ active focus).
+**Human QA pending:** Physical TV sign-off on Search D-pad path, movie detail action layout, trailer 16:9 on real panels.
 
 **Risk:** Behavior varies by **`Platform.isTV`**, **`expo.extra.isTV`**, **`EXPO_PUBLIC_TV_FOCUS=1`**, emulator vs physical TV.
 
@@ -184,12 +184,11 @@ Migration: **`supabase/migrations/20260605161700_user_library_personal_rating.sq
 Aligned with [`docs/depts/product.md`](docs/depts/product.md) **What's next**:
 
 1. **Google TV store submission**
-2. **Manual TV QA** (ratings, add-flow, cast, **16:9 trailers** on physical TV)
+2. **Manual TV QA** (Search focus, movie detail actions, ratings, add-flow, cast, **16:9 trailers** on physical TV)
 3. **Watched data model cleanup** — align global toggle with **`user_library`**
-4. **TV Focus Bridge (Home)**
-5. **Handset build split**
-6. **Phase 2 deep linking** (iOS universal links)
-7. **Watchlist cross-device sync semantics**
+4. **Handset build split**
+5. **Phase 2 deep linking** (iOS universal links)
+6. **Watchlist cross-device sync semantics**
 
 ---
 

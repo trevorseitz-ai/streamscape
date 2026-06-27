@@ -11,7 +11,7 @@
 
 **Overall: Yellow on strategy, Red on execution assets**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 ### Do we have a plan?
 

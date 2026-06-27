@@ -5,7 +5,7 @@
 Written so someone new can walk in tomorrow and understand where the project stands, what works, what does not, and what must happen before launch.
 
 **Report date:** June 7, 2026  
-**Code checkpoint:** branch `web-tv-parity-6-4`, commit `2aee612`  
+**Code checkpoint:** branch `web-tv-parity-6-4`, commit `cfb2dd7`  
 **Status:** Not launched. Web and Android TV are close on engineering; go-to-market, store, and QA sign-off are not done.
 
 ---
@@ -102,12 +102,16 @@ Recently shipped:
 - Personal **1–5 star ratings** on the Watched tab  
 - **16:9 trailer player** on Web and TV (fixed a stretch bug on TV)  
 - Movie detail parity: cast, IMDb/RT/Metacritic chips when cached, provider logos  
+- **TV Search focus bridge** (sidebar → suggestions / result poster; keyboard-stable typing)  
+- **Movie detail two-row actions** (Watchlist + Watched, then full-width **Discover More Like This**)  
+- **Signed-out TV Home → login** (no in-tab blackout); Maestro dev bypass for Home/Discover browse  
+- **`expo-dev-client`** for physical TV Metro dev workflow  
 - Maestro automated test for the trailer flow on TV emulator  
 
 Still open:
 
 - Google TV store submission  
-- TV focus polish on Home rows (“Focus Bridge”)  
+- Physical TV human sign-off (Search D-pad, movie detail actions, trailer on real panel)  
 - Watched data model cleanup  
 - Deep linking across all 16 providers  
 - Separate phone vs TV Android builds  
@@ -176,13 +180,12 @@ This is where most lean-back UX investment went: fixed 140×210 poster grid, 5 c
 ### What’s missing or risky
 
 - **Google Play:** No signed AAB uploaded. No listing screenshots, copy, or content rating done.  
-- **Physical device QA:** Trailer test passed on emulator only. Real Sony/TCL/Google TV boxes behave differently for focus and app intents.  
-- **Focus Bridge on Home:** Moving focus from sidebar into Home content rows is still WIP.  
+- **Physical device QA:** Trailer test passed on emulator only. Real Sony/TCL/Google TV boxes behave differently for focus and app intents. **Code shipped** for Home + Search focus bridge and movie detail two-row actions — **human sign-off on hardware pending**.  
 - **TV-only config bleeds to phone:** `android.isTV: true` in app config means phone APKs get TV chrome until build flavors split.
 
 ### Before TV goes live
 
-Build and sideload a **release** AAB on a real Google TV device. Run the full D-pad walkthrough. Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing. Get Focus Bridge done or sign a documented waiver.
+Build and sideload a **release** AAB on a real Google TV device. Run the full D-pad walkthrough (include **Search** sidebar → suggestions and **movie detail** action rows). Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing.
 
 **→ Future home:** [`docs/depts/tv.md`](depts/tv.md) — see [Launch readiness (June 2026)](depts/tv.md#launch-readiness-june-2026)
 
@@ -333,7 +336,7 @@ Work in this order. Track completion in your issue tracker; this list is the int
 
 ### Should-have (P1) — credible v1.0; can waive individually with written note
 
-13. TV Focus Bridge on Home rows  
+13. Physical TV sign-off — Search focus bridge, movie detail actions, trailer 16:9  
 14. GitHub Actions — at least env-security on every PR  
 15. Wire `discover-smoke-poster` test ID for Maestro smoke  
 16. Handset vs TV EAS build split  

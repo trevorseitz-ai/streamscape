@@ -6,7 +6,7 @@
 >
 > **Companion docs:** [`HQ.md`](../../HQ.md) · [`reeldive_state.md`](../../reeldive_state.md) · [`docs/infrastructure.md`](../infrastructure.md) · [`assistant.md`](../../assistant.md) · [`docs/depts/qa.md`](qa.md) · [`docs/depts/marketing.md`](marketing.md)
 
-**Checkpoint (June 2026):** `web-tv-parity-6-4` @ `2aee612` — Web + Android TV engineering launch-ready; **public launch not shipped** (store, QA, GTM gaps).
+**Checkpoint (June 2026):** `web-tv-parity-6-4` @ `cfb2dd7` — Web + Android TV engineering launch-ready; **public launch not shipped** (store, QA, GTM gaps).
 
 ---
 
@@ -24,9 +24,9 @@ Shared six-tab app (Home, Search, Watchlist, Watched, Discover, Profile) on Web,
 
 **Phase 2 — User utility & bug squashing — IN PROGRESS**
 
-Recently shipped: **1–5 star ratings** on Watched; **16:9 trailer player** on Web and TV; movie detail parity (cast, IMDb/RT/Metacritic, provider logos); Maestro trailer test on TV emulator.
+Recently shipped: **1–5 star ratings** on Watched; **16:9 trailer player** on Web and TV; movie detail parity (cast, IMDb/RT/Metacritic, provider logos); **TV Search focus bridge** (sidebar → suggestions / result poster); **movie detail action row** (Watchlist + Watched on row 1, **Discover More** full-width row 2); **signed-out TV Home → `/login`**; **`expo-dev-client`** for physical TV Metro; Maestro trailer test on TV emulator.
 
-Still open: Google TV store submission; TV Focus Bridge on Home; watched data model cleanup; deep linking (16 providers); separate phone vs TV Android builds.
+Still open: Google TV store submission; watched data model cleanup; deep linking (16 providers); separate phone vs TV Android builds.
 
 **Monetization — PLANNED ONLY** — spec exists, nothing built. Do not promise paid features in launch copy.
 
@@ -83,7 +83,7 @@ Track status in your issue tracker (`[ ]` / `[x]`). **P0** blocks launch; **P1**
 | A1 | **Choose launch mode:** full public GA vs soft launch vs Web “Coming soon” + TV only | P0 | 🔀 | Draft options doc with tradeoffs from [`web.md`](web.md) + [`marketing.md`](marketing.md). | **Human** picks one mode. **AI** implements Web gate (A12) and updates `marketing.md` ship-date line after decision. |
 | A2 | **Set or defer ship date** in [`marketing.md`](marketing.md) (no countdown until dated) | P0 | 🔀 | Insert approved date/season language; enable countdown hooks only if human approves movie-ticket cadence. | **Human** approves date or “soft launch / no date.” |
 | A3 | **Watched data model:** fix `watched_history` vs `user_library` split **or** sign written waiver | P0 | 🔀 | Implement fix in [`lib/watchlist-status-context.tsx`](../../lib/watchlist-status-context.tsx) + docs; or draft waiver ADR for human signature. | **Human** chooses fix vs waiver. **AI** executes chosen path. |
-| A4 | **Focus Bridge on Home:** ship fix **or** sign waiver for v1.0 | P1 | 🔀 | Implement TV focus in [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx); or draft waiver doc. | **Human** accepts UX on physical TV or signs waiver. |
+| A4 | **Focus Bridge (Home + Search):** ship fix **or** sign waiver for v1.0 | P1 | ✅ | Shipped **`cfb2dd7`**: Home hero/trending + Search suggestions/result poster via **`mainContentEntryNativeTag`**; sidebar **`nextFocusRight`** on Search tab. | **Human:** physical TV sign-off on Search + Home (QA matrix). |
 | A5 | **Defer explicitly:** paywall, handset stores, tvOS, full deep-link matrix | P2 | 👤 | Document deferrals in launch known-issues one-pager. | Product call — not launch blockers if documented. |
 
 ---
@@ -95,7 +95,7 @@ Track status in your issue tracker (`[ ]` / `[x]`). **P0** blocks launch; **P1**
 | B1 | Open PR: `web-tv-parity-6-4` → `main` | P0 | 🔀 | Open PR, write summary, fix merge conflicts, run `check:env-security`. | **Human** reviews and merges (or approves AI merge per team policy). |
 | B2 | Tag **release candidate** on `main` after merge | P0 | 🤖 | Create annotated tag + `CHANGELOG` snippet for Phase 2. | Needs git write + human may want to name the tag. |
 | B3 | Fix **`watched_history` / `user_library`** (if A3 = fix) | P0 | 🤖 | Route global watched toggle through `user_library`; add migration if needed; update [`docs/database_schema.md`](../database_schema.md). | Depends on A3 decision. |
-| B4 | **TV Focus Bridge** on Home rows (if A4 = fix) | P1 | 🤖 | Wire `tvNextFocus*` / sidebar escape per [`tv.md`](tv.md). | Verify on device (QA section). |
+| B4 | **TV Focus Bridge** on Home + Search rows (if A4 = fix) | P1 | ✅ | Shipped — see [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx), [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx), [`TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). | Verify on physical device (QA section). |
 | B5 | Wire **`discover-smoke-poster`** testID on Discover for Maestro smoke | P1 | 🤖 | Add testID to Discover poster cell matching smoke flow. | — |
 | B6 | **GitHub Actions:** `check:env-security` on every PR | P1 | 🤖 | Add `.github/workflows/env-security.yml`. | **Human** enables Actions on repo if disabled. |
 | B7 | Optional: nightly `report:qa` workflow | P2 | 🔀 | Add workflow YAML per [`qa.md`](qa.md); document secrets. | **Human** adds `MAESTRO_TEST_USER_*`, emulator/device, Resend keys in GitHub Secrets. |
@@ -264,7 +264,7 @@ Stream Finder default Discover, **~1,206** titles, **16** providers, TMDB enrich
 
 Delivered: Watched **1–5 star ratings**; movie-detail parity (cast, IMDb, trailers, **16:9 player**); provider-logo parity; migration consolidation.
 
-Active workstreams: watchlist sync semantics, deep linking (16 providers), watched data cleanup, Google TV submission, Focus Bridge, handset build split, bug squashing.
+Active workstreams: watchlist sync semantics, deep linking (16 providers), watched data cleanup, Google TV submission, physical TV QA sign-off, handset build split, bug squashing.
 
 ---
 

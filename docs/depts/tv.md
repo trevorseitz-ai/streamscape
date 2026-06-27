@@ -12,7 +12,7 @@
 
 **Overall: Yellow on product, Red on store — best lean-back experience, not yet submitted**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 ### What’s in good shape
 
@@ -22,18 +22,22 @@ Primary lean-back investment: fixed **140×210** poster grid, **5** columns, D-p
 
 - **Google Play:** No signed AAB uploaded; listing screenshots, copy, content rating open.  
 - **Physical device QA:** Trailer pass on emulator only; real TVs differ for focus and intents.  
-- **Focus Bridge on Home:** Shipped — sidebar → hero / trending via `mainContentEntryNativeTag`.  
-- **Focus Bridge on Search (results):** Shipped — when suggestions or a search-result poster populate (keyboard dismissed), sidebar → first result row via `mainContentEntryNativeTag`; field `nextFocusDown` wired. See [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx).
+- **Focus Bridge on Home:** Shipped — sidebar → hero / trending via `mainContentEntryNativeTag`.
+- **Focus Bridge on Search (results):** Shipped — sidebar → first suggestion row or search-result poster when populated; search field **`nextFocusDown`** wired. Suggestion rows use **Watchlist-style** cyan focus rings. **Do not remount** the search `TextInput` when suggestions update (preserves IME / keyboard). See [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx).
+- **Movie detail action row:** Shipped — row 1: **Watchlist** + **Add to Watched**; row 2 (full width): **Discover More Like This** when recommendations exist. See [`app/movie/[id].tsx`](../../app/movie/[id].tsx).
+- **Signed-out TV auth:** Shipped — unsigned users on **Home** redirect to **`/login`** (not in-tab blackout). **Maestro dev bypass** (`EXPO_PUBLIC_MAESTRO_BYPASS_AUTH=1`, **`__DEV__` only**) still allows Home/Discover TMDB browse without session — see [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts).
+- **Physical TV Metro dev:** **`expo-dev-client`** + `adb reverse tcp:8081 tcp:8081` + deep link to `localhost:8081` — see [`docs/depts/qa.md`](qa.md#physical-android-tv--metro-dev-client).
 - **`android.isTV: true`:** Phone APKs get TV chrome until EAS flavors split.
 
 ### Before TV goes live
 
-Sideload **release AAB** on a real Google TV device. Full D-pad walkthrough. Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing. Focus Bridge done **or** signed waiver.
+Sideload **release AAB** on a real Google TV device. Full D-pad walkthrough. Test top streamers (Netflix, Disney+, Prime, Max, Hulu). Complete Play Console listing. **Human sign-off:** Search focus bridge + movie detail action layout on physical panel.
 
 ### TV-specific manual QA (launch gate)
 
 - [ ] Full D-pad path: sidebar → each tab → back  
-- [ ] Home row Focus Bridge (or waiver documented)  
+- [x] Home + Search Focus Bridge (sidebar → content) — code shipped **`cfb2dd7`**; physical TV sign-off pending  
+- [ ] Search IME: keyboard stays open while suggestion list updates (typing path)  
 - [ ] Login IME + submit on lean-back  
 - [ ] Release build without Metro (sideload AAB)  
 - [ ] Trailer **16:9** on **physical** panel  
@@ -47,7 +51,7 @@ Sideload **release AAB** on a real Google TV device. Full D-pad walkthrough. Tes
 | P0 | Signed Android TV AAB → Play (internal/beta track) |
 | P0 | Physical Android TV QA (matrix above) |
 | P0 | Play Console listing (screenshots, banner, data safety) |
-| P1 | Focus Bridge on Home rows OR documented waiver |
+| P1 | Physical TV QA sign-off (Search focus, movie detail actions, trailer 16:9) |
 | P1 | Release signing secured (EAS / Play App Signing) |
 
 ### Proof deliverables (TV)
@@ -87,6 +91,10 @@ Shipped on branch **`web-tv-parity-6-4`** (commits through **`8277d59`**). All i
 | **Movie detail — provider tiles cleanup** | Removed obsolete TMDB provider-tile renderer (~200 lines dead code). | **Watch on** strip uses **`WatchOnButton`** + RapidAPI / intent matrix only — see [Intent handoff protocol](#intent-handoff-protocol-bravia--native). |
 | **Watched list focus ring** | D-pad focus border on list rows (`#00F5FF`). | Matches Watchlist / home poster ring intent. |
 | **Watchlist provider logos** | Brand-grouped, cached logos (14-day TTL) on Watchlist + Watched rows. | Same **`providerBrands`** / enabled-service dimming as Watchlist. |
+| **TV Search focus bridge** | Sidebar → suggestion rows / search-result poster; Watchlist-style row focus; stable search field (no IME reset on list update). | [`app/(tabs)/search.tsx`](../../app/(tabs)/search.tsx), [`TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). |
+| **Movie detail action layout** | Two-row stack: Watchlist + Watched, then full-width **Discover More Like This**. | Prevents cramped three-button row on lean-back. |
+| **Signed-out TV auth** | Home redirects to **`/login`**; Maestro bypass allows TMDB browse on Home/Discover in **`__DEV__`**. | [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx), [`lib/maestroBypass.ts`](../../lib/maestroBypass.ts). |
+| **Physical TV dev client** | **`expo-dev-client`** for Metro hot reload on Bravia / hardware TV. | See [QA — Physical Android TV + Metro dev client](qa.md#physical-android-tv--metro-dev-client). |
 | **DB migrations** | All legacy **`database/migrations`** consolidated into **`supabase/migrations`** with repaired remote history. | No TV runtime change; enables reliable **`supabase db push`**. |
 
 **Data model note:** The **Watched shelf** (`user_library`) is the **source of truth** for the Watched tab list, personal ratings, and stats. **`watched_history`** still receives inserts from the global watched toggle in **`lib/watchlist-status-context.tsx`** but is **not** the ratings/stats authority.
@@ -456,7 +464,18 @@ ReelDive mirrors **16** Stream Finder streaming services in **`stream_finder_pro
 
 ---
 
-TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search, horizontal rows) so focus can move predictably across the screen.
+TV is driven by **explicit focus**, not desktop-style layout alone. The **Focus Bridge** — [`lib/tv-search-focus-context.tsx`](../../lib/tv-search-focus-context.tsx) — ties together regions (sidebar, search field, suggestion rows, horizontal rows) so focus can move predictably across the screen.
+
+**Shipped bridges (June 2026, `cfb2dd7`):**
+
+| Tab / screen | Sidebar **`nextFocusRight`** | Content entry |
+| :--- | :--- | :--- |
+| **Home** | Hero **View Details** or first trending poster | `mainContentEntryNativeTag` from [`app/(tabs)/index.tsx`](../../app/(tabs)/index.tsx) |
+| **Search** | First suggestion row **or** search-result poster when present; else search field | Same context; field **`nextFocusDown`** → first result |
+| **Discover** | Monetization **All** chip (existing) | Unchanged |
+| **Watchlist / Watched** | First list row (existing) | Per-tab anchors |
+
+**Search typing UX:** The search **`TextInput` must stay mounted** while TMDB suggestions refresh — never change its React **`key`** when `mainContentEntryNativeTag` updates, or the Android IME / keyboard will dismiss mid-query.
 
 **D-pad navigation** is implemented with React Native TV primitives: **`nextFocus*`** props, native focus tags via [`hooks/useTvNativeTag.ts`](../../hooks/useTvNativeTag.ts), and the left rail in [`components/TvSidebarTabBar.tsx`](../../components/TvSidebarTabBar.tsx). Row geometry and margins follow [`docs/tv_layout_rules.md`](../tv_layout_rules.md); home horizontal lists use [`components/HomeTvMovieRow.tsx`](../../components/HomeTvMovieRow.tsx).
 

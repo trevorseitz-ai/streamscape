@@ -25,7 +25,8 @@ These capabilities are **intended to be available** on both **Web** and **Androi
 | Capability | Notes |
 | :--- | :--- |
 | **Browse Home / rails** | Curated rows; TV uses lean-back rows and focus; Web uses pointer/scroll. |
-| **Search** | Shared route; **TV** uses **D-pad** focus and native keyboard/IME behavior per [TV office](tv.md). |
+| **Search** | Shared route; **TV** uses **D-pad** focus bridge (sidebar → suggestion rows / result poster), **Watchlist-style** row rings, and **stable search field** (suggestions refresh must not remount the input — preserves keyboard/IME). Web/mobile: standard typeahead dropdown. See [TV office — Focus Bridge](tv.md#spatial-engine-routing--focus-graphs). |
+| **Movie detail actions** | Shared route; when recommendations exist, **Discover More Like This** renders **full width on row 2** below **Watchlist** + **Add to Watched** (lean-back readability). |
 | **Watchlist & Watched** | Same underlying data; presentation tuned per surface. **Watched shelf + 1–5 personal ratings** on **`user_library`** — rate from Watched rows or when **Add to Watched** on movie detail ([`components/StarRating.tsx`](../../components/StarRating.tsx)). |
 | **Discover** | Same **Stream Finder** default feed + filters; **grid math differs** (see §4). |
 | **Profile** | **My services**, provider tiles, save flows—**shared** stack; **TV** layout & focus rules—see **[TV office — Profile](tv.md)**. |

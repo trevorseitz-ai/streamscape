@@ -40,7 +40,8 @@ RapidAPI Streaming Availability + **`WatchOnButton`** / Android TV intent matrix
 
 - D-pad focus across major tabs; fixed **140×210** poster grid.
 - Six-slot sidebar (`TvSidebarTabBar`).
-- **Focus Bridge on Home rows** — still WIP per `HQ.md`.
+- **Focus Bridge (Home + Search)** — shipped **`cfb2dd7`**; physical TV human sign-off pending. Search: sidebar → suggestions / result poster; stable IME (no input remount on list update).
+- **Movie detail actions** — two-row stack (Watchlist + Watched, then full-width Discover More).
 
 ## Upcoming Roadmap
 
@@ -49,7 +50,7 @@ See [`docs/depts/product.md`](docs/depts/product.md) **What's next**:
 1. Google TV store submission
 2. Manual TV QA
 3. Watched data model cleanup (`watched_history` ↔ `user_library`)
-4. TV Focus Bridge (Home)
+4. Handset vs TV build split
 5. Handset vs TV build split
 6. Phase 2 deep linking (iOS)
 7. Watchlist cross-device sync

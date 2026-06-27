@@ -12,7 +12,7 @@
 
 **Overall: Yellow — close, needs QA and a go-live decision**
 
-**Checkpoint:** `web-tv-parity-6-4` @ `2aee612` · **Report date:** June 7, 2026
+**Checkpoint:** `web-tv-parity-6-4` @ `cfb2dd7` · **Report date:** June 7, 2026
 
 ### What’s in good shape
 
