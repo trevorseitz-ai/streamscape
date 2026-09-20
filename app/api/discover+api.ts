@@ -1,6 +1,9 @@
 import { createSupabaseAdmin } from '../../lib/supabase-server';
+import { rankByBayesian } from '../../lib/rankScore';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
+/** See app/(tabs)/discover.tsx — provider narrowing is opt-in, not the default. */
+const LIMIT_TO_MY_PROVIDERS = false;
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
 interface DiscoverMovie {
@@ -11,6 +14,8 @@ interface DiscoverMovie {
   synopsis: string | null;
   backdrop_url: string | null;
   vote_average: number | null;
+  /** Sample size behind vote_average — needed to know whether to trust it. */
+  vote_count: number | null;
   platforms: Array<{
     name: string;
     access_type: 'subscription' | 'rent' | 'buy';
@@ -150,10 +155,16 @@ export async function GET(request: Request) {
     if (phase === '2') {
       discoverUrl += '&sort_by=popularity.desc';
     } else {
-      discoverUrl += '&sort_by=vote_average.desc&vote_count.gte=10';
+      // NOT vote_average.desc — TMDB sorts server-side, so that returns a
+      // page of 9.x titles with a hundred votes and no local re-rank can
+      // rescue it. Ask for the most-voted titles and rank them below.
+      discoverUrl += '&sort_by=vote_count.desc&vote_count.gte=100';
     }
 
-    if (providers) {
+    // Off by default: browsing starts from the whole catalogue, not one
+    // subscription. Flip LIMIT_TO_MY_PROVIDERS when a "My services only"
+    // switch exists. Mirrors app/(tabs)/discover.tsx.
+    if (providers && LIMIT_TO_MY_PROVIDERS) {
       discoverUrl += `&with_watch_providers=${providers}&watch_region=US`;
     } else if (streamingOnly) {
       discoverUrl += '&with_watch_monetization_types=flatrate&watch_region=US';
@@ -172,12 +183,16 @@ export async function GET(request: Request) {
         backdrop_path: string | null;
         release_date: string;
         vote_average: number;
+        vote_count: number;
       }>;
       total_pages?: number;
       total_results?: number;
     }>(discoverUrl);
 
-    const tmdbMovies = discoverRes.results ?? [];
+    // TMDB sorts on the raw mean; rank locally with shrinkage instead.
+    // Phase 2 is popularity-sorted and keeps TMDB's order.
+    const tmdbMovies =
+      phase === '2' ? (discoverRes.results ?? []) : rankByBayesian(discoverRes.results ?? []);
     console.log('[Discover API] Found', tmdbMovies.length, 'movies');
 
     const movies: DiscoverMovie[] = tmdbMovies.map((m) => {
@@ -193,6 +208,7 @@ export async function GET(request: Request) {
         synopsis: m.overview ?? null,
         backdrop_url: toFullImageUrl(m.backdrop_path),
         vote_average: m.vote_average ?? null,
+        vote_count: m.vote_count ?? null,
         platforms: [],
       };
     });

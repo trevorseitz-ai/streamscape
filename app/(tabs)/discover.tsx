@@ -56,6 +56,7 @@ import {
   TV_MOVIE_GRID_LIST_VERTICAL_PAD,
   TV_MOVIE_GRID_POSTER_HEIGHT,
 } from '../../components/TvMovieGridRow';
+import { rankByBayesian } from '../../lib/rankScore';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 /** Discover list posters — **`w342`** / **`w185`** tier only; avoid **`original`** on TV grids. */
@@ -176,6 +177,8 @@ interface DiscoverResult {
   /** TMDB / API **`YYYY-MM-DD`** when hydrated (Stream Finder + TMDB merges). */
   release_date?: string | null;
   vote_average: number | null;
+  /** Sample size behind vote_average — needed to know whether to trust it. */
+  vote_count?: number | null;
   platforms: Array<{ name: string; access_type: string; logo_path?: string | null }>;
   /** TMDB id — enrichment + routing. */
   tmdb_id?: number | null;
@@ -192,6 +195,7 @@ interface TMDBDiscoverResponse {
     poster_path: string | null;
     release_date: string;
     vote_average: number;
+    vote_count: number;
   }>;
   total_pages?: number;
 }
@@ -239,6 +243,49 @@ function formatDiscoverPosterMetaLine(movie: DiscoverResult): string {
 
 type MonetizationType = 'flatrate' | 'rent' | 'both';
 
+/**
+ * How many pages of candidates to pull for the rating-sorted list.
+ * TMDB can only sort on the raw mean, so we cannot ask it for "best" — we ask
+ * for the most-voted titles and do the ranking here. 5 pages = 100 candidates.
+ */
+const TOP_RATED_POOL_PAGES = 5;
+/**
+ * Vote floors tried in order. 100 is the point where a mean is worth ±2
+ * points; the lower rungs exist so a narrow filter degrades gracefully
+ * instead of collapsing to an unranked popularity list.
+ */
+const VOTE_FLOORS = [100, 20, 0];
+
+/**
+ * Whether the Discover TMDB feed is narrowed to the user's own streaming
+ * services.
+ *
+ * Off by default, deliberately. Browsing starts from the whole catalogue —
+ * "the best films" is a question about films, not about one subscription. A
+ * single provider plus a year filter can leave literally nothing above the
+ * vote floor, which is how this surface ended up showing four unrated
+ * strangers under a "Top Rated" heading.
+ *
+ * Wire a "My services only" switch to this when the UI has one; the provider
+ * plumbing below is unchanged and starts working again the moment it is true.
+ */
+const LIMIT_TO_MY_PROVIDERS = false;
+
+/**
+ * Which feed the Discover tab lands on before any filter is touched.
+ *
+ * 'tmdb' — the whole catalogue, rating-ranked with Bayesian shrinkage. What
+ *          "Top Rated Movies" promises: Shawshank, The Godfather, and so on.
+ * 'stream-finder' — the Supabase cache: the user's own providers, ordered by
+ *          popularity, carrying no ratings at all (vote_average is null by
+ *          construction), so cards render with no score.
+ *
+ * The curated provider feed is still worth surfacing, but as its own row with
+ * an honest heading — not under "Top Rated".
+ */
+const DEFAULT_DISCOVER_FEED: 'tmdb' | 'stream-finder' = 'tmdb';
+const PAGE_SIZE = 20;
+
 async function fetchDiscoverFromTMDB(
   year: number | null,
   monetization: MonetizationType,
@@ -251,68 +298,125 @@ async function fetchDiscoverFromTMDB(
   const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
   if (!apiKey) throw new Error('TMDB API key not configured');
 
-  let url = `${TMDB_BASE}/discover/movie?region=${watchRegion}&page=${page}&language=en-US`;
+  const activeProviders = LIMIT_TO_MY_PROVIDERS ? providers : [];
 
-  if (year != null) {
-    url += `&primary_release_year=${year}`;
-  }
-  if (genres.length > 0) {
-    url += `&with_genres=${genres.join('|')}`;
-  }
+  const buildUrl = (pageNum: number, voteFloor: number) => {
+    let url = `${TMDB_BASE}/discover/movie?region=${watchRegion}&page=${pageNum}&language=en-US`;
 
-  if (phase === 2) {
-    url += '&sort_by=popularity.desc';
-  } else {
-    url += '&sort_by=vote_average.desc&vote_count.gte=10';
-  }
-
-  if (providers.length > 0) {
-    url += `&with_watch_providers=${providers.join('|')}&watch_region=${watchRegion}`;
-    if (monetization === 'flatrate') {
-      url += '&with_watch_monetization_types=flatrate|free';
-    } else if (monetization === 'rent') {
-      url += '&with_watch_monetization_types=rent|buy';
+    if (year != null) {
+      url += `&primary_release_year=${year}`;
     }
-    // "Both": keep providers, omit monetization to show everything on user's platforms
-  } else if (monetization === 'flatrate') {
-    url += `&with_watch_monetization_types=flatrate|free&watch_region=${watchRegion}`;
-  } else if (monetization === 'rent') {
-    url += `&with_watch_monetization_types=rent|buy&watch_region=${watchRegion}`;
-  }
+    if (genres.length > 0) {
+      url += `&with_genres=${genres.join('|')}`;
+    }
 
-  console.log('Fetching URL:', url);
+    if (phase === 2) {
+      url += '&sort_by=popularity.desc';
+    } else {
+      // NOT vote_average.desc. That sort returns whatever has the highest raw
+      // mean, which is a wall of 9.x titles with a hundred votes — and since
+      // TMDB sorts server-side, no amount of local re-ranking can pull a
+      // well-supported film onto page 1. Ask for the most-voted titles
+      // instead and rank them below by shrunk score. See lib/rankScore.ts.
+      url += `&sort_by=vote_count.desc&vote_count.gte=${voteFloor}`;
+    }
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+    if (activeProviders.length > 0) {
+      url += `&with_watch_providers=${activeProviders.join('|')}&watch_region=${watchRegion}`;
+      if (monetization === 'flatrate') {
+        url += '&with_watch_monetization_types=flatrate|free';
+      } else if (monetization === 'rent') {
+        url += '&with_watch_monetization_types=rent|buy';
+      }
+      // "Both": keep providers, omit monetization to show everything on user's platforms
+    } else if (monetization === 'flatrate') {
+      url += `&with_watch_monetization_types=flatrate|free&watch_region=${watchRegion}`;
+    } else if (monetization === 'rent') {
+      url += `&with_watch_monetization_types=rent|buy&watch_region=${watchRegion}`;
+    }
 
-  if (!res.ok) throw new Error(`TMDB API error: ${res.status}`);
+    return url;
+  };
 
-  const data: TMDBDiscoverResponse = await res.json();
+  const getPage = async (pageNum: number, voteFloor = 0): Promise<TMDBDiscoverResponse> => {
+    const url = buildUrl(pageNum, voteFloor);
+    console.log('Fetching URL:', url);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!res.ok) throw new Error(`TMDB API error: ${res.status}`);
+    return (await res.json()) as TMDBDiscoverResponse;
+  };
 
-  const movies: DiscoverResult[] = (data.results ?? []).map((m) => ({
+  type TMDBRow = NonNullable<TMDBDiscoverResponse['results']>[number];
+  const toResult = (m: TMDBRow): DiscoverResult => ({
     id: String(m.id),
     title: m.title,
     poster_url: toFullImageUrl(m.poster_path),
-    release_year: m.release_date
-      ? parseInt(m.release_date.slice(0, 4), 10)
-      : null,
+    release_year: m.release_date ? parseInt(m.release_date.slice(0, 4), 10) : null,
     release_date: m.release_date ?? null,
     vote_average: m.vote_average ?? null,
+    vote_count: m.vote_count ?? null,
     platforms: [],
-  }));
+  });
+
+  // Phase 2 is popularity-sorted and pages straight through from TMDB.
+  if (phase === 2) {
+    const data = await getPage(page, 0);
+    return {
+      movies: (data.results ?? []).map(toResult),
+      total_pages: Math.min(data.total_pages ?? 1, 500),
+    };
+  }
+
+  // Rating-sorted: build a candidate pool of the most-voted matching titles,
+  // rank the whole pool by Bayesian-shrunk score, then serve the requested
+  // slice. Ranking has to span the pool, not one page, or it is meaningless.
+  //
+  // The floor steps down rather than failing. A narrow filter — one streaming
+  // provider and the current year, say — can have no titles at all above 100
+  // votes, and the caller's fallback then abandons quality entirely and shows
+  // a popularity list of unrated films. Easing the floor keeps the ranking
+  // meaningful for as long as there is anything to rank.
+  let first: TMDBDiscoverResponse | null = null;
+  let usedFloor = VOTE_FLOORS[0];
+  for (const floor of VOTE_FLOORS) {
+    const attempt = await getPage(1, floor).catch(() => null);
+    if (attempt?.results?.length) {
+      first = attempt;
+      usedFloor = floor;
+      break;
+    }
+  }
+  if (!first) return { movies: [], total_pages: 1 };
+  if (usedFloor !== VOTE_FLOORS[0]) {
+    console.log(`[Discover] vote floor eased to ${usedFloor} — too few titles match this filter`);
+  }
+
+  const pagesToPull = Math.min(first.total_pages ?? 1, TOP_RATED_POOL_PAGES);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(pagesToPull - 1, 0) }, (_, i) =>
+      getPage(i + 2, usedFloor).catch(() => null)
+    )
+  );
+
+  const seen = new Set<number>();
+  const pool: TMDBRow[] = [];
+  for (const d of [first, ...rest]) {
+    for (const m of d?.results ?? []) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      pool.push(m);
+    }
+  }
+
+  const ranked = rankByBayesian(pool);
+  const startAt = Math.max(page - 1, 0) * PAGE_SIZE;
 
   return {
-    movies,
-    total_pages: Math.min(data.total_pages ?? 1, 500),
+    movies: ranked.slice(startAt, startAt + PAGE_SIZE).map(toResult),
+    total_pages: Math.max(Math.ceil(ranked.length / PAGE_SIZE), 1),
   };
 }
 
-type ListItem =
-  | { type: 'row'; movies: DiscoverResult[]; key: string; movieRowIndex: number }
-  | { type: 'divider'; title: string; key: string };
-
-/** Pre-network Supabase / TMDB payload dump for Metro + device Logcat. */
 function logDiscoverDatabaseNetworkPayloadAudit(
   auditLabel: string,
   debugQueryPayload: Record<string, unknown>
@@ -382,7 +486,7 @@ export default function DiscoverScreen() {
   const loadingMoreRef = useRef(false);
   const fetchingRef = useRef(false);
   /** Default landing: **`stream-finder`** paginates via Supabase; filters switch to **`tmdb`** (TMDB **`/discover`**). */
-  const discoverFeedSourceRef = useRef<'stream-finder' | 'tmdb'>('stream-finder');
+  const discoverFeedSourceRef = useRef<'stream-finder' | 'tmdb'>(DEFAULT_DISCOVER_FEED);
   /** When **`true`**, in-flight Stream Finder hydration must **not** call **`setPhase1Movies`** (user applied filters first). */
   const streamFinderHydrationDismissedRef = useRef(false);
   /** Next Supabase **`range`** offset for Stream Finder (**`STREAM_FINDER_DISCOVER_PAGE_SIZE`** stride). */
@@ -514,6 +618,11 @@ export default function DiscoverScreen() {
    * TMDB poster / release-year enrichment. Re-runs when **`discoverStreamFinderHydrationGeneration`** bumps (Profile **Save Preferences** → **`flushDiscoverFeedCachesAfterProfileSave`**).
    */
   useEffect(() => {
+    // Only hydrate the curated provider cache when it is the chosen landing
+    // feed. Otherwise it overwrites the TMDB list a moment after it arrives,
+    // and resets the dismissal flags while doing so.
+    if (DEFAULT_DISCOVER_FEED !== 'stream-finder') return;
+
     let cancelled = false;
     setStreamFinderListHydrating(true);
 
@@ -944,6 +1053,14 @@ export default function DiscoverScreen() {
     },
     [fetchMovies]
   );
+
+  // Landing fetch: the unfiltered, rating-ranked catalogue. Runs once.
+  const didInitialFetchRef = useRef(false);
+  useEffect(() => {
+    if (DEFAULT_DISCOVER_FEED !== 'tmdb' || didInitialFetchRef.current) return;
+    didInitialFetchRef.current = true;
+    triggerFetch(null, 'both', []);
+  }, [triggerFetch]);
 
   const handleYearSelect = (year: number) => {
     const nextYear = selectedYear === year ? null : year;

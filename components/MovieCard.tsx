@@ -23,6 +23,8 @@ export interface Movie {
   poster_url: string | null;
   release_year?: number | null;
   vote_average?: number | null;
+  /** Votes behind vote_average. 0 or absent means the score is meaningless. */
+  vote_count?: number | null;
   /** TMDB w45 provider logos (Stream Finder cache) — full URLs. */
   provider_logo_urls?: string[] | null;
 }
@@ -113,8 +115,12 @@ export function MovieCard({
   const isWatched = tmdbId != null && (status?.watchedTmdbIds?.has(tmdbId) ?? false);
   const hasSession = !!status?.session;
 
+  // TMDB returns vote_average 0 for unrated titles rather than null, so a
+  // plain null check renders a meaningless "0.0". Treat no votes as no rating
+  // and show no badge at all.
+  const hasVotes = movie.vote_count == null || movie.vote_count > 0;
   const rating =
-    movie.vote_average != null
+    movie.vote_average != null && movie.vote_average > 0 && hasVotes
       ? Math.round(movie.vote_average * 10) / 10
       : null;
 

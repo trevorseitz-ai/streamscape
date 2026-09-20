@@ -58,3 +58,6 @@ RealDive Launch Deck/*.mp3
 # Generated LLM context bundles (regenerated; do not commit)
 reeldive-llm-context.zip
 reeldive-llm-pack-*/
+
+.backup-preranking/
+.git-broken-20260920/
